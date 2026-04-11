@@ -1,65 +1,424 @@
-import Image from "next/image";
+'use client';
+
+import ProductCard from '@/components/ProductCard';
+import HeroSlider from '@/components/HeroSlider';
+import { catalogProducts } from '@/data/products';
+import Image from 'next/image';
+import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
+
+const productCatalog = [
+  {
+    name: 'Wireless Earbuds Pro',
+    price: 49.99,
+    salePrice: 34.99,
+    image:
+      'https://images.unsplash.com/photo-1583394838336-acd977736f90?w=500&h=500&fit=crop',
+    badge: 'Sale',
+  },
+  {
+    name: 'Mini Portable Blender Bottle',
+    price: 32.99,
+    salePrice: 24.99,
+    image:
+      'https://images.unsplash.com/photo-1570197788417-0e82375c9371?w=500&h=500&fit=crop',
+    badge: 'Sale',
+  },
+  {
+    name: 'Magnetic Car Phone Holder',
+    price: 28.99,
+    salePrice: 26.99,
+    image:
+      'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?w=500&h=500&fit=crop',
+  },
+  {
+    name: 'USB Rechargeable Table Lamp',
+    price: 34.99,
+    image:
+      'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=500&h=500&fit=crop',
+  },
+  {
+    name: 'Foldable Laptop Stand',
+    price: 17.99,
+    salePrice: 14.99,
+    image:
+      'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=500&h=500&fit=crop',
+  },
+  {
+    name: '40oz Stainless Steel Tumbler',
+    price: 12.99,
+    image:
+      'https://images.unsplash.com/photo-1577937927133-66ef06acdf18?w=500&h=500&fit=crop',
+  },
+  {
+    name: 'Travel Jewelry Organizer',
+    price: 19.99,
+    salePrice: 15.99,
+    image:
+      'https://images.unsplash.com/photo-1617038220319-276d3cfab638?w=500&h=500&fit=crop',
+    badge: 'Sale',
+  },
+  {
+    name: 'LED Vanity Mirror',
+    price: 39.99,
+    image:
+      'https://images.unsplash.com/photo-1522337660859-02fbefca4702?w=500&h=500&fit=crop',
+  },
+  {
+    name: 'Magnetic Cable Organizer',
+    price: 21.99,
+    image:
+      'https://images.unsplash.com/photo-1517430816045-df4b7de11d1d?w=500&h=500&fit=crop',
+  },
+  {
+    name: 'Adjustable Closet Hangers',
+    price: 14.99,
+    image:
+      'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=500&h=500&fit=crop',
+  },
+  {
+    name: 'Portable Lint Remover',
+    price: 44.99,
+    salePrice: 38.99,
+    image:
+      'https://images.unsplash.com/photo-1583947582886-f40ec95dd752?w=500&h=500&fit=crop',
+    badge: 'Sale',
+  },
+  {
+    name: 'Travel Packing Cubes Set',
+    price: 18.99,
+    image:
+      'https://images.unsplash.com/photo-1527631746610-bca00a040d60?w=500&h=500&fit=crop',
+  },
+];
 
 export default function Home() {
+  const [failedCategoryImages, setFailedCategoryImages] = useState<
+    Record<string, boolean>
+  >({});
+  const [visibleProductCount, setVisibleProductCount] = useState(18);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  // Sample products data
+  const featuredProducts = catalogProducts.slice(0, 6);
+  const featuredDisplayProducts = featuredProducts.map(
+    ({ salePrice: _salePrice, badge: _badge, ...product }) => product,
+  );
+  const allProducts = Array.from({ length: 200 }, (_, index) => {
+    const product = catalogProducts[index % catalogProducts.length];
+
+    return {
+      ...product,
+      id: `more-to-love-${index + 1}`,
+      detailId: product.id,
+    };
+  });
+  const superSaleProducts = catalogProducts
+    .filter((product) => product.superSale)
+    .slice(0, 5);
+
+  const categories = [
+    {
+      name: 'Gadgets',
+      image:
+        'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400&h=400&fit=crop',
+    },
+    {
+      name: 'Home Finds',
+      image:
+        'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=400&h=400&fit=crop',
+    },
+    {
+      name: 'Car Accessories',
+      image:
+        'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?w=400&h=400&fit=crop',
+    },
+    {
+      name: 'Office Setup',
+      image:
+        'https://images.unsplash.com/photo-1496171367470-9ed9a91ea931?w=400&h=400&fit=crop',
+    },
+    {
+      name: 'Kitchen Picks',
+      image:
+        'https://images.unsplash.com/photo-1577937927133-66ef06acdf18?w=400&h=400&fit=crop',
+    },
+    {
+      name: 'Beauty Tools',
+      image:
+        'https://images.unsplash.com/photo-1522337660859-02fbefca4702?w=400&h=400&fit=crop',
+    },
+    {
+      name: 'Pet Essentials',
+      image:
+        'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=400&h=400&fit=crop',
+    },
+    {
+      name: 'Travel Gear',
+      image:
+        'https://images.unsplash.com/photo-1527631746610-bca00a040d60?w=400&h=400&fit=crop',
+    },
+  ];
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+
+        if (!entry?.isIntersecting) return;
+
+        setVisibleProductCount((current) =>
+          Math.min(current + 18, allProducts.length)
+        );
+      },
+      {
+        rootMargin: '0px 0px 420px 0px',
+      }
+    );
+
+    observer.observe(target);
+
+    return () => observer.disconnect();
+  }, [allProducts.length]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="bg-white">
+      {/* Hero Slider */}
+      <HeroSlider />
+
+      {/*
+      <section className="border-b border-gray-100 bg-gradient-to-b from-white to-slate-50 py-10">
+        <div className="mx-auto flex max-w-5xl flex-col items-center px-4 text-center sm:px-6 lg:px-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-600">
+            Brand Preview
           </p>
+          <h2 className="mt-3 text-2xl font-semibold text-gray-900 sm:text-3xl">
+            Multi Shop branding below the hero
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
+            This uses the current `multi-shop.webp` artwork at a larger size so
+            you can judge legibility before we commit to a dedicated navbar crop.
+          </p>
+
+          <div className="mt-8 w-full max-w-3xl rounded-[28px] border border-blue-100 bg-white p-4 shadow-[0_18px_50px_rgba(37,99,235,0.12)] sm:p-6">
+            <div className="relative aspect-[2/1] overflow-hidden rounded-2xl bg-[#2d5db3]">
+              <Image
+                src="/multi-shop.webp"
+                alt="Multi Shop BD brand artwork"
+                fill
+                sizes="(max-width: 768px) 90vw, 768px"
+                className="object-contain"
+                priority
+              />
+            </div>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+      */}
+
+      {/* Featured Products */}
+      <section
+        id="featured"
+        className="bg-gradient-to-b from-slate-100 to-white py-16"
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-12">
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              Featured Products
+            </h2>
+            <p className="text-gray-600">
+              Discover popular picks across gadgets, home upgrades, and
+              everyday-use finds.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5 lg:gap-6">
+            {featuredDisplayProducts.map((product) => (
+              <div key={product.id} className="mx-auto w-full max-w-[230px]">
+                <ProductCard product={product} />
+              </div>
+            ))}
+          </div>
         </div>
-      </main>
+      </section>
+
+      {/* Super Sale */}
+      <section className="bg-gradient-to-r from-rose-50 via-white to-amber-50 py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-12 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-rose-500">
+                Limited-Time Offers
+              </p>
+              <h2 className="mt-3 text-2xl font-semibold text-gray-900">
+                Super Sale
+              </h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
+                Extra-value picks with standout markdowns on customer favorites.
+              </p>
+            </div>
+            <Link
+              href="/collections/super-sale"
+              className="inline-flex w-fit items-center rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50"
+            >
+              Shop all deals
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5 lg:gap-6">
+            {superSaleProducts.map((product) => (
+              <div key={product.id} className="mx-auto w-full max-w-[230px]">
+                <ProductCard product={product} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Categories Section */}
+      <section className="bg-gradient-to-b from-slate-100 to-white py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <h2 className="text-2xl font-semibold text-gray-900 mb-12">
+            Categories
+          </h2>
+          <div className="mx-auto flex max-w-[880px] flex-wrap justify-center gap-5">
+            {categories.map((category) => (
+              <Link
+                key={category.name}
+                href="#"
+                className="w-[140px] md:w-[160px]"
+              >
+                <div className="group flex flex-col items-center text-center">
+                  {(() => {
+                    const showFallback =
+                      !category.image || failedCategoryImages[category.name];
+
+                    return (
+                      <>
+                        <div className="aspect-square w-36 overflow-hidden rounded-full border border-gray-200 bg-slate-100 p-1 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-md">
+                          {!showFallback ? (
+                            <img
+                              src={category.image}
+                              alt={category.name}
+                              className="h-full w-full rounded-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              onError={() =>
+                                setFailedCategoryImages((current) => ({
+                                  ...current,
+                                  [category.name]: true,
+                                }))
+                              }
+                            />
+                          ) : (
+                            <div className="grid h-full w-full place-items-center rounded-full bg-gradient-to-br from-slate-100 via-white to-slate-200 p-4 text-center">
+                              <span className="block max-w-[80%] text-center text-[0.7rem] font-medium leading-4 text-slate-600">
+                                {category.name}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="mt-4 text-[0.86rem] font-normal leading-5 text-gray-900">
+                          {category.name}
+                        </p>
+                      </>
+                    );
+                  })()}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* All Products */}
+      <section className="bg-gradient-to-b from-slate-100 to-white py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-12">
+            <h2 className="mb-4 text-2xl font-semibold text-gray-900">
+              More to love
+            </h2>
+            <p className="text-gray-600">
+              Browse the full collection with more products loading as you
+              scroll.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5 lg:gap-6">
+            {allProducts.slice(0, visibleProductCount).map((product) => (
+              <div key={product.id} className="mx-auto w-full max-w-[230px]">
+                <ProductCard product={product} />
+              </div>
+            ))}
+          </div>
+
+          {visibleProductCount < allProducts.length && (
+            <div ref={loadMoreRef} className="mt-8 flex justify-center py-6">
+              <span className="text-sm text-gray-400">
+                Loading more products...
+              </span>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Shipping Info */}
+      <section className="bg-gradient-to-b from-[#f8fbff] via-white to-[#f7f9fc] py-6">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="overflow-hidden rounded-[28px] border border-blue-100/80 bg-white shadow-[0_16px_45px_rgba(15,23,42,0.06)]">
+            <div className="border-b border-blue-50 bg-gradient-to-r from-[#eef5ff] via-white to-[#fff7fb] px-5 py-4 sm:px-7">
+              <div className="text-center">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-blue-600">
+                  Delivery Coverage
+                </p>
+                <div className="mt-1 text-[1.15rem] font-semibold text-gray-900">
+                  Shipping info
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 px-4 py-4 sm:px-5 md:grid-cols-3 md:gap-4 md:py-5">
+              <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-[#f7fbff] to-white px-4 py-4 text-center shadow-sm">
+                <div className="mb-2 inline-flex rounded-full bg-blue-100 px-3 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-blue-700">
+                  Inside City
+                </div>
+                <div className="mb-1 text-[1.05rem] font-bold text-blue-600">
+                  Dhaka City
+                </div>
+                <p className="text-[0.76rem] font-medium text-slate-600">
+                  24hrs 80/-
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-center shadow-sm">
+                <div className="mb-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-slate-700">
+                  Regional
+                </div>
+                <div className="mb-1 text-[1.05rem] font-bold text-blue-600">
+                  Dhaka Division
+                </div>
+                <p className="text-[0.76rem] font-medium text-slate-600">
+                  24 - 48hrs 120/-
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-white to-rose-50 px-4 py-4 text-center shadow-sm">
+                <div className="mb-2 inline-flex rounded-full bg-rose-100 px-3 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-rose-700">
+                  Nationwide
+                </div>
+                <div className="mb-1 text-[1.05rem] font-bold text-blue-600">
+                  Outer Dhaka
+                </div>
+                <p className="text-[0.76rem] font-medium text-slate-600">
+                  72 - 96hrs 150/-
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

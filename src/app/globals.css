@@ -1,8 +1,17 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Shopify Dawn Theme Colors */
+  --dawn-primary: #003d82;
+  --dawn-secondary: #0e8784;
+  --dawn-accent: #d4a574;
+  --dawn-text: #000;
+  --dawn-text-light: #595959;
+  --dawn-border: #e0e0e0;
+  --dawn-bg-light: #f5f5f5;
 }
 
 @theme inline {
@@ -12,15 +21,173 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family:
+    var(--font-geist-sans),
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'Roboto',
+    'Oxygen',
+    'Ubuntu',
+    'Cantarell',
+    'Fira Sans',
+    'Droid Sans',
+    'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Typography */
+h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+h4 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+p {
+  line-height: 1.6;
+  color: var(--dawn-text-light);
+}
+
+a {
+  color: var(--dawn-primary);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--dawn-secondary);
+}
+
+/* Buttons */
+.btn-primary {
+  background-color: var(--dawn-primary);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border: 2px solid var(--dawn-primary);
+}
+
+.btn-primary:hover {
+  background-color: var(--dawn-secondary);
+  border-color: var(--dawn-secondary);
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--dawn-primary);
+  padding: 0.75rem 1.5rem;
+  border-radius: 0;
+  font-weight: 500;
+  border: 2px solid var(--dawn-border);
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--dawn-primary);
+  background-color: var(--dawn-bg-light);
+}
+
+/* Form Elements */
+input,
+textarea,
+select {
+  border: 1px solid var(--dawn-border);
+  padding: 0.75rem;
+  font-size: 1rem;
+  border-radius: 0;
+  transition: border-color 0.2s ease;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--dawn-primary);
+  box-shadow: 0 0 0 3px rgba(0, 61, 130, 0.1);
+}
+
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--dawn-text);
+}
+
+/* Utility Classes */
+.container-max {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.divider {
+  border-top: 1px solid var(--dawn-border);
+}
+
+.bg-gradient-dawn {
+  background: linear-gradient(
+    135deg,
+    var(--dawn-primary),
+    var(--dawn-secondary)
+  );
+}
+
+/* Hero Slider Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.8s ease-out forwards;
+}
+
+.animate-fade-in-delay {
+  animation: fadeIn 0.8s ease-out 0.3s forwards;
+  opacity: 0;
+}
+
+.animate-fade-in-delay-2 {
+  animation: fadeIn 0.8s ease-out 0.6s forwards;
+  opacity: 0;
 }
