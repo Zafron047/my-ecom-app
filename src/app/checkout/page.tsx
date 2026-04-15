@@ -1,24 +1,13 @@
 'use client';
 
-import { shippingOptions, useCart } from '@/components/CartProvider';
+import { useCart } from '@/components/CartProvider';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 export default function Checkout() {
   const router = useRouter();
-  const {
-    cartItems,
-    selectedCartItems,
-    selectedItemCount,
-    shippingOption,
-    subtotal,
-    shipping,
-    total,
-    setShippingOption,
-    updateQuantity,
-    removeFromCart,
-  } = useCart();
+  const { selectedCartItems, subtotal } = useCart();
   const [paymentMethod, setPaymentMethod] = useState<'bkash' | 'cod' | ''>('');
   const [formData, setFormData] = useState({
     firstName: '',
@@ -34,6 +23,19 @@ export default function Checkout() {
     expiryDate: '',
     cvv: '',
   });
+
+  const shippingCharge = useMemo(() => {
+    if (!formData.division) return 0;
+
+    if (formData.division === 'Dhaka') {
+      if (!formData.district) return 0;
+      return formData.district === 'Dhaka' ? 80 : 120;
+    }
+
+    return 150;
+  }, [formData.district, formData.division]);
+
+  const orderTotal = subtotal + shippingCharge;
 
   const handlePlaceOrder = () => {
     // Basic validation
@@ -83,8 +85,8 @@ export default function Checkout() {
       items: selectedCartItems,
       totals: {
         subtotal,
-        shipping,
-        total,
+        shipping: shippingCharge,
+        total: orderTotal,
       },
       orderDate: new Date().toISOString(),
     };
@@ -474,6 +476,46 @@ export default function Checkout() {
             </div>
           </div>
 
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Shipping Charge
+                </h3>
+              </div>
+              <div className="flex items-center justify-between gap-4 rounded-2xl bg-orange-50 px-4 py-3">
+                <p className="text-sm font-semibold text-gray-900">
+                  ৳{shippingCharge.toFixed(2)}
+                </p>
+              </div>
+              <div className="hidden rounded-2xl bg-orange-50 px-4 py-2 text-right">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-orange-500">
+                  Shipping Charge
+                </p>
+                <p className="text-2xl font-bold text-orange-600">
+                  ৳{shippingCharge.toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
+              <span className="text-sm font-medium text-gray-600">
+                  Cart Subtotal
+              </span>
+              <span className="text-sm font-semibold text-gray-900">
+                ৳{subtotal.toFixed(2)}
+              </span>
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
+              <span className="text-sm font-medium text-gray-600">
+                Total
+              </span>
+              <span className="text-lg font-semibold text-gray-900">
+                ৳{orderTotal.toFixed(2)}
+              </span>
+            </div>
+          </div>
+
           {/* Payment Method Section */}
           <div>
             <h2 className="text-2xl font-bold text-gray-900 mb-8 mt-12">
@@ -487,8 +529,8 @@ export default function Checkout() {
               className={`relative flex items-center gap-4 p-4 rounded-2xl border transition-all cursor-pointer
     ${
       paymentMethod === 'bkash'
-        ? 'border-pink-500 bg-pink-50 ring-2 ring-pink-100'
-        : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
+        ? 'scale-[1.02] border-2 border-pink-500 bg-pink-50 ring-2 ring-pink-100 shadow-[0_8px_18px_rgba(236,72,153,0.2)]'
+        : 'border-pink-200 bg-pink-50/70 hover:bg-pink-100/70 hover:shadow-md'
     }`}
             >
               {/* BIG Icon */}
@@ -528,8 +570,8 @@ export default function Checkout() {
               className={`relative flex items-center gap-4 p-4 rounded-2xl border transition-all cursor-pointer
     ${
       paymentMethod === 'cod'
-        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100'
-        : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
+        ? 'scale-[1.02] border-2 border-blue-500 bg-blue-50 ring-2 ring-blue-100 shadow-[0_8px_18px_rgba(59,130,246,0.2)]'
+        : 'border-blue-200 bg-blue-50/70 hover:bg-blue-100/70 hover:shadow-md'
     }`}
             >
               {/* BIG Icon */}

@@ -72,12 +72,13 @@ type CartContextValue = {
   setItemSelection: (productId: string, selected: boolean) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   removeFromCart: (productId: string) => void;
+  clearSelectedItems: () => void;
   clearCart: () => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
-const STORAGE_KEY = 'multi-shop-cart';
-const SHIPPING_STORAGE_KEY = 'multi-shop-shipping-option';
+const STORAGE_KEY = 'buy-easy-cart';
+const SHIPPING_STORAGE_KEY = 'buy-easy-shipping-option';
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -252,6 +253,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setCartItems([]);
   }
 
+  function clearSelectedItems() {
+    setCartItems((currentItems) =>
+      currentItems.filter((item) => !item.selected),
+    );
+  }
+
   const value = {
     cartItems,
     selectedCartItems,
@@ -273,6 +280,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItemSelection,
     updateQuantity,
     removeFromCart,
+    clearSelectedItems,
     clearCart,
   };
 

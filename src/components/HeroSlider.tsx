@@ -75,7 +75,7 @@ export default function HeroSlider() {
   };
 
   return (
-    <section className="relative h-[60vh] md:h-[70vh] overflow-hidden">
+    <section className="relative h-[42vh] md:h-[70vh] overflow-hidden">
       {/* Slides */}
       <div className="relative h-full">
         {slides.map((slide, index) => (

@@ -23,7 +23,7 @@ export const catalogProducts: CatalogProduct[] = [
   },
   {
     id: '2',
-    name: 'Mini Portable Blender Bottle',
+    name: 'Mini Portable Blender Bottle Flask for Shakes',
     price: 32.99,
     salePrice: 24.99,
     image:

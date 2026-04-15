@@ -16,7 +16,10 @@ interface Product {
 
 export default function ProductCard({ product }: { product: Product }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const { addToCart } = useCart();
+  const { cartItems, addToCart, updateQuantity } = useCart();
+  const productId = product.detailId ?? product.id;
+  const cartItem = cartItems.find((item) => item.id === productId);
+  const quantity = cartItem?.quantity ?? 0;
 
   const discount = product.salePrice
     ? Math.round(((product.price - product.salePrice) / product.price) * 100)
@@ -85,22 +88,34 @@ export default function ProductCard({ product }: { product: Product }) {
         </div>
       </Link>
 
-      <button
-        type="button"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          addToCart(product);
-        }}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-[#2d5db3] bg-[#2d5db3] px-4 py-2.5 text-[0.8rem] font-medium text-white transition duration-300 hover:-translate-y-0.5 hover:border-[#d94d9a] hover:bg-[#d94d9a] hover:shadow-md"
-      >
-        <span className="transition-transform duration-300 group-hover:translate-x-0.5">
-          Add to Cart
-        </span>
-        <span className="text-sm leading-none transition-transform duration-300 group-hover:translate-x-1">
+      <div className="mt-4 flex w-full items-center justify-between rounded-full border border-[#2d5db3] bg-[#2d5db3] px-4 py-2.5 text-[0.9rem] font-semibold text-white">
+        <button
+          type="button"
+          onClick={() => {
+            if (!cartItem) return;
+            updateQuantity(productId, cartItem.quantity - 1);
+          }}
+          className="leading-none transition hover:opacity-90"
+          aria-label={`Decrease quantity for ${product.name}`}
+        >
+          -
+        </button>
+        <span className="text-center leading-none">{quantity}</span>
+        <button
+          type="button"
+          onClick={() => {
+            if (!cartItem) {
+              addToCart(product, 1);
+              return;
+            }
+            updateQuantity(productId, cartItem.quantity + 1);
+          }}
+          className="leading-none transition hover:opacity-90"
+          aria-label={`Increase quantity for ${product.name}`}
+        >
           +
-        </span>
-      </button>
+        </button>
+      </div>
     </div>
   );
 }

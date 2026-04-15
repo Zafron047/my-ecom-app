@@ -37,7 +37,7 @@ interface OrderData {
 function OrderConfirmationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { clearCart } = useCart();
+  const { clearSelectedItems } = useCart();
   const [orderData, setOrderData] = useState<OrderData | null>(null);
   const [isClient, setIsClient] = useState(false);
   const hasLoadedRef = useRef(false);
@@ -57,8 +57,8 @@ function OrderConfirmationContent() {
       if (storedOrder) {
         const parsedOrder = JSON.parse(storedOrder);
         setOrderData(parsedOrder);
-        // Only clear cart once when we successfully load order data
-        clearCart();
+        // Remove only checked-out items and keep unselected items in cart.
+        clearSelectedItems();
         hasLoadedRef.current = true; // Prevent re-execution
       }
     }
@@ -95,11 +95,12 @@ function OrderConfirmationContent() {
               />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Order Confirmed!
+          <h1 className="text-lg font-bold text-gray-900 mb-2">
+            Order Submitted
           </h1>
           <p className="text-gray-600">
-            Thank you for your order. Your order has been successfully placed.
+            Thank you for your order. Please wait for our call to confirm this
+            order.
           </p>
         </div>
 
@@ -110,9 +111,6 @@ function OrderConfirmationContent() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <h3 className="font-medium text-gray-900 mb-2">
-                Order Information
-              </h3>
               <p className="text-sm text-gray-600">
                 <strong>Order ID:</strong> {orderData.id}
               </p>
@@ -130,9 +128,6 @@ function OrderConfirmationContent() {
               </p>
             </div>
             <div>
-              <h3 className="font-medium text-gray-900 mb-2">
-                Customer Details
-              </h3>
               <p className="text-sm text-gray-600">
                 <strong>Name:</strong> {orderData.customer.firstName}{' '}
                 {orderData.customer.lastName}
@@ -168,10 +163,10 @@ function OrderConfirmationContent() {
           </div>
         </div>
 
-        {/* Order Items */}
+        {/* Items */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Order Items
+            Items
           </h2>
           <div className="space-y-4">
             {orderData.items.map((item: any) => (
@@ -231,18 +226,12 @@ function OrderConfirmationContent() {
         </div>
 
         {/* Actions */}
-        <div className="mt-8 flex gap-4 justify-center">
+        <div className="mt-8 flex justify-center">
           <button
             onClick={() => router.push('/')}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Continue Shopping
-          </button>
-          <button
-            onClick={() => router.push('/products')}
-            className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            View Products
+            Home
           </button>
         </div>
       </div>

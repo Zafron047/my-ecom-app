@@ -3,6 +3,10 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --font-geist-sans:
+    'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  --font-geist-mono:
+    'Cascadia Code', 'Consolas', 'SFMono-Regular', 'Courier New', monospace;
 
   /* Shopify Dawn Theme Colors */
   --dawn-primary: #003d82;
