@@ -253,7 +253,7 @@ export default function Header() {
               </div>
             </div>
 
-            <p className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 text-center text-[10px] font-medium tracking-[0.18em] text-gray-600 uppercase xl:block">
+            <p className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 text-center text-[7px] font-medium tracking-[0.18em] text-gray-600 uppercase sm:text-[8px] md:text-[9px] lg:block">
               Multi Chances Everyday with Multi Shop BD
             </p>
 
@@ -411,7 +411,7 @@ export default function Header() {
             )}
           </div>
 
-          <p className="mt-3 text-center text-[9px] font-medium tracking-[0.18em] text-gray-600 uppercase md:hidden">
+          <p className="mt-3 text-center text-[8px] font-medium tracking-[0.18em] text-gray-600 uppercase lg:hidden">
             Multi Chances Everyday with Multi Shop BD
           </p>
         </nav>

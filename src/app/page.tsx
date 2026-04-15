@@ -172,12 +172,12 @@ export default function Home() {
         if (!entry?.isIntersecting) return;
 
         setVisibleProductCount((current) =>
-          Math.min(current + 18, allProducts.length)
+          Math.min(current + 18, allProducts.length),
         );
       },
       {
         rootMargin: '0px 0px 420px 0px',
-      }
+      },
     );
 
     observer.observe(target);
@@ -189,36 +189,6 @@ export default function Home() {
     <div className="bg-white">
       {/* Hero Slider */}
       <HeroSlider />
-
-      {/*
-      <section className="border-b border-gray-100 bg-gradient-to-b from-white to-slate-50 py-10">
-        <div className="mx-auto flex max-w-5xl flex-col items-center px-4 text-center sm:px-6 lg:px-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-600">
-            Brand Preview
-          </p>
-          <h2 className="mt-3 text-2xl font-semibold text-gray-900 sm:text-3xl">
-            Multi Shop branding below the hero
-          </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
-            This uses the current `multi-shop.webp` artwork at a larger size so
-            you can judge legibility before we commit to a dedicated navbar crop.
-          </p>
-
-          <div className="mt-8 w-full max-w-3xl rounded-[28px] border border-blue-100 bg-white p-4 shadow-[0_18px_50px_rgba(37,99,235,0.12)] sm:p-6">
-            <div className="relative aspect-[2/1] overflow-hidden rounded-2xl bg-[#2d5db3]">
-              <Image
-                src="/multi-shop.webp"
-                alt="Multi Shop BD brand artwork"
-                fill
-                sizes="(max-width: 768px) 90vw, 768px"
-                className="object-contain"
-                priority
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-      */}
 
       {/* Featured Products */}
       <section

@@ -27,7 +27,8 @@ const slides = [
     image:
       'https://images.unsplash.com/photo-1511556820780-d912e42b4980?w=1920&h=1080&fit=crop',
     title: 'Accessories That Sell Fast',
-    subtitle: 'Popular add-ons and impulse buys your customers keep coming back for',
+    subtitle:
+      'Popular add-ons and impulse buys your customers keep coming back for',
     cta: 'Browse Bestsellers',
     ctaLink: '/products',
   },
@@ -36,7 +37,8 @@ const slides = [
     image:
       'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=1920&h=1080&fit=crop',
     title: 'Top Picks From Every Category',
-    subtitle: 'Discover mix-and-match products across gadgets, lifestyle, and home',
+    subtitle:
+      'Discover mix-and-match products across gadgets, lifestyle, and home',
     cta: 'View Collection',
     ctaLink: '/products',
   },
@@ -97,12 +99,12 @@ export default function HeroSlider() {
             </div>
 
             {/* Content */}
-            <div className="relative h-full flex items-center justify-center">
+            <div className="relative h-full flex items-center justify-center z-20">
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-white">
                 <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 animate-fade-in">
                   {slide.title}
                 </h1>
-                <p className="text-lg md:text-xl mb-6 max-w-2xl mx-auto opacity-90 animate-fade-in-delay">
+                <p className="text-lg md:text-xl mb-6 max-w-3xl mx-auto opacity-90 animate-fade-in-delay">
                   {slide.subtitle}
                 </p>
                 <div className="flex flex-wrap justify-center gap-3 animate-fade-in-delay-2">
