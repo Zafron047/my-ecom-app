@@ -9,7 +9,7 @@ export default function NotFound() {
           Page Not Found
         </h1>
         <p className="text-gray-600 mb-8">
-          Oops! We couldn't find the page you're looking for. It might have been
+          Oops! We couldn&apos;t find the page you&apos;re looking for. It might have been
           moved or deleted.
         </p>
 
@@ -30,7 +30,7 @@ export default function NotFound() {
             </svg>
           </div>
           <p className="text-gray-500 text-sm mb-6">
-            Let's get you back on track. Here are some helpful links:
+            Let&apos;s get you back on track. Here are some helpful links:
           </p>
           <div className="space-y-2">
             <Link

@@ -244,7 +244,6 @@ export default function Header() {
 
   const isFirstNameInvalid =
     touchedFields.firstName && checkoutForm.firstName.trim() === '';
-  const isLastNameInvalid = false;
   const isEmailInvalid = touchedFields.email && !isEmailValid;
   const isCustomerMobileInvalid =
     touchedFields.customerMobile &&
@@ -887,11 +886,9 @@ export default function Header() {
                         }
                         transition={fieldSpringTransition}
                         className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
-                          isLastNameInvalid
-                            ? invalidFieldGlow
-                            : isFieldFilled(checkoutForm.lastName)
-                              ? completedFieldGlow
-                              : 'border-slate-200'
+                          isFieldFilled(checkoutForm.lastName)
+                            ? completedFieldGlow
+                            : 'border-slate-200'
                         }`}
                       />
                       <AnimatePresence initial={false}>

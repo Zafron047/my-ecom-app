@@ -61,8 +61,6 @@ type CartContextValue = {
   selectedItemCount: number;
   subtotal: number;
   shipping: number;
-  tax: number;
-  total: number;
   openCart: () => void;
   closeCart: () => void;
   toggleCart: () => void;
@@ -73,7 +71,6 @@ type CartContextValue = {
   updateQuantity: (productId: string, quantity: number) => void;
   removeFromCart: (productId: string) => void;
   clearSelectedItems: () => void;
-  clearCart: () => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -159,8 +156,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   );
 
   const shipping = selectedItemCount > 0 ? shippingOptions[shippingOption].charge : 0;
-  const tax = subtotal * 0.08;
-  const total = subtotal + shipping + tax;
 
   function openCart() {
     setIsCartOpen(true);
@@ -249,10 +244,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  function clearCart() {
-    setCartItems([]);
-  }
-
   function clearSelectedItems() {
     setCartItems((currentItems) =>
       currentItems.filter((item) => !item.selected),
@@ -269,8 +260,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     selectedItemCount,
     subtotal,
     shipping,
-    tax,
-    total,
     openCart,
     closeCart,
     toggleCart,
@@ -281,7 +270,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     updateQuantity,
     removeFromCart,
     clearSelectedItems,
-    clearCart,
   };
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

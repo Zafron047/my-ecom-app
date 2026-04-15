@@ -1,8 +1,8 @@
 'use client';
 
-import { useCart } from '@/components/CartProvider';
+import { type CartItem, useCart } from '@/components/CartProvider';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, Suspense, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 
 interface OrderData {
   id: string;
@@ -25,7 +25,7 @@ interface OrderData {
     expiryDate?: string;
     cvv?: string;
   };
-  items: any[];
+  items: CartItem[];
   totals: {
     subtotal: number;
     shipping: number;
@@ -38,33 +38,29 @@ function OrderConfirmationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { clearSelectedItems } = useCart();
-  const [orderData, setOrderData] = useState<OrderData | null>(null);
-  const [isClient, setIsClient] = useState(false);
   const hasLoadedRef = useRef(false);
+  const orderId = searchParams.get('orderId');
+  const orderData = useMemo<OrderData | null>(() => {
+    if (!orderId || typeof window === 'undefined') return null;
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+    const storedOrder = localStorage.getItem(`order_${orderId}`);
+    if (!storedOrder) return null;
 
-  useEffect(() => {
-    if (!isClient || hasLoadedRef.current) return;
-
-    // Get order data from URL params or localStorage
-    const orderId = searchParams.get('orderId');
-    if (orderId) {
-      // In a real app, you'd fetch this from an API
-      const storedOrder = localStorage.getItem(`order_${orderId}`);
-      if (storedOrder) {
-        const parsedOrder = JSON.parse(storedOrder);
-        setOrderData(parsedOrder);
-        // Remove only checked-out items and keep unselected items in cart.
-        clearSelectedItems();
-        hasLoadedRef.current = true; // Prevent re-execution
-      }
+    try {
+      return JSON.parse(storedOrder) as OrderData;
+    } catch {
+      return null;
     }
-  }, [isClient]); // Only depend on isClient, not searchParams or clearCart
+  }, [orderId]);
 
-  if (!isClient || !orderData) {
+  useEffect(() => {
+    if (hasLoadedRef.current || !orderData) return;
+    // Remove only checked-out items and keep unselected items in cart.
+    clearSelectedItems();
+    hasLoadedRef.current = true; // Prevent re-execution
+  }, [clearSelectedItems, orderData]);
+
+  if (!orderData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -116,9 +112,7 @@ function OrderConfirmationContent() {
               </p>
               <p className="text-sm text-gray-600">
                 <strong>Date:</strong>{' '}
-                {isClient
-                  ? new Date(orderData.orderDate).toLocaleDateString()
-                  : 'Loading...'}
+                {new Date(orderData.orderDate).toLocaleDateString()}
               </p>
               <p className="text-sm text-gray-600">
                 <strong>Payment Method:</strong>{' '}
@@ -169,7 +163,7 @@ function OrderConfirmationContent() {
             Items
           </h2>
           <div className="space-y-4">
-            {orderData.items.map((item: any) => (
+            {orderData.items.map((item) => (
               <div
                 key={item.id}
                 className="flex items-center gap-4 py-4 border-b border-gray-100 last:border-b-0"

@@ -340,7 +340,7 @@ export default function Checkout() {
                   htmlFor="receiverMobile"
                   className="block text-sm font-medium text-gray-700 mb-2"
                 >
-                  Parcel Receiver's Mobile Number
+                  Parcel Receiver&apos;s Mobile Number
                 </label>
                 <input
                   type="tel"
@@ -488,14 +488,6 @@ export default function Checkout() {
                   ৳{shippingCharge.toFixed(2)}
                 </p>
               </div>
-              <div className="hidden rounded-2xl bg-orange-50 px-4 py-2 text-right">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-orange-500">
-                  Shipping Charge
-                </p>
-                <p className="text-2xl font-bold text-orange-600">
-                  ৳{shippingCharge.toFixed(2)}
-                </p>
-              </div>
             </div>
 
             <div className="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
@@ -628,3 +620,5 @@ export default function Checkout() {
     </div>
   );
 }
+
+

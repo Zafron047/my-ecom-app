@@ -4,7 +4,7 @@ import ProductCard from '@/components/ProductCard';
 import HeroSlider from '@/components/HeroSlider';
 import { catalogProducts } from '@/data/products';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export default function Home() {
   const [failedCategoryImages, setFailedCategoryImages] = useState<
@@ -15,18 +15,19 @@ export default function Home() {
 
   // Sample products data
   const featuredProducts = catalogProducts.slice(0, 6);
-  const featuredDisplayProducts = featuredProducts.map(
-    ({ salePrice: _salePrice, badge: _badge, ...product }) => product,
-  );
-  const allProducts = Array.from({ length: 200 }, (_, index) => {
-    const product = catalogProducts[index % catalogProducts.length];
+  const allProducts = useMemo(
+    () =>
+      Array.from({ length: 200 }, (_, index) => {
+        const product = catalogProducts[index % catalogProducts.length];
 
-    return {
-      ...product,
-      id: `more-to-love-${index + 1}`,
-      detailId: product.id,
-    };
-  });
+        return {
+          ...product,
+          id: `more-to-love-${index + 1}`,
+          detailId: product.id,
+        };
+      }),
+    [],
+  );
   const superSaleProducts = catalogProducts
     .filter((product) => product.superSale)
     .slice(0, 5);
@@ -123,7 +124,7 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5 lg:gap-6">
-            {featuredDisplayProducts.map((product) => (
+            {featuredProducts.map((product) => (
               <div key={product.id} className="mx-auto w-full max-w-[230px]">
                 <ProductCard product={product} />
               </div>
