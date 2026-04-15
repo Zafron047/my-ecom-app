@@ -13,6 +13,7 @@ const searchableProducts = catalogProducts.map(({ id, name, image }) => ({
   name,
   image,
 }));
+const CHECKOUT_PENDING_ORDER_KEY = 'buy-easy-pending-order-id';
 
 export default function Header() {
   type CheckoutField =
@@ -474,6 +475,7 @@ export default function Header() {
     };
 
     localStorage.setItem(`order_${orderId}`, JSON.stringify(orderData));
+    localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, orderId);
     handleCloseCart();
     router.push(`/order-confirmation?orderId=${orderId}`);
   }

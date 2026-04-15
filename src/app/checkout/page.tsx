@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
+const CHECKOUT_PENDING_ORDER_KEY = 'buy-easy-pending-order-id';
+
 export default function Checkout() {
   const router = useRouter();
   const { selectedCartItems, subtotal } = useCart();
@@ -93,6 +95,7 @@ export default function Checkout() {
 
     // Store order data (in a real app, this would be sent to a server)
     localStorage.setItem(`order_${orderId}`, JSON.stringify(orderData));
+    localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, orderId);
 
     // Navigate to order confirmation page
     router.push(`/order-confirmation?orderId=${orderId}`);

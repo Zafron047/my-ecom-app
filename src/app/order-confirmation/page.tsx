@@ -4,6 +4,8 @@ import { type CartItem, useCart } from '@/components/CartProvider';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 
+const CHECKOUT_PENDING_ORDER_KEY = 'buy-easy-pending-order-id';
+
 interface OrderData {
   id: string;
   customer: {
@@ -54,11 +56,17 @@ function OrderConfirmationContent() {
   }, [orderId]);
 
   useEffect(() => {
-    if (hasLoadedRef.current || !orderData) return;
-    // Remove only checked-out items and keep unselected items in cart.
-    clearSelectedItems();
+    if (hasLoadedRef.current || !orderData || !orderId) return;
+
+    const pendingOrderId = localStorage.getItem(CHECKOUT_PENDING_ORDER_KEY);
+    if (pendingOrderId === orderId) {
+      // Remove only checked-out items and keep unselected items in cart.
+      clearSelectedItems();
+      localStorage.removeItem(CHECKOUT_PENDING_ORDER_KEY);
+    }
+
     hasLoadedRef.current = true; // Prevent re-execution
-  }, [clearSelectedItems, orderData]);
+  }, [clearSelectedItems, orderData, orderId]);
 
   if (!orderData) {
     return (

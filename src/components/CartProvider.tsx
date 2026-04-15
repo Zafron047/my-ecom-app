@@ -76,6 +76,8 @@ type CartContextValue = {
 const CartContext = createContext<CartContextValue | null>(null);
 const STORAGE_KEY = 'buy-easy-cart';
 const SHIPPING_STORAGE_KEY = 'buy-easy-shipping-option';
+const LEGACY_STORAGE_KEY = 'multi-shop-cart';
+const LEGACY_SHIPPING_STORAGE_KEY = 'multi-shop-shipping-option';
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -87,7 +89,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      const storedCart = window.localStorage.getItem(STORAGE_KEY);
+      const storedCart =
+        window.localStorage.getItem(STORAGE_KEY) ??
+        window.localStorage.getItem(LEGACY_STORAGE_KEY);
 
       if (storedCart) {
         const parsedCart = JSON.parse(storedCart) as Array<
@@ -100,17 +104,30 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             selected: item.selected ?? true,
           })),
         );
+
+        if (!window.localStorage.getItem(STORAGE_KEY)) {
+          window.localStorage.setItem(STORAGE_KEY, storedCart);
+        }
       }
 
-      const storedShippingOption = window.localStorage.getItem(
-        SHIPPING_STORAGE_KEY,
-      ) as ShippingOption | null;
+      const storedShippingOption =
+        (window.localStorage.getItem(SHIPPING_STORAGE_KEY) ??
+          window.localStorage.getItem(
+            LEGACY_SHIPPING_STORAGE_KEY,
+          )) as ShippingOption | null;
 
       if (
         storedShippingOption &&
         Object.hasOwn(shippingOptions, storedShippingOption)
       ) {
         setShippingOption(storedShippingOption);
+
+        if (!window.localStorage.getItem(SHIPPING_STORAGE_KEY)) {
+          window.localStorage.setItem(
+            SHIPPING_STORAGE_KEY,
+            storedShippingOption,
+          );
+        }
       }
     } catch {
       // Ignore invalid local cart state and start fresh.
