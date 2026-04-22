@@ -5,7 +5,7 @@ import {
   clearPendingOrderId,
   readPendingOrderId,
   shouldClearSelectedItems,
-} from '@/lib/checkoutPendingOrder.js';
+} from '@/lib/checkoutPendingOrder.mjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef } from 'react';
 

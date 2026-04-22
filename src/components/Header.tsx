@@ -1,7 +1,7 @@
 'use client';
 
 import { useCart } from '@/components/CartProvider';
-import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.js';
+import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
 import { AnimatePresence, motion } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';

@@ -5,7 +5,7 @@ import {
   clearPendingOrderId,
   readPendingOrderId,
   shouldClearSelectedItems,
-} from '../src/lib/checkoutPendingOrder.js';
+} from '../src/lib/checkoutPendingOrder.mjs';
 
 assert.equal(CHECKOUT_PENDING_ORDER_KEY, 'shop-easy-pending-order-id');
 assert.equal(shouldClearSelectedItems('ORD-1001', 'ORD-1001'), true);
