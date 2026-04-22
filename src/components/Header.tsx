@@ -1,6 +1,7 @@
 'use client';
 
 import { useCart } from '@/components/CartProvider';
+import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.js';
 import { AnimatePresence, motion } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -13,7 +14,6 @@ const searchableProducts = catalogProducts.map(({ id, name, image }) => ({
   name,
   image,
 }));
-const CHECKOUT_PENDING_ORDER_KEY = 'buy-easy-pending-order-id';
 
 export default function Header() {
   type CheckoutField =
@@ -527,8 +527,8 @@ export default function Header() {
               <Link href="/" className="flex items-center">
                 <div className="relative h-[2.1rem] w-[3rem] overflow-hidden rounded-md border border-blue-200 bg-[#2d5db3] shadow-sm sm:h-11 sm:w-16 sm:rounded-lg">
                   <Image
-                    src="/buy-easy-logo.svg"
-                    alt="Buy Easy logo"
+                    src="/shop-easy-logo.svg"
+                    alt="Shop Easy logo"
                     fill
                     sizes="(max-width: 639px) 51px, 64px"
                     className="object-contain p-0.5"

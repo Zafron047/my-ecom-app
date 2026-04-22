@@ -74,10 +74,13 @@ type CartContextValue = {
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
-const STORAGE_KEY = 'buy-easy-cart';
-const SHIPPING_STORAGE_KEY = 'buy-easy-shipping-option';
-const LEGACY_STORAGE_KEY = 'multi-shop-cart';
-const LEGACY_SHIPPING_STORAGE_KEY = 'multi-shop-shipping-option';
+const STORAGE_KEY = 'shop-easy-cart';
+const SHIPPING_STORAGE_KEY = 'shop-easy-shipping-option';
+const LEGACY_STORAGE_KEYS = ['buy-easy-cart', 'multi-shop-cart'];
+const LEGACY_SHIPPING_STORAGE_KEYS = [
+  'buy-easy-shipping-option',
+  'multi-shop-shipping-option',
+];
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -91,7 +94,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const storedCart =
         window.localStorage.getItem(STORAGE_KEY) ??
-        window.localStorage.getItem(LEGACY_STORAGE_KEY);
+        LEGACY_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(
+          (value) => value !== null,
+        ) ??
+        null;
 
       if (storedCart) {
         const parsedCart = JSON.parse(storedCart) as Array<
@@ -112,9 +118,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
       const storedShippingOption =
         (window.localStorage.getItem(SHIPPING_STORAGE_KEY) ??
-          window.localStorage.getItem(
-            LEGACY_SHIPPING_STORAGE_KEY,
-          )) as ShippingOption | null;
+          LEGACY_SHIPPING_STORAGE_KEYS.map((key) =>
+            window.localStorage.getItem(key),
+          ).find((value) => value !== null)) as ShippingOption | null;
 
       if (
         storedShippingOption &&

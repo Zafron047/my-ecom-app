@@ -1,10 +1,13 @@
 'use client';
 
 import { type CartItem, useCart } from '@/components/CartProvider';
+import {
+  clearPendingOrderId,
+  readPendingOrderId,
+  shouldClearSelectedItems,
+} from '@/lib/checkoutPendingOrder.js';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef } from 'react';
-
-const CHECKOUT_PENDING_ORDER_KEY = 'buy-easy-pending-order-id';
 
 interface OrderData {
   id: string;
@@ -58,11 +61,11 @@ function OrderConfirmationContent() {
   useEffect(() => {
     if (hasLoadedRef.current || !orderData || !orderId) return;
 
-    const pendingOrderId = localStorage.getItem(CHECKOUT_PENDING_ORDER_KEY);
-    if (pendingOrderId === orderId) {
+    const pendingOrderId = readPendingOrderId(localStorage);
+    if (shouldClearSelectedItems(pendingOrderId, orderId)) {
       // Remove only checked-out items and keep unselected items in cart.
       clearSelectedItems();
-      localStorage.removeItem(CHECKOUT_PENDING_ORDER_KEY);
+      clearPendingOrderId(localStorage);
     }
 
     hasLoadedRef.current = true; // Prevent re-execution

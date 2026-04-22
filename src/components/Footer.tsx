@@ -12,8 +12,8 @@ export default function Footer() {
                 <Link href="/" className="inline-flex items-center">
                   <div className="relative h-12 w-[4.5rem] overflow-hidden rounded-xl border border-blue-200/60 bg-[#2d5db3] shadow-[0_10px_24px_rgba(45,93,179,0.35)]">
                     <Image
-                      src="/buy-easy-logo.svg"
-                      alt="Buy Easy logo"
+                      src="/shop-easy-logo.svg"
+                      alt="Shop Easy logo"
                       fill
                       sizes="72px"
                       className="object-contain p-1"
@@ -22,10 +22,10 @@ export default function Footer() {
                 </Link>
                 <div>
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-blue-200/90">
-                    Buy Easy
+                    Shop Easy
                   </p>
                   <p className="mt-1 text-sm text-white" style={{ color: '#fff' }}>
-                    (c) 2026 Buy Easy. All rights reserved.
+                    (c) 2026 Shop Easy. All rights reserved.
                   </p>
                 </div>
               </div>
@@ -46,10 +46,10 @@ export default function Footer() {
                   Terms of Service
                 </a>
                 <a
-                  href="https://www.facebook.com/buyeasy.com.bd"
+                  href="https://shopeasy.com.bd"
                   target="_blank"
                   rel="noreferrer"
-                  aria-label="Facebook"
+                  aria-label="Shop Easy website"
                   style={{ color: '#fff' }}
                   className="flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white transition hover:-translate-y-0.5 hover:border-white hover:bg-white/16 hover:text-white"
                 >

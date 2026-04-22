@@ -5,13 +5,17 @@ import Footer from '@/components/Footer';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Buy Easy - Trending AliExpress Finds',
+  metadataBase: new URL('https://shopeasy.com.bd'),
+  title: 'Shop Easy - Trending AliExpress Finds',
   description:
     'Shop trending gadgets, home finds, accessories, and everyday AliExpress picks.',
+  alternates: {
+    canonical: '/',
+  },
   icons: {
-    icon: '/buy-easy-logo.svg',
-    shortcut: '/buy-easy-logo.svg',
-    apple: '/buy-easy-logo.svg',
+    icon: '/shop-easy-logo.svg',
+    shortcut: '/shop-easy-logo.svg',
+    apple: '/shop-easy-logo.svg',
   },
 };
 
