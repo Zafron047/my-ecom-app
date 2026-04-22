@@ -18,7 +18,6 @@ export default function Login() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Handle login logic
-    console.log('Login:', formData);
   };
 
   return (
@@ -132,7 +131,7 @@ export default function Login() {
 
         {/* Footer */}
         <p className="text-center text-sm text-gray-600">
-          Don't have an account?{' '}
+          Don&apos;t have an account?{' '}
           <Link
             href="/register"
             className="text-blue-600 hover:text-blue-700 font-medium"

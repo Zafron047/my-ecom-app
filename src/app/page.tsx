@@ -3,94 +3,8 @@
 import ProductCard from '@/components/ProductCard';
 import HeroSlider from '@/components/HeroSlider';
 import { catalogProducts } from '@/data/products';
-import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-
-const productCatalog = [
-  {
-    name: 'Wireless Earbuds Pro',
-    price: 49.99,
-    salePrice: 34.99,
-    image:
-      'https://images.unsplash.com/photo-1583394838336-acd977736f90?w=500&h=500&fit=crop',
-    badge: 'Sale',
-  },
-  {
-    name: 'Mini Portable Blender Bottle',
-    price: 32.99,
-    salePrice: 24.99,
-    image:
-      'https://images.unsplash.com/photo-1570197788417-0e82375c9371?w=500&h=500&fit=crop',
-    badge: 'Sale',
-  },
-  {
-    name: 'Magnetic Car Phone Holder',
-    price: 28.99,
-    salePrice: 26.99,
-    image:
-      'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?w=500&h=500&fit=crop',
-  },
-  {
-    name: 'USB Rechargeable Table Lamp',
-    price: 34.99,
-    image:
-      'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=500&h=500&fit=crop',
-  },
-  {
-    name: 'Foldable Laptop Stand',
-    price: 17.99,
-    salePrice: 14.99,
-    image:
-      'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=500&h=500&fit=crop',
-  },
-  {
-    name: '40oz Stainless Steel Tumbler',
-    price: 12.99,
-    image:
-      'https://images.unsplash.com/photo-1577937927133-66ef06acdf18?w=500&h=500&fit=crop',
-  },
-  {
-    name: 'Travel Jewelry Organizer',
-    price: 19.99,
-    salePrice: 15.99,
-    image:
-      'https://images.unsplash.com/photo-1617038220319-276d3cfab638?w=500&h=500&fit=crop',
-    badge: 'Sale',
-  },
-  {
-    name: 'LED Vanity Mirror',
-    price: 39.99,
-    image:
-      'https://images.unsplash.com/photo-1522337660859-02fbefca4702?w=500&h=500&fit=crop',
-  },
-  {
-    name: 'Magnetic Cable Organizer',
-    price: 21.99,
-    image:
-      'https://images.unsplash.com/photo-1517430816045-df4b7de11d1d?w=500&h=500&fit=crop',
-  },
-  {
-    name: 'Adjustable Closet Hangers',
-    price: 14.99,
-    image:
-      'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=500&h=500&fit=crop',
-  },
-  {
-    name: 'Portable Lint Remover',
-    price: 44.99,
-    salePrice: 38.99,
-    image:
-      'https://images.unsplash.com/photo-1583947582886-f40ec95dd752?w=500&h=500&fit=crop',
-    badge: 'Sale',
-  },
-  {
-    name: 'Travel Packing Cubes Set',
-    price: 18.99,
-    image:
-      'https://images.unsplash.com/photo-1527631746610-bca00a040d60?w=500&h=500&fit=crop',
-  },
-];
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export default function Home() {
   const [failedCategoryImages, setFailedCategoryImages] = useState<
@@ -101,18 +15,19 @@ export default function Home() {
 
   // Sample products data
   const featuredProducts = catalogProducts.slice(0, 6);
-  const featuredDisplayProducts = featuredProducts.map(
-    ({ salePrice: _salePrice, badge: _badge, ...product }) => product,
-  );
-  const allProducts = Array.from({ length: 200 }, (_, index) => {
-    const product = catalogProducts[index % catalogProducts.length];
+  const allProducts = useMemo(
+    () =>
+      Array.from({ length: 200 }, (_, index) => {
+        const product = catalogProducts[index % catalogProducts.length];
 
-    return {
-      ...product,
-      id: `more-to-love-${index + 1}`,
-      detailId: product.id,
-    };
-  });
+        return {
+          ...product,
+          id: `more-to-love-${index + 1}`,
+          detailId: product.id,
+        };
+      }),
+    [],
+  );
   const superSaleProducts = catalogProducts
     .filter((product) => product.superSale)
     .slice(0, 5);
@@ -193,21 +108,23 @@ export default function Home() {
       {/* Featured Products */}
       <section
         id="featured"
-        className="bg-gradient-to-b from-slate-100 to-white py-16"
+        className="bg-gradient-to-b from-slate-100 to-white pt-10 pb-16"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-12">
+          <div className="mb-7">
+            <div className="mb-3 flex items-center gap-3">
+              <span className="h-px w-10 bg-gradient-to-r from-orange-300 via-amber-400 to-orange-500" />
+              <span className="bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 bg-clip-text text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-transparent">
+                Fresh Picks
+              </span>
+            </div>
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">
               Featured Products
             </h2>
-            <p className="text-gray-600">
-              Discover popular picks across gadgets, home upgrades, and
-              everyday-use finds.
-            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5 lg:gap-6">
-            {featuredDisplayProducts.map((product) => (
+            {featuredProducts.map((product) => (
               <div key={product.id} className="mx-auto w-full max-w-[230px]">
                 <ProductCard product={product} />
               </div>
@@ -219,7 +136,7 @@ export default function Home() {
       {/* Super Sale */}
       <section className="bg-gradient-to-r from-rose-50 via-white to-amber-50 py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-12 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="mb-7 flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.26em] text-rose-500">
                 Limited-Time Offers
@@ -227,9 +144,6 @@ export default function Home() {
               <h2 className="mt-3 text-2xl font-semibold text-gray-900">
                 Super Sale
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
-                Extra-value picks with standout markdowns on customer favorites.
-              </p>
             </div>
             <Link
               href="/collections/super-sale"
@@ -252,7 +166,7 @@ export default function Home() {
       {/* Categories Section */}
       <section className="bg-gradient-to-b from-slate-100 to-white py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-12">
+          <h2 className="text-2xl font-semibold text-gray-900 mb-7">
             Categories
           </h2>
           <div className="mx-auto flex max-w-[880px] flex-wrap justify-center gap-5">
@@ -306,14 +220,10 @@ export default function Home() {
       {/* All Products */}
       <section className="bg-gradient-to-b from-slate-100 to-white py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-12">
+          <div className="mb-7">
             <h2 className="mb-4 text-2xl font-semibold text-gray-900">
               More to love
             </h2>
-            <p className="text-gray-600">
-              Browse the full collection with more products loading as you
-              scroll.
-            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5 lg:gap-6">

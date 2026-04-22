@@ -43,7 +43,6 @@ export default function Register() {
       return;
     }
     // Handle registration logic
-    console.log('Register:', formData);
   };
 
   return (

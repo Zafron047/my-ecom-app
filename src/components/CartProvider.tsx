@@ -61,8 +61,6 @@ type CartContextValue = {
   selectedItemCount: number;
   subtotal: number;
   shipping: number;
-  tax: number;
-  total: number;
   openCart: () => void;
   closeCart: () => void;
   toggleCart: () => void;
@@ -72,12 +70,17 @@ type CartContextValue = {
   setItemSelection: (productId: string, selected: boolean) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   removeFromCart: (productId: string) => void;
-  clearCart: () => void;
+  clearSelectedItems: () => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
-const STORAGE_KEY = 'multi-shop-cart';
-const SHIPPING_STORAGE_KEY = 'multi-shop-shipping-option';
+const STORAGE_KEY = 'shop-easy-cart';
+const SHIPPING_STORAGE_KEY = 'shop-easy-shipping-option';
+const LEGACY_STORAGE_KEYS = ['buy-easy-cart', 'multi-shop-cart'];
+const LEGACY_SHIPPING_STORAGE_KEYS = [
+  'buy-easy-shipping-option',
+  'multi-shop-shipping-option',
+];
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -89,7 +92,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      const storedCart = window.localStorage.getItem(STORAGE_KEY);
+      const storedCart =
+        window.localStorage.getItem(STORAGE_KEY) ??
+        LEGACY_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(
+          (value) => value !== null,
+        ) ??
+        null;
 
       if (storedCart) {
         const parsedCart = JSON.parse(storedCart) as Array<
@@ -102,17 +110,30 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             selected: item.selected ?? true,
           })),
         );
+
+        if (!window.localStorage.getItem(STORAGE_KEY)) {
+          window.localStorage.setItem(STORAGE_KEY, storedCart);
+        }
       }
 
-      const storedShippingOption = window.localStorage.getItem(
-        SHIPPING_STORAGE_KEY,
-      ) as ShippingOption | null;
+      const storedShippingOption =
+        (window.localStorage.getItem(SHIPPING_STORAGE_KEY) ??
+          LEGACY_SHIPPING_STORAGE_KEYS.map((key) =>
+            window.localStorage.getItem(key),
+          ).find((value) => value !== null)) as ShippingOption | null;
 
       if (
         storedShippingOption &&
         Object.hasOwn(shippingOptions, storedShippingOption)
       ) {
         setShippingOption(storedShippingOption);
+
+        if (!window.localStorage.getItem(SHIPPING_STORAGE_KEY)) {
+          window.localStorage.setItem(
+            SHIPPING_STORAGE_KEY,
+            storedShippingOption,
+          );
+        }
       }
     } catch {
       // Ignore invalid local cart state and start fresh.
@@ -158,8 +179,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   );
 
   const shipping = selectedItemCount > 0 ? shippingOptions[shippingOption].charge : 0;
-  const tax = subtotal * 0.08;
-  const total = subtotal + shipping + tax;
 
   function openCart() {
     setIsCartOpen(true);
@@ -248,8 +267,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  function clearCart() {
-    setCartItems([]);
+  function clearSelectedItems() {
+    setCartItems((currentItems) =>
+      currentItems.filter((item) => !item.selected),
+    );
   }
 
   const value = {
@@ -262,8 +283,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     selectedItemCount,
     subtotal,
     shipping,
-    tax,
-    total,
     openCart,
     closeCart,
     toggleCart,
@@ -273,7 +292,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItemSelection,
     updateQuantity,
     removeFromCart,
-    clearCart,
+    clearSelectedItems,
   };
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

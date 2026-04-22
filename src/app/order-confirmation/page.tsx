@@ -1,8 +1,13 @@
 'use client';
 
-import { useCart } from '@/components/CartProvider';
+import { type CartItem, useCart } from '@/components/CartProvider';
+import {
+  clearPendingOrderId,
+  readPendingOrderId,
+  shouldClearSelectedItems,
+} from '@/lib/checkoutPendingOrder.mjs';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, Suspense, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 
 interface OrderData {
   id: string;
@@ -25,7 +30,7 @@ interface OrderData {
     expiryDate?: string;
     cvv?: string;
   };
-  items: any[];
+  items: CartItem[];
   totals: {
     subtotal: number;
     shipping: number;
@@ -37,34 +42,36 @@ interface OrderData {
 function OrderConfirmationContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { clearCart } = useCart();
-  const [orderData, setOrderData] = useState<OrderData | null>(null);
-  const [isClient, setIsClient] = useState(false);
+  const { clearSelectedItems } = useCart();
   const hasLoadedRef = useRef(false);
+  const orderId = searchParams.get('orderId');
+  const orderData = useMemo<OrderData | null>(() => {
+    if (!orderId || typeof window === 'undefined') return null;
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+    const storedOrder = localStorage.getItem(`order_${orderId}`);
+    if (!storedOrder) return null;
 
-  useEffect(() => {
-    if (!isClient || hasLoadedRef.current) return;
-
-    // Get order data from URL params or localStorage
-    const orderId = searchParams.get('orderId');
-    if (orderId) {
-      // In a real app, you'd fetch this from an API
-      const storedOrder = localStorage.getItem(`order_${orderId}`);
-      if (storedOrder) {
-        const parsedOrder = JSON.parse(storedOrder);
-        setOrderData(parsedOrder);
-        // Only clear cart once when we successfully load order data
-        clearCart();
-        hasLoadedRef.current = true; // Prevent re-execution
-      }
+    try {
+      return JSON.parse(storedOrder) as OrderData;
+    } catch {
+      return null;
     }
-  }, [isClient]); // Only depend on isClient, not searchParams or clearCart
+  }, [orderId]);
 
-  if (!isClient || !orderData) {
+  useEffect(() => {
+    if (hasLoadedRef.current || !orderData || !orderId) return;
+
+    const pendingOrderId = readPendingOrderId(localStorage);
+    if (shouldClearSelectedItems(pendingOrderId, orderId)) {
+      // Remove only checked-out items and keep unselected items in cart.
+      clearSelectedItems();
+      clearPendingOrderId(localStorage);
+    }
+
+    hasLoadedRef.current = true; // Prevent re-execution
+  }, [clearSelectedItems, orderData, orderId]);
+
+  if (!orderData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -95,11 +102,12 @@ function OrderConfirmationContent() {
               />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Order Confirmed!
+          <h1 className="text-lg font-bold text-gray-900 mb-2">
+            Order Submitted
           </h1>
           <p className="text-gray-600">
-            Thank you for your order. Your order has been successfully placed.
+            Thank you for your order. Please wait for our call to confirm this
+            order.
           </p>
         </div>
 
@@ -110,17 +118,12 @@ function OrderConfirmationContent() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <h3 className="font-medium text-gray-900 mb-2">
-                Order Information
-              </h3>
               <p className="text-sm text-gray-600">
                 <strong>Order ID:</strong> {orderData.id}
               </p>
               <p className="text-sm text-gray-600">
                 <strong>Date:</strong>{' '}
-                {isClient
-                  ? new Date(orderData.orderDate).toLocaleDateString()
-                  : 'Loading...'}
+                {new Date(orderData.orderDate).toLocaleDateString()}
               </p>
               <p className="text-sm text-gray-600">
                 <strong>Payment Method:</strong>{' '}
@@ -130,9 +133,6 @@ function OrderConfirmationContent() {
               </p>
             </div>
             <div>
-              <h3 className="font-medium text-gray-900 mb-2">
-                Customer Details
-              </h3>
               <p className="text-sm text-gray-600">
                 <strong>Name:</strong> {orderData.customer.firstName}{' '}
                 {orderData.customer.lastName}
@@ -168,13 +168,13 @@ function OrderConfirmationContent() {
           </div>
         </div>
 
-        {/* Order Items */}
+        {/* Items */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Order Items
+            Items
           </h2>
           <div className="space-y-4">
-            {orderData.items.map((item: any) => (
+            {orderData.items.map((item) => (
               <div
                 key={item.id}
                 className="flex items-center gap-4 py-4 border-b border-gray-100 last:border-b-0"
@@ -231,18 +231,12 @@ function OrderConfirmationContent() {
         </div>
 
         {/* Actions */}
-        <div className="mt-8 flex gap-4 justify-center">
+        <div className="mt-8 flex justify-center">
           <button
             onClick={() => router.push('/')}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Continue Shopping
-          </button>
-          <button
-            onClick={() => router.push('/products')}
-            className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            View Products
+            Home
           </button>
         </div>
       </div>

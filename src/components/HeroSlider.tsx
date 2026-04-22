@@ -46,18 +46,15 @@ const slides = [
 
 export default function HeroSlider() {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
 
   // Auto-play functionality
   useEffect(() => {
-    if (!isAutoPlaying) return;
-
     const interval = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % slides.length);
     }, 3000); // Change slide every 3 seconds
 
     return () => clearInterval(interval);
-  }, [isAutoPlaying]);
+  }, []);
 
   const goToSlide = (index: number) => {
     setCurrentSlide(index);
@@ -75,7 +72,7 @@ export default function HeroSlider() {
   };
 
   return (
-    <section className="relative h-[60vh] md:h-[70vh] overflow-hidden">
+    <section className="relative h-[42vh] md:h-[70vh] overflow-hidden">
       {/* Slides */}
       <div className="relative h-full">
         {slides.map((slide, index) => (
@@ -99,8 +96,8 @@ export default function HeroSlider() {
             </div>
 
             {/* Content */}
-            <div className="relative h-full flex items-center justify-center z-20">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-white">
+            <div className="relative h-full flex items-center justify-center z-20 pointer-events-none">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-white pointer-events-auto">
                 <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 animate-fade-in">
                   {slide.title}
                 </h1>
@@ -184,12 +181,6 @@ export default function HeroSlider() {
         ))}
       </div>
 
-      {/* Scroll Indicator */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
-        <div className="w-6 h-10 border-2 border-white/50 rounded-full flex justify-center">
-          <div className="w-1 h-3 bg-white/50 rounded-full mt-2 animate-bounce" />
-        </div>
-      </div>
     </section>
   );
 }
