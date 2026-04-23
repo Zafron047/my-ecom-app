@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { type AdminRole } from '@/lib/admin-rbac';
 
 type AdminNavItem = {
@@ -24,7 +24,7 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin',
       label: 'Dashboard',
-      allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+      allowedRoles: ['reseller', 'support', 'manager', 'admin'],
     },
   },
   {
@@ -32,28 +32,28 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/orders',
       label: 'Orders',
-      allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+      allowedRoles: ['reseller', 'support', 'manager', 'admin'],
     },
     children: [
       {
         href: '/admin/orders/pos',
         label: 'POS',
-        allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+        allowedRoles: ['reseller', 'support', 'manager', 'admin'],
       },
       {
         href: '/admin/orders/drafts',
         label: 'Drafts',
-        allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+        allowedRoles: ['reseller', 'support', 'manager', 'admin'],
       },
       {
         href: '/admin/orders/abandoned-checkouts',
         label: 'Abandoned Checkouts',
-        allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+        allowedRoles: ['reseller', 'support', 'manager', 'admin'],
       },
       {
         href: '/admin/orders/delivery-options',
         label: 'Delivery Options',
-        allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+        allowedRoles: ['reseller', 'support', 'manager', 'admin'],
       },
     ],
   },
@@ -62,28 +62,28 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/products',
       label: 'Products',
-      allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+      allowedRoles: ['reseller', 'manager', 'admin'],
     },
     children: [
       {
         href: '/admin/products/categories',
         label: 'Categories',
-        allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+        allowedRoles: ['reseller', 'manager', 'admin'],
       },
       {
         href: '/admin/products/stock',
         label: 'Stock',
-        allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+        allowedRoles: ['reseller', 'manager', 'admin'],
       },
       {
         href: '/admin/products/po',
         label: 'Purchase Order',
-        allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+        allowedRoles: ['reseller', 'manager', 'admin'],
       },
       {
         href: '/admin/products/stock-transfer',
         label: 'Stock Transfers',
-        allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+        allowedRoles: ['reseller', 'manager', 'admin'],
       },
     ],
   },
@@ -92,7 +92,7 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/customers',
       label: 'Customers',
-      allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+      allowedRoles: ['reseller', 'support', 'manager', 'admin'],
     },
   },
   {
@@ -100,18 +100,18 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/accounting',
       label: 'Accounting',
-      allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+      allowedRoles: ['manager', 'admin'],
     },
     children: [
       {
         href: '/admin/accounting/expenses',
         label: 'Expenses',
-        allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+        allowedRoles: ['manager', 'admin'],
       },
       {
         href: '/admin/accounting/pl',
         label: 'Profit / Loss',
-        allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+        allowedRoles: ['manager', 'admin'],
       },
     ],
   },
@@ -126,27 +126,23 @@ type AdminSidebarProps = {
 export default function AdminSidebar({ isOpen, onClose, role }: AdminSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [expandedGroupHref, setExpandedGroupHref] = useState<string | null>(() => {
-    const matchedGroup = adminNavGroups.find((group) =>
-      group.children?.some(
-        (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
-      ),
-    );
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-    return matchedGroup?.parent.href ?? null;
-  });
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
 
-  useEffect(() => {
-    const matchedGroup = adminNavGroups.find(
-      (group) =>
-        pathname === group.parent.href ||
-        group.children?.some(
-          (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
-        ),
-    );
-
-    setExpandedGroupHref(matchedGroup?.parent.href ?? null);
-  }, [pathname]);
+    try {
+      await fetch('/api/admin/logout', {
+        method: 'POST',
+      });
+    } finally {
+      onClose();
+      router.push('/login');
+      router.refresh();
+      setIsLoggingOut(false);
+    }
+  };
 
   const sidebarNavigation = (
     <nav className="flex flex-col gap-1">
@@ -166,7 +162,7 @@ export default function AdminSidebar({ isOpen, onClose, role }: AdminSidebarProp
 
           const parentActive = parentPathActive || childActive;
           const hasChildren = Boolean(group.children?.length);
-          const isExpanded = expandedGroupHref === group.parent.href || childActive;
+          const isExpanded = parentActive;
 
           return (
             <div key={group.parent.href} className="space-y-0.5">
@@ -174,7 +170,6 @@ export default function AdminSidebar({ isOpen, onClose, role }: AdminSidebarProp
                 <button
                   type="button"
                   onClick={() => {
-                    setExpandedGroupHref(group.parent.href);
                     router.push(group.parent.href);
                   }}
                   className={`inline-flex w-full items-center justify-between rounded-xl border px-3 py-1.5 text-left text-[12px] font-semibold transition sm:text-[13px] ${
@@ -241,6 +236,17 @@ export default function AdminSidebar({ isOpen, onClose, role }: AdminSidebarProp
             </div>
           );
         })}
+
+      <div className="mt-3 border-t border-slate-200 pt-3">
+        <button
+          type="button"
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          className="inline-flex w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-70 sm:text-[13px]"
+        >
+          {isLoggingOut ? 'Logging out...' : 'Log Out'}
+        </button>
+      </div>
     </nav>
   );
 

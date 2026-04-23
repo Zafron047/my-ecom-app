@@ -1,6 +1,18 @@
-export const adminRoles = ['reseller', 'support', 'manager', 'owner'] as const;
+export const adminRoles = ['admin', 'manager', 'support', 'reseller'] as const;
 
 export type AdminRole = (typeof adminRoles)[number];
+export const adminPermissions = [
+  'dashboard.read',
+  'orders.read',
+  'orders.write',
+  'products.read',
+  'products.write',
+  'customers.read',
+  'accounting.read',
+  'settings.manage',
+] as const;
+
+export type AdminPermission = (typeof adminPermissions)[number];
 
 export type AdminSession = {
   id: string;
@@ -11,17 +23,57 @@ export type AdminSession = {
 
 type AdminRouteRule = {
   prefix: string;
-  allowedRoles: AdminRole[];
+  requiredPermissions: AdminPermission[];
+};
+
+const rolePermissions: Record<AdminRole, AdminPermission[]> = {
+  admin: [
+    'dashboard.read',
+    'orders.read',
+    'orders.write',
+    'products.read',
+    'products.write',
+    'customers.read',
+    'accounting.read',
+    'settings.manage',
+  ],
+  manager: [
+    'dashboard.read',
+    'orders.read',
+    'orders.write',
+    'products.read',
+    'products.write',
+    'customers.read',
+    'accounting.read',
+  ],
+  support: ['dashboard.read', 'orders.read', 'orders.write', 'customers.read'],
+  reseller: ['dashboard.read', 'orders.read', 'products.read', 'customers.read'],
 };
 
 const adminRouteRules: AdminRouteRule[] = [
   {
     prefix: '/admin/settings',
-    allowedRoles: ['owner'],
+    requiredPermissions: ['settings.manage'],
+  },
+  {
+    prefix: '/admin/accounting',
+    requiredPermissions: ['accounting.read'],
+  },
+  {
+    prefix: '/admin/orders',
+    requiredPermissions: ['orders.read'],
+  },
+  {
+    prefix: '/admin/products',
+    requiredPermissions: ['products.read'],
+  },
+  {
+    prefix: '/admin/customers',
+    requiredPermissions: ['customers.read'],
   },
   {
     prefix: '/admin',
-    allowedRoles: ['reseller', 'support', 'manager', 'owner'],
+    requiredPermissions: ['dashboard.read'],
   },
 ];
 
@@ -40,5 +92,14 @@ export function canAccessAdminPath(pathname: string, role: AdminRole): boolean {
   );
 
   if (!matchedRule) return false;
-  return matchedRule.allowedRoles.includes(role);
+  return matchedRule.requiredPermissions.every((permission) =>
+    canAccessPermission(role, permission),
+  );
+}
+
+export function canAccessPermission(
+  role: AdminRole,
+  permission: AdminPermission,
+): boolean {
+  return rolePermissions[role].includes(permission);
 }

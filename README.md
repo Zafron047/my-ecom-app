@@ -20,6 +20,27 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Admin Auth Setup
+
+1. Copy environment template:
+
+```bash
+cp .env.example .env
+```
+
+2. Generate Prisma client and run migrations:
+
+```bash
+npm run prisma:generate
+npm run prisma:migrate -- --name admin_auth_foundation
+```
+
+3. Seed the first admin account:
+
+```bash
+npm run prisma:seed:admin
+```
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

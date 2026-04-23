@@ -1,45 +1,88 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState } from 'react';
 
-export default function Login() {
+function LoginContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   });
   const [rememberMe, setRememberMe] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle login logic
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      const nextPath = searchParams.get('next') ?? '/admin';
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          rememberMe,
+          nextPath,
+        }),
+      });
+
+      const data = (await response.json()) as {
+        error?: string;
+        redirectTo?: string;
+      };
+
+      if (!response.ok) {
+        setError(data.error ?? 'Login failed. Please try again.');
+        return;
+      }
+
+      router.push(data.redirectTo ?? '/admin');
+      router.refresh();
+    } catch {
+      setError('Login failed. Please check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="w-full max-w-md">
-      <div className="bg-white rounded-lg shadow-lg p-8">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-green-600 rounded-md flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-lg">VP</span>
+      <div className="rounded-lg bg-white p-8 shadow-lg">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-md bg-gradient-to-br from-blue-600 to-green-600">
+            <span className="text-lg font-bold text-white">VP</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Welcome Back</h1>
-          <p className="text-gray-600 text-sm mt-2">
+          <p className="mt-2 text-sm text-gray-600">
             Sign in to access your account
           </p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4 mb-6">
+        <form onSubmit={handleSubmit} className="mb-6 space-y-4">
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-gray-900 mb-2"
+              className="mb-2 block text-sm font-medium text-gray-900"
             >
               Email Address
             </label>
@@ -51,22 +94,19 @@ export default function Login() {
               onChange={handleChange}
               placeholder="you@example.com"
               required
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              className="w-full rounded-lg border border-gray-200 px-4 py-2 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
             />
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="mb-2 flex items-center justify-between">
               <label
                 htmlFor="password"
                 className="block text-sm font-medium text-gray-900"
               >
                 Password
               </label>
-              <Link
-                href="#"
-                className="text-xs text-blue-600 hover:text-blue-700"
-              >
+              <Link href="#" className="text-xs text-blue-600 hover:text-blue-700">
                 Forgot?
               </Link>
             </div>
@@ -76,9 +116,9 @@ export default function Login() {
               name="password"
               value={formData.password}
               onChange={handleChange}
-              placeholder="••••••••"
+              placeholder="********"
               required
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              className="w-full rounded-lg border border-gray-200 px-4 py-2 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
             />
           </div>
 
@@ -88,11 +128,11 @@ export default function Login() {
               type="checkbox"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-200 cursor-pointer"
+              className="h-4 w-4 cursor-pointer rounded border-gray-200"
             />
             <label
               htmlFor="remember"
-              className="ml-2 text-sm text-gray-600 cursor-pointer"
+              className="ml-2 cursor-pointer text-sm text-gray-600"
             >
               Keep me signed in
             </label>
@@ -100,46 +140,55 @@ export default function Login() {
 
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition mt-6"
+            disabled={isSubmitting}
+            className="mt-6 w-full rounded-lg bg-blue-600 py-2 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            Sign In
+            {isSubmitting ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
 
-        {/* Divider */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="flex-1 h-px bg-gray-200" />
+        <div className="mb-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-gray-200" />
           <span className="text-xs text-gray-500">or</span>
-          <div className="flex-1 h-px bg-gray-200" />
+          <div className="h-px flex-1 bg-gray-200" />
         </div>
 
-        {/* Social Buttons */}
-        <div className="space-y-2 mb-6">
-          <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <div className="mb-6 space-y-2">
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
+          >
+            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
               <path d="M15.545 6.558a9.42 9.42 0 011.946 2.921c.881-1.12 1.579-2.436 1.974-3.85.084-.251.166-.502.252-.752-.635.159-1.302.299-1.99.322a4.42 4.42 0 002.048-1.953 8.875 8.875 0 01-2.805.98 4.444 4.444 0 00-7.768 4.05A12.6 12.6 0 002.33 3.06a4.46 4.46 0 001.374 5.93 4.386 4.386 0 01-2.01-.556v.056a4.432 4.432 0 003.562 4.344 4.419 4.419 0 01-2.005.078 4.434 4.434 0 004.14 3.08 8.88 8.88 0 01-5.513 1.9c-.358 0-.716-.02-1.066-.065A12.515 12.515 0 007.738 19.67c7.76 0 11.946-6.435 11.946-12.008 0-.183-.005-.365-.015-.544a8.532 8.532 0 002.087-2.17z" />
             </svg>
             Continue with Google
           </button>
-          <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition text-sm font-medium">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
+          >
+            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
               <path d="M8.42 16.91a7.51 7.51 0 100-15.02A7.568 7.568 0 003.06 4.375a7.52 7.52 0 1010.86 9.83c-.165.25-.373.477-.62.657m4.04-12.93a7.51 7.51 0 11-15.02 0 7.51 7.51 0 0115.02 0z" />
             </svg>
             Continue with Apple
           </button>
         </div>
 
-        {/* Footer */}
         <p className="text-center text-sm text-gray-600">
           Don&apos;t have an account?{' '}
-          <Link
-            href="/register"
-            className="text-blue-600 hover:text-blue-700 font-medium"
-          >
+          <Link href="/register" className="font-medium text-blue-600 hover:text-blue-700">
             Create one
           </Link>
         </p>
       </div>
     </div>
+  );
+}
+
+export default function Login() {
+  return (
+    <Suspense fallback={<div className="w-full max-w-md text-center text-sm text-gray-600">Loading login form...</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }

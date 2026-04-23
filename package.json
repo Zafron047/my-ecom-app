@@ -7,12 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node tests/checkout-pending-order.test.mjs"
+    "test": "node tests/checkout-pending-order.test.mjs",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed:admin": "node prisma/seed-admin.mjs"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.6.0",
     "framer-motion": "^12.38.0",
     "next": "16.2.2",
+    "pg": "^8.20.0",
     "prisma": "^7.6.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
