@@ -1,5 +1,5 @@
 export const CHECKOUT_PENDING_ORDER_KEY = 'shop-easy-pending-order-id';
-const LEGACY_CHECKOUT_PENDING_ORDER_KEYS = ['buy-easy-pending-order-id'];
+const LEGACY_CHECKOUT_PENDING_ORDER_KEYS = [];
 
 export function readPendingOrderId(storage) {
   const currentPendingOrderId = storage.getItem(CHECKOUT_PENDING_ORDER_KEY);

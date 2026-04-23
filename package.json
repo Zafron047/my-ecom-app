@@ -10,7 +10,8 @@
     "test": "node tests/checkout-pending-order.test.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed:admin": "node prisma/seed-admin.mjs"
+    "prisma:seed:admin": "node prisma/seed-admin.mjs",
+    "prisma:seed:ecommerce": "node prisma/seed-ecommerce.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

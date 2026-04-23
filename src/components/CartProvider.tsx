@@ -76,11 +76,8 @@ type CartContextValue = {
 const CartContext = createContext<CartContextValue | null>(null);
 const STORAGE_KEY = 'shop-easy-cart';
 const SHIPPING_STORAGE_KEY = 'shop-easy-shipping-option';
-const LEGACY_STORAGE_KEYS = ['buy-easy-cart', 'multi-shop-cart'];
-const LEGACY_SHIPPING_STORAGE_KEYS = [
-  'buy-easy-shipping-option',
-  'multi-shop-shipping-option',
-];
+const LEGACY_STORAGE_KEYS: string[] = [];
+const LEGACY_SHIPPING_STORAGE_KEYS: string[] = [];
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);

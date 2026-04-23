@@ -31,7 +31,7 @@ async function main() {
     );
   }
 
-  const allowedRoles = ['admin', 'manager', 'support', 'reseller'];
+  const allowedRoles = ['admin', 'manager', 'support'];
   if (!allowedRoles.includes(role)) {
     throw new Error(
       `Invalid ADMIN_SEED_ROLE="${role}". Use one of: ${allowedRoles.join(', ')}`,

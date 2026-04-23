@@ -1,4 +1,4 @@
-export const adminRoles = ['admin', 'manager', 'support', 'reseller'] as const;
+export const adminRoles = ['admin', 'manager', 'support'] as const;
 
 export type AdminRole = (typeof adminRoles)[number];
 export const adminPermissions = [
@@ -47,7 +47,6 @@ const rolePermissions: Record<AdminRole, AdminPermission[]> = {
     'accounting.read',
   ],
   support: ['dashboard.read', 'orders.read', 'orders.write', 'customers.read'],
-  reseller: ['dashboard.read', 'orders.read', 'products.read', 'customers.read'],
 };
 
 const adminRouteRules: AdminRouteRule[] = [

@@ -24,7 +24,7 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin',
       label: 'Dashboard',
-      allowedRoles: ['reseller', 'support', 'manager', 'admin'],
+      allowedRoles: ['support', 'manager', 'admin'],
     },
   },
   {
@@ -32,28 +32,28 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/orders',
       label: 'Orders',
-      allowedRoles: ['reseller', 'support', 'manager', 'admin'],
+      allowedRoles: ['support', 'manager', 'admin'],
     },
     children: [
       {
         href: '/admin/orders/pos',
         label: 'POS',
-        allowedRoles: ['reseller', 'support', 'manager', 'admin'],
+        allowedRoles: ['support', 'manager', 'admin'],
       },
       {
         href: '/admin/orders/drafts',
         label: 'Drafts',
-        allowedRoles: ['reseller', 'support', 'manager', 'admin'],
+        allowedRoles: ['support', 'manager', 'admin'],
       },
       {
         href: '/admin/orders/abandoned-checkouts',
         label: 'Abandoned Checkouts',
-        allowedRoles: ['reseller', 'support', 'manager', 'admin'],
+        allowedRoles: ['support', 'manager', 'admin'],
       },
       {
         href: '/admin/orders/delivery-options',
         label: 'Delivery Options',
-        allowedRoles: ['reseller', 'support', 'manager', 'admin'],
+        allowedRoles: ['support', 'manager', 'admin'],
       },
     ],
   },
@@ -62,28 +62,28 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/products',
       label: 'Products',
-      allowedRoles: ['reseller', 'manager', 'admin'],
+      allowedRoles: ['manager', 'admin'],
     },
     children: [
       {
         href: '/admin/products/categories',
         label: 'Categories',
-        allowedRoles: ['reseller', 'manager', 'admin'],
+        allowedRoles: ['manager', 'admin'],
       },
       {
         href: '/admin/products/stock',
         label: 'Stock',
-        allowedRoles: ['reseller', 'manager', 'admin'],
+        allowedRoles: ['manager', 'admin'],
       },
       {
         href: '/admin/products/po',
         label: 'Purchase Order',
-        allowedRoles: ['reseller', 'manager', 'admin'],
+        allowedRoles: ['manager', 'admin'],
       },
       {
         href: '/admin/products/stock-transfer',
         label: 'Stock Transfers',
-        allowedRoles: ['reseller', 'manager', 'admin'],
+        allowedRoles: ['manager', 'admin'],
       },
     ],
   },
@@ -92,7 +92,7 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/customers',
       label: 'Customers',
-      allowedRoles: ['reseller', 'support', 'manager', 'admin'],
+      allowedRoles: ['support', 'manager', 'admin'],
     },
   },
   {
@@ -112,6 +112,21 @@ const adminNavGroups: AdminNavGroup[] = [
         href: '/admin/accounting/pl',
         label: 'Profit / Loss',
         allowedRoles: ['manager', 'admin'],
+      },
+    ],
+  },
+  {
+    parent: {
+      exactMatch: true,
+      href: '/admin/settings',
+      label: 'Settings',
+      allowedRoles: ['admin'],
+    },
+    children: [
+      {
+        href: '/admin/settings/manage-roles',
+        label: 'Manage Roles',
+        allowedRoles: ['admin'],
       },
     ],
   },

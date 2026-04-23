@@ -28,9 +28,6 @@ const mockStorage = {
   },
 };
 
-mockStorage.setItem('buy-easy-pending-order-id', 'ORD-LEGACY');
-assert.equal(readPendingOrderId(mockStorage), 'ORD-LEGACY');
-
 mockStorage.setItem('shop-easy-pending-order-id', 'ORD-CURRENT');
 assert.equal(readPendingOrderId(mockStorage), 'ORD-CURRENT');
 
