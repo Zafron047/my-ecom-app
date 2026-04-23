@@ -1,7 +1,5 @@
 import type { Metadata } from 'next';
-import { CartProvider } from '@/components/CartProvider';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
+import AppFrame from '@/components/AppFrame';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -27,11 +25,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-white">
-        <CartProvider>
-          <Header />
-          <main className="flex-1">{children}</main>
-          <Footer />
-        </CartProvider>
+        <AppFrame>{children}</AppFrame>
       </body>
     </html>
   );
