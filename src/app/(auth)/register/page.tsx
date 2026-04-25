@@ -1,18 +1,24 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 export default function Register() {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     email: '',
+    phone: '',
     password: '',
     confirmPassword: '',
   });
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [passwordError, setPasswordError] = useState('');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -32,17 +38,60 @@ export default function Register() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError(null);
+    setSubmitSuccess(null);
+
     if (formData.password !== formData.confirmPassword) {
       setPasswordError('Passwords do not match');
       return;
     }
     if (!agreedToTerms) {
-      alert('Please agree to the Terms & Conditions');
+      setSubmitError('Please agree to the Terms & Conditions.');
       return;
     }
-    // Handle registration logic
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          phone: formData.phone,
+          password: formData.password,
+        }),
+      });
+
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setSubmitError(data.error ?? 'Registration failed. Please try again.');
+        return;
+      }
+
+      setSubmitSuccess('Account created successfully. You can now sign in.');
+      setFormData({
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        password: '',
+        confirmPassword: '',
+      });
+      setAgreedToTerms(false);
+      setPasswordError('');
+      router.push('/');
+      router.refresh();
+    } catch {
+      setSubmitError('Registration failed. Please check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -61,6 +110,17 @@ export default function Register() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4 mb-6">
+          {submitError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {submitError}
+            </div>
+          )}
+          {submitSuccess && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              {submitSuccess}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label
@@ -102,6 +162,25 @@ export default function Register() {
 
           <div>
             <label
+              htmlFor="phone"
+              className="block text-sm font-medium text-gray-900 mb-2"
+            >
+              Phone Number
+            </label>
+            <input
+              id="phone"
+              type="tel"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+              placeholder="+8801XXXXXXXXX"
+              required
+              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+            />
+          </div>
+
+          <div>
+            <label
               htmlFor="email"
               className="block text-sm font-medium text-gray-900 mb-2"
             >
@@ -114,7 +193,6 @@ export default function Register() {
               value={formData.email}
               onChange={handleChange}
               placeholder="you@example.com"
-              required
               className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
             />
           </div>
@@ -190,9 +268,10 @@ export default function Register() {
 
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition mt-6"
+            disabled={isSubmitting}
+            className="w-full bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition mt-6 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            Create Account
+            {isSubmitting ? 'Creating Account...' : 'Create Account'}
           </button>
         </form>
 

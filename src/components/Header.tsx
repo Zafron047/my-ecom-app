@@ -29,6 +29,9 @@ export default function Header() {
 
   const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState(() =>
+    typeof document !== 'undefined' && document.cookie.includes('customer_auth=1'),
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const {
@@ -266,7 +269,9 @@ export default function Header() {
     { href: '/products', label: 'Products' },
     { href: '#', label: 'Categories' },
     { href: '/checkout', label: 'Cart' },
-    { href: '/login', label: 'Login' },
+    ...(isCustomerLoggedIn
+      ? [{ href: '#', label: 'Logout' }]
+      : [{ href: '/login', label: 'Login' }]),
     { href: '#', label: 'Support' },
   ];
 
@@ -478,6 +483,19 @@ export default function Header() {
     localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, orderId);
     handleCloseCart();
     router.push(`/order-confirmation?orderId=${orderId}`);
+  }
+
+  async function handleCustomerLogout() {
+    try {
+      const response = await fetch('/api/logout', { method: 'POST' });
+      if (!response.ok) return;
+      setIsCustomerLoggedIn(false);
+      setIsMenuOpen(false);
+      router.push('/');
+      router.refresh();
+    } catch {
+      // Keep current session state if network/request fails.
+    }
   }
 
   return (
@@ -741,6 +759,11 @@ export default function Header() {
                   if (link.label === 'Cart') {
                     event.preventDefault();
                     handleCartToggle();
+                    return;
+                  }
+                  if (link.label === 'Logout') {
+                    event.preventDefault();
+                    void handleCustomerLogout();
                     return;
                   }
 

@@ -8,7 +8,7 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
-    email: '',
+    identifier: '',
     password: '',
   });
   const [rememberMe, setRememberMe] = useState(false);
@@ -25,19 +25,34 @@ function LoginContent() {
     setError(null);
     setIsSubmitting(true);
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+
     try {
-      const nextPath = searchParams.get('next') ?? '/admin';
-      const response = await fetch('/api/admin/login', {
+      const nextPath = searchParams.get('next') ?? '/';
+      const isAdminLogin = nextPath.startsWith('/admin');
+      const endpoint = isAdminLogin ? '/api/admin/login' : '/api/login';
+      const payload = isAdminLogin
+        ? {
+            email: formData.identifier,
+            password: formData.password,
+            rememberMe,
+            nextPath,
+          }
+        : {
+            identifier: formData.identifier,
+            password: formData.password,
+            rememberMe,
+            nextPath,
+          };
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-          rememberMe,
-          nextPath,
-        }),
+        signal: controller.signal,
+        body: JSON.stringify(payload),
       });
 
       const data = (await response.json()) as {
@@ -50,11 +65,17 @@ function LoginContent() {
         return;
       }
 
-      router.push(data.redirectTo ?? '/admin');
+      router.push(data.redirectTo ?? nextPath);
       router.refresh();
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setError('Login is taking too long. Please try again.');
+        return;
+      }
+
       setError('Login failed. Please check your connection and try again.');
     } finally {
+      window.clearTimeout(timeoutId);
       setIsSubmitting(false);
     }
   };
@@ -81,18 +102,18 @@ function LoginContent() {
 
           <div>
             <label
-              htmlFor="email"
+              htmlFor="identifier"
               className="mb-2 block text-sm font-medium text-gray-900"
             >
-              Email Address
+              Email Address or Phone Number
             </label>
             <input
-              id="email"
-              type="email"
-              name="email"
-              value={formData.email}
+              id="identifier"
+              type="text"
+              name="identifier"
+              value={formData.identifier}
               onChange={handleChange}
-              placeholder="you@example.com"
+              placeholder="you@example.com or +8801XXXXXXXXX"
               required
               className="w-full rounded-lg border border-gray-200 px-4 py-2 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
             />

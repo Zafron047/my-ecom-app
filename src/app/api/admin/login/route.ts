@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import {
   ADMIN_SESSION_COOKIE,
@@ -6,8 +5,8 @@ import {
   createSessionToken,
   hashSessionToken,
   sanitizeNextPath,
-  verifyPassword,
 } from '@/lib/admin-auth';
+import { verifyPassword } from '@/lib/password-auth';
 import { prisma } from '@/lib/prisma';
 
 type LoginBody = {
@@ -67,8 +66,12 @@ export async function POST(request: Request) {
     },
   });
 
-  const cookieStore = await cookies();
-  cookieStore.set(ADMIN_SESSION_COOKIE, sessionToken, {
+  const response = NextResponse.json({
+    redirectTo: sanitizeNextPath(body.nextPath),
+    success: true,
+  });
+
+  response.cookies.set(ADMIN_SESSION_COOKIE, sessionToken, {
     expires: expiresAt,
     httpOnly: true,
     path: '/',
@@ -77,7 +80,7 @@ export async function POST(request: Request) {
   });
 
   // Role hint helps proxy do optimistic redirects; server-side guards still enforce DB-backed auth.
-  cookieStore.set('admin_role', adminUser.role, {
+  response.cookies.set('admin_role', adminUser.role, {
     expires: expiresAt,
     httpOnly: true,
     path: '/',
@@ -85,8 +88,5 @@ export async function POST(request: Request) {
     secure: process.env.NODE_ENV === 'production',
   });
 
-  return NextResponse.json({
-    redirectTo: sanitizeNextPath(body.nextPath),
-    success: true,
-  });
+  return response;
 }
