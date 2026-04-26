@@ -6,7 +6,6 @@ const allowedDevOrigins = process.env.NEXT_ALLOWED_DEV_ORIGINS
   .filter(Boolean);
 
 const nextConfig: NextConfig = {
-  distDir: '.next-build',
   ...(allowedDevOrigins?.length
     ? { allowedDevOrigins }
     : {}),
