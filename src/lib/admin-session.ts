@@ -20,7 +20,10 @@ type DbAdminSession = {
     role: PrismaAdminRole;
   };
   id: string;
+  lastSeenAt: Date;
 };
+
+const LAST_SEEN_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 function parseDbRole(role: PrismaAdminRole): ReturnType<typeof parseAdminRole> {
   return parseAdminRole(role);
@@ -71,10 +74,15 @@ async function getSessionFromCookie(
 
   if (!session) return null;
 
-  await prisma.adminSession.update({
-    where: { id: session.id },
-    data: { lastSeenAt: now },
-  });
+  const shouldRefreshLastSeen =
+    now.getTime() - session.lastSeenAt.getTime() >= LAST_SEEN_REFRESH_INTERVAL_MS;
+
+  if (shouldRefreshLastSeen) {
+    await prisma.adminSession.update({
+      where: { id: session.id },
+      data: { lastSeenAt: now },
+    });
+  }
 
   return toSession(session);
 }

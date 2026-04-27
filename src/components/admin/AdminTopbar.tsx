@@ -60,13 +60,13 @@ export default function AdminTopbar({ onMenuToggle, session }: AdminTopbarProps)
         </div>
 
         <div
-          className="mt-2 flex items-center justify-end gap-2 text-xs font-semibold"
+          className="mt-2 flex min-w-0 items-center justify-end gap-2 text-xs font-semibold"
           style={{ color: textColor }}
         >
-          <span className="whitespace-nowrap">Hello,</span>
+          <span className="shrink-0 whitespace-nowrap">Hello,</span>
           <Link
             href="/admin/profile"
-            className="whitespace-nowrap underline underline-offset-2 hover:opacity-90"
+            className="min-w-0 max-w-[220px] truncate whitespace-nowrap underline underline-offset-2 hover:opacity-90"
             style={{
               color: textColor,
               textDecorationLine: 'underline',

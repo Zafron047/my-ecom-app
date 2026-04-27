@@ -157,10 +157,26 @@ model Product {
   categories    ProductCategory[]
   tags          ProductTag[]
   images        ProductImage[]
+  specifications ProductSpecification[]
   orderProducts OrderProduct[]
 
   @@index([status, createdAt])
   @@index([name])
+}
+
+model ProductSpecification {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  name      String
+  value     String
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId, sortOrder])
 }
 
 model ProductVariant {

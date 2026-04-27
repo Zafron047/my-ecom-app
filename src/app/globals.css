@@ -125,30 +125,32 @@ a:hover {
   background-color: var(--dawn-bg-light);
 }
 
-/* Form Elements */
-input,
-textarea,
-select {
-  border: 1px solid var(--dawn-border);
-  padding: 0.75rem;
-  font-size: 1rem;
-  border-radius: 0;
-  transition: border-color 0.2s ease;
-}
+@layer base {
+  /* Form Elements */
+  input,
+  textarea,
+  select {
+    border: 1px solid var(--dawn-border);
+    padding: 0.75rem;
+    font-size: 1rem;
+    border-radius: 0;
+    transition: border-color 0.2s ease;
+  }
 
-input:focus,
-textarea:focus,
-select:focus {
-  outline: none;
-  border-color: var(--dawn-primary);
-  box-shadow: 0 0 0 3px rgba(0, 61, 130, 0.1);
-}
+  input:focus,
+  textarea:focus,
+  select:focus {
+    outline: none;
+    border-color: var(--dawn-primary);
+    box-shadow: 0 0 0 3px rgba(0, 61, 130, 0.1);
+  }
 
-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: var(--dawn-text);
+  label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--dawn-text);
+  }
 }
 
 /* Utility Classes */

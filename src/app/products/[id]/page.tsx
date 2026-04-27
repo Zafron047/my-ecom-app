@@ -404,6 +404,55 @@ export default function ProductDetail() {
             )}
           </div>
 
+          {/* Product Specs */}
+          <div className="mb-8 border-t border-gray-200 pt-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Specifications
+            </h3>
+            <dl className="space-y-3">
+              <div className="flex justify-between">
+                <dt className="text-gray-600">
+                  {detailProduct.specs.highlight1Label}:
+                </dt>
+                <dd className="text-gray-900 font-medium">
+                  {detailProduct.specs.highlight1Value}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-gray-600">
+                  {detailProduct.specs.highlight2Label}:
+                </dt>
+                <dd className="text-gray-900 font-medium">
+                  {detailProduct.specs.highlight2Value}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-gray-600">
+                  {detailProduct.specs.highlight3Label}:
+                </dt>
+                <dd className="text-gray-900 font-medium">
+                  {detailProduct.specs.highlight3Value}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-gray-600">
+                  {detailProduct.specs.highlight4Label}:
+                </dt>
+                <dd className="text-gray-900 font-medium">
+                  {detailProduct.specs.highlight4Value}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-gray-600">
+                  {detailProduct.specs.highlight5Label}:
+                </dt>
+                <dd className="text-gray-900 font-medium">
+                  {detailProduct.specs.highlight5Value}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
           {/* Description */}
           <p className="text-gray-600 mb-6">{detailProduct.description}</p>
 
@@ -489,54 +538,6 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          {/* Product Specs */}
-          <div className="border-t border-gray-200 pt-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Specifications
-            </h3>
-            <dl className="space-y-3">
-              <div className="flex justify-between">
-                <dt className="text-gray-600">
-                  {detailProduct.specs.highlight1Label}:
-                </dt>
-                <dd className="text-gray-900 font-medium">
-                  {detailProduct.specs.highlight1Value}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-600">
-                  {detailProduct.specs.highlight2Label}:
-                </dt>
-                <dd className="text-gray-900 font-medium">
-                  {detailProduct.specs.highlight2Value}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-600">
-                  {detailProduct.specs.highlight3Label}:
-                </dt>
-                <dd className="text-gray-900 font-medium">
-                  {detailProduct.specs.highlight3Value}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-600">
-                  {detailProduct.specs.highlight4Label}:
-                </dt>
-                <dd className="text-gray-900 font-medium">
-                  {detailProduct.specs.highlight4Value}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-600">
-                  {detailProduct.specs.highlight5Label}:
-                </dt>
-                <dd className="text-gray-900 font-medium">
-                  {detailProduct.specs.highlight5Value}
-                </dd>
-              </div>
-            </dl>
-          </div>
         </div>
       </div>
 
