@@ -7,13 +7,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { catalogProducts } from '@/data/products';
-
-const searchableProducts = catalogProducts.map(({ id, name, image }) => ({
-  id,
-  name,
-  image,
-}));
+import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 
 export default function Header() {
   type CheckoutField =
@@ -34,6 +28,9 @@ export default function Header() {
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchableProducts, setSearchableProducts] = useState<
+    { id: string; name: string; image: string }[]
+  >([]);
   const {
     cartItems,
     isCartOpen,
@@ -283,6 +280,36 @@ export default function Header() {
         )
         .slice(0, 5)
     : [];
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSearchProducts() {
+      try {
+        const response = await fetch('/api/storefront/catalog');
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          products: StorefrontCatalogProduct[];
+        };
+        if (!isMounted) return;
+        setSearchableProducts(
+          (payload.products ?? []).map(({ id, name, image }) => ({
+            id,
+            name,
+            image,
+          })),
+        );
+      } catch {
+        // Keep search suggestions empty when loading fails.
+      }
+    }
+
+    void loadSearchProducts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     function handleOutsideClick(event: MouseEvent) {

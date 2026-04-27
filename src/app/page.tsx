@@ -2,78 +2,62 @@
 
 import ProductCard from '@/components/ProductCard';
 import HeroSlider from '@/components/HeroSlider';
-import { catalogProducts } from '@/data/products';
+import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 export default function Home() {
+  const [catalogProducts, setCatalogProducts] = useState<StorefrontCatalogProduct[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
   const [failedCategoryImages, setFailedCategoryImages] = useState<
     Record<string, boolean>
   >({});
   const [visibleProductCount, setVisibleProductCount] = useState(18);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  // Sample products data
   const featuredProducts = catalogProducts.slice(0, 6);
-  const allProducts = useMemo(
-    () =>
-      Array.from({ length: 200 }, (_, index) => {
-        const product = catalogProducts[index % catalogProducts.length];
-
-        return {
-          ...product,
-          id: `more-to-love-${index + 1}`,
-          detailId: product.id,
-        };
-      }),
-    [],
-  );
+  const allProducts = catalogProducts;
   const superSaleProducts = catalogProducts
     .filter((product) => product.superSale)
     .slice(0, 5);
 
-  const categories = [
-    {
-      name: 'Gadgets',
-      image:
-        'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Home Finds',
-      image:
-        'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Car Accessories',
-      image:
-        'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Office Setup',
-      image:
-        'https://images.unsplash.com/photo-1496171367470-9ed9a91ea931?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Kitchen Picks',
-      image:
-        'https://images.unsplash.com/photo-1577937927133-66ef06acdf18?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Beauty Tools',
-      image:
-        'https://images.unsplash.com/photo-1522337660859-02fbefca4702?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Pet Essentials',
-      image:
-        'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Travel Gear',
-      image:
-        'https://images.unsplash.com/photo-1527631746610-bca00a040d60?w=400&h=400&fit=crop',
-    },
-  ];
+  const categories = useMemo(
+    () =>
+      catalogCategories
+        .filter((categoryName) => categoryName !== 'All')
+        .map((categoryName) => ({
+          name: categoryName,
+          image:
+            catalogProducts.find((product) => product.category === categoryName)?.image || '',
+        })),
+    [catalogCategories, catalogProducts],
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCatalog() {
+      try {
+        const response = await fetch('/api/storefront/catalog');
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          categories: string[];
+          products: StorefrontCatalogProduct[];
+        };
+        if (!isMounted) return;
+        setCatalogProducts(payload.products ?? []);
+        setCatalogCategories(payload.categories ?? []);
+      } catch {
+        // Keep empty state when request fails.
+      }
+    }
+
+    void loadCatalog();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -86,9 +70,7 @@ export default function Home() {
 
         if (!entry?.isIntersecting) return;
 
-        setVisibleProductCount((current) =>
-          Math.min(current + 18, allProducts.length),
-        );
+        setVisibleProductCount((current) => Math.min(current + 18, allProducts.length));
       },
       {
         rootMargin: '0px 0px 420px 0px',
