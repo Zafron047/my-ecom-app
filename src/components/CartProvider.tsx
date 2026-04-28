@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -86,6 +87,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [shippingOption, setShippingOption] =
     useState<ShippingOption>('dhaka-city');
   const [hasHydrated, setHasHydrated] = useState(false);
+  const hasSanitizedCartRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -150,6 +152,82 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     window.localStorage.setItem(SHIPPING_STORAGE_KEY, shippingOption);
   }, [hasHydrated, shippingOption]);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    if (hasSanitizedCartRef.current) return;
+    hasSanitizedCartRef.current = true;
+
+    let isMounted = true;
+
+    async function sanitizeCartItems() {
+      try {
+        const response = await fetch('/api/storefront/catalog');
+        if (!response.ok) return;
+
+        const payload = (await response.json()) as {
+          products?: Array<{
+            id: string;
+            image: string;
+            name: string;
+            price: number;
+            salePrice?: number;
+          }>;
+        };
+
+        if (!isMounted || !payload.products) return;
+
+        const productById = new Map(
+          payload.products.map((product) => [product.id, product]),
+        );
+
+        setCartItems((currentItems) => {
+          const nextItems: CartItem[] = [];
+
+          for (const item of currentItems) {
+            const product = productById.get(item.id);
+            if (!product) continue;
+
+            nextItems.push({
+              ...item,
+              detailId: product.id,
+              id: product.id,
+              image: product.image,
+              name: product.name,
+              price: product.price,
+              salePrice: product.salePrice,
+            });
+          }
+
+          const unchanged =
+            nextItems.length === currentItems.length &&
+            nextItems.every((item, index) => {
+              const currentItem = currentItems[index];
+              return (
+                currentItem &&
+                item.id === currentItem.id &&
+                item.name === currentItem.name &&
+                item.price === currentItem.price &&
+                item.salePrice === currentItem.salePrice &&
+                item.image === currentItem.image &&
+                item.quantity === currentItem.quantity &&
+                item.selected === currentItem.selected
+              );
+            });
+
+          return unchanged ? currentItems : nextItems;
+        });
+      } catch {
+        // Keep current cart state if catalog sync fails.
+      }
+    }
+
+    void sanitizeCartItems();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [hasHydrated]);
 
   const itemCount = useMemo(
     () => cartItems.reduce((sum, item) => sum + item.quantity, 0),

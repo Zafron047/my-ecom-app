@@ -13,6 +13,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed:admin": "node prisma/seed-admin.mjs",
     "prisma:seed:catalog": "node prisma/seed-catalog.mjs",
+    "prisma:seed:delivery-areas": "node prisma/seed-delivery-areas.mjs",
     "prisma:import:frontend-images": "node prisma/import-frontend-images.mjs"
   },
   "dependencies": {

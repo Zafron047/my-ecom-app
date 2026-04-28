@@ -7,7 +7,7 @@ import {
   shouldClearSelectedItems,
 } from '@/lib/checkoutPendingOrder.mjs';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 interface OrderData {
   id: string;
@@ -45,7 +45,7 @@ function OrderConfirmationContent() {
   const { clearSelectedItems } = useCart();
   const hasLoadedRef = useRef(false);
   const orderId = searchParams.get('orderId');
-  const orderData = useMemo<OrderData | null>(() => {
+  const localOrderData = useMemo<OrderData | null>(() => {
     if (!orderId || typeof window === 'undefined') return null;
 
     const storedOrder = localStorage.getItem(`order_${orderId}`);
@@ -57,6 +57,44 @@ function OrderConfirmationContent() {
       return null;
     }
   }, [orderId]);
+  const [orderData, setOrderData] = useState<OrderData | null>(localOrderData);
+  const [isLoadingOrder, setIsLoadingOrder] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadOrder() {
+      if (!orderId) {
+        if (!isMounted) return;
+        setIsLoadingOrder(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
+        if (response.ok) {
+          const payload = (await response.json()) as OrderData;
+          if (!isMounted) return;
+          setOrderData(payload);
+          localStorage.setItem(`order_${orderId}`, JSON.stringify(payload));
+          setIsLoadingOrder(false);
+          return;
+        }
+      } catch {
+        // Fall through to local fallback.
+      }
+
+      if (!isMounted) return;
+      setOrderData(localOrderData);
+      setIsLoadingOrder(false);
+    }
+
+    void loadOrder();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [localOrderData, orderId]);
 
   useEffect(() => {
     if (hasLoadedRef.current || !orderData || !orderId) return;
@@ -71,7 +109,7 @@ function OrderConfirmationContent() {
     hasLoadedRef.current = true; // Prevent re-execution
   }, [clearSelectedItems, orderData, orderId]);
 
-  if (!orderData) {
+  if (isLoadingOrder || !orderData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">

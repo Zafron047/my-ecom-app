@@ -2,11 +2,14 @@
 
 import { useCart } from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
+import { getGroupedAreaOptions } from '@/lib/location-presenter';
+import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import SearchableDropdown from '@/components/SearchableDropdown';
 import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 
 export default function Header() {
@@ -47,6 +50,8 @@ export default function Header() {
   } = useCart();
   const [isCheckoutView, setIsCheckoutView] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'bkash' | 'cod' | ''>('');
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [placeOrderError, setPlaceOrderError] = useState('');
   const [showFirstNameSplitHint, setShowFirstNameSplitHint] = useState(false);
   const [showLastNameOnlyHint, setShowLastNameOnlyHint] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Record<CheckoutField, boolean>>({
@@ -71,6 +76,9 @@ export default function Header() {
     thana: '',
     address: '',
   });
+  const [locationDivisions, setLocationDivisions] = useState<string[]>([]);
+  const [locationDistricts, setLocationDistricts] = useState<string[]>([]);
+  const [locationAreas, setLocationAreas] = useState<string[]>([]);
   const desktopSearchRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchRef = useRef<HTMLDivElement | null>(null);
   const firstNameHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -80,121 +88,13 @@ export default function Header() {
     null,
   );
 
-  const divisions = [
-    'Dhaka',
-    'Chittagong',
-    'Rajshahi',
-    'Khulna',
-    'Barisal',
-    'Sylhet',
-    'Rangpur',
-    'Mymensingh',
-  ];
-
-  const districts: Record<string, string[]> = {
-    Dhaka: [
-      'Dhaka',
-      'Gazipur',
-      'Narayanganj',
-      'Manikganj',
-      'Munshiganj',
-      'Narsingdi',
-      'Tangail',
-      'Kishoreganj',
-      'Netrokona',
-      'Sherpur',
-      'Mymensingh',
-      'Jamalpur',
-    ],
-    Chittagong: [
-      'Chittagong',
-      "Cox's Bazar",
-      'Rangamati',
-      'Bandarban',
-      'Khagrachhari',
-      'Feni',
-      'Lakshmipur',
-      'Noakhali',
-      'Brahmanbaria',
-      'Comilla',
-    ],
-    Rajshahi: [
-      'Rajshahi',
-      'Natore',
-      'Naogaon',
-      'Chapainawabganj',
-      'Pabna',
-      'Sirajganj',
-      'Bogra',
-      'Joypurhat',
-    ],
-    Khulna: [
-      'Khulna',
-      'Bagerhat',
-      'Chuadanga',
-      'Jessore',
-      'Jhenaidah',
-      'Kushtia',
-      'Magura',
-      'Meherpur',
-      'Narail',
-      'Satkhira',
-    ],
-    Barisal: [
-      'Barisal',
-      'Barguna',
-      'Bhola',
-      'Jhalokati',
-      'Patuakhali',
-      'Pirojpur',
-    ],
-    Sylhet: ['Sylhet', 'Habiganj', 'Moulvibazar', 'Sunamganj'],
-    Rangpur: [
-      'Rangpur',
-      'Dinajpur',
-      'Gaibandha',
-      'Kurigram',
-      'Lalmonirhat',
-      'Nilphamari',
-      'Panchagarh',
-      'Thakurgaon',
-    ],
-    Mymensingh: ['Mymensingh', 'Jamalpur', 'Netrokona', 'Sherpur'],
-  };
-
-  const thanas: Record<string, string[]> = {
-    Dhaka: [
-      'Dhanmondi',
-      'Gulshan',
-      'Banani',
-      'Uttara',
-      'Mirpur',
-      'Mohammadpur',
-      'Tejgaon',
-      'Ramna',
-      'Motijheel',
-      'Sabujbagh',
-    ],
-    Gazipur: ['Gazipur Sadar', 'Kaliakair', 'Kapasia', 'Sreepur', 'Kaliganj'],
-    Narayanganj: [
-      'Narayanganj Sadar',
-      'Araihazar',
-      'Bandar',
-      'Rupganj',
-      'Sonargaon',
-    ],
-    default: ['Sadar', 'Municipality'],
-  };
-
   const shippingCharge = useMemo(() => {
-    if (!checkoutForm.division) return 0;
-    if (checkoutForm.division === 'Dhaka') {
-      if (!checkoutForm.district) return 0;
-      if (checkoutForm.district === 'Dhaka') return 80;
-      return 120;
-    }
-    return 150;
-  }, [checkoutForm.district, checkoutForm.division]);
+    return getShippingCharge({
+      division: checkoutForm.division,
+      district: checkoutForm.district,
+      area: checkoutForm.thana,
+    });
+  }, [checkoutForm.district, checkoutForm.division, checkoutForm.thana]);
 
   const checkoutTotal = subtotal + shippingCharge;
   const completedFieldGlow =
@@ -260,6 +160,11 @@ export default function Header() {
   const isThanaInvalid = touchedFields.thana && checkoutForm.thana.trim() === '';
   const isAddressInvalid =
     touchedFields.address && checkoutForm.address.trim() === '';
+  const groupedAreaOptions = getGroupedAreaOptions(
+    checkoutForm.division,
+    checkoutForm.district,
+    locationAreas,
+  );
 
   const navLinks = [
     { href: '/', label: 'Home' },
@@ -310,6 +215,98 @@ export default function Header() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDivisions() {
+      try {
+        const response = await fetch('/api/delivery-locations');
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items: string[] };
+        if (!isMounted) return;
+        setLocationDivisions(payload.items ?? []);
+      } catch {
+        if (!isMounted) return;
+        setLocationDivisions([]);
+      }
+    }
+
+    void loadDivisions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!checkoutForm.division) {
+      setLocationDistricts([]);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    async function loadDistricts() {
+      try {
+        const query = new URLSearchParams({
+          type: 'districts',
+          division: checkoutForm.division,
+        });
+        const response = await fetch(`/api/delivery-locations?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items: string[] };
+        if (!isMounted) return;
+        setLocationDistricts(payload.items ?? []);
+      } catch {
+        if (!isMounted) return;
+        setLocationDistricts([]);
+      }
+    }
+
+    void loadDistricts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [checkoutForm.division]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!checkoutForm.division || !checkoutForm.district) {
+      setLocationAreas([]);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    async function loadAreas() {
+      try {
+        const query = new URLSearchParams({
+          type: 'areas',
+          division: checkoutForm.division,
+          district: checkoutForm.district,
+        });
+        const response = await fetch(`/api/delivery-locations?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items: string[] };
+        if (!isMounted) return;
+        setLocationAreas(payload.items ?? []);
+      } catch {
+        if (!isMounted) return;
+        setLocationAreas([]);
+      }
+    }
+
+    void loadAreas();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [checkoutForm.district, checkoutForm.division]);
 
   useEffect(() => {
     function handleOutsideClick(event: MouseEvent) {
@@ -435,6 +432,18 @@ export default function Header() {
     }));
   }
 
+  function handleCheckoutLocationSelect(
+    field: 'division' | 'district' | 'thana',
+    value: string,
+  ) {
+    setCheckoutForm((current) => ({
+      ...current,
+      [field]: value,
+      ...(field === 'division' && { district: '', thana: '' }),
+      ...(field === 'district' && { thana: '' }),
+    }));
+  }
+
   function triggerFirstNameSplitHint() {
     setShowFirstNameSplitHint(true);
     if (firstNameHintTimerRef.current) {
@@ -471,16 +480,18 @@ export default function Header() {
       thana: false,
       address: false,
     });
+    setPlaceOrderError('');
   }
 
-  function handlePlaceOrder() {
+  async function handlePlaceOrder() {
     if (!isCheckoutFormValid) {
+      setPlaceOrderError('Please complete all required fields correctly.');
       return;
     }
+    if (isPlacingOrder) return;
+    setPlaceOrderError('');
 
-    const orderId = 'ORD-' + Date.now();
-    const orderData = {
-      id: orderId,
+    const requestBody = {
       customer: {
         firstName: checkoutForm.firstName.trim(),
         lastName: checkoutForm.lastName.trim(),
@@ -503,13 +514,49 @@ export default function Header() {
         shipping: shippingCharge,
         total: checkoutTotal,
       },
-      orderDate: new Date().toISOString(),
     };
 
-    localStorage.setItem(`order_${orderId}`, JSON.stringify(orderData));
-    localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, orderId);
-    handleCloseCart();
-    router.push(`/order-confirmation?orderId=${orderId}`);
+    setIsPlacingOrder(true);
+    try {
+      const response = await fetch('/api/checkout/place-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        setPlaceOrderError(
+          errorPayload?.error || 'Could not place order. Please try again.',
+        );
+        return;
+      }
+
+      const payload = (await response.json()) as { orderId: string };
+      if (!payload.orderId) {
+        setPlaceOrderError('Could not place order. Please try again.');
+        return;
+      }
+
+      const orderData = {
+        id: payload.orderId,
+        ...requestBody,
+        orderDate: new Date().toISOString(),
+      };
+
+      localStorage.setItem(`order_${payload.orderId}`, JSON.stringify(orderData));
+      localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, payload.orderId);
+      handleCloseCart();
+      router.push(`/order-confirmation?orderId=${payload.orderId}`);
+    } catch {
+      setPlaceOrderError(
+        'Network issue while placing order. Please check your internet and retry.',
+      );
+    } finally {
+      setIsPlacingOrder(false);
+    }
   }
 
   async function handleCustomerLogout() {
@@ -1069,91 +1116,84 @@ export default function Header() {
                     </AnimatePresence>
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <motion.select
-                      name="division"
-                      value={checkoutForm.division}
-                      onChange={handleCheckoutInputChange}
-                      onBlur={() => handleCheckoutFieldBlur('division')}
+                    <motion.div
                       animate={
                         isFieldFilled(checkoutForm.division)
                           ? { scale: 1.01, y: -1 }
                           : { scale: 1, y: 0 }
                       }
                       transition={fieldSpringTransition}
-                      className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 ${
-                        isDivisionInvalid
-                          ? invalidFieldGlow
-                          : isFieldFilled(checkoutForm.division)
-                            ? completedFieldGlow
-                            : 'border-slate-200'
-                      }`}
                     >
-                      <option value="">Select division *</option>
-                      {divisions.map((division) => (
-                        <option key={division} value={division}>
-                          {division}
-                        </option>
-                      ))}
-                    </motion.select>
-                    <motion.select
-                      name="district"
-                      value={checkoutForm.district}
-                      onChange={handleCheckoutInputChange}
-                      onBlur={() => handleCheckoutFieldBlur('district')}
-                      disabled={!checkoutForm.division}
+                      <SearchableDropdown
+                        value={checkoutForm.division}
+                        options={locationDivisions}
+                        placeholder="Select division *"
+                        onSelect={(value) =>
+                          handleCheckoutLocationSelect('division', value)
+                        }
+                        onBlur={() => handleCheckoutFieldBlur('division')}
+                        className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 ${
+                          isDivisionInvalid
+                            ? invalidFieldGlow
+                            : isFieldFilled(checkoutForm.division)
+                              ? completedFieldGlow
+                              : 'border-slate-200'
+                        }`}
+                      />
+                    </motion.div>
+                    <motion.div
                       animate={
                         isFieldFilled(checkoutForm.district)
                           ? { scale: 1.01, y: -1 }
                           : { scale: 1, y: 0 }
                       }
                       transition={fieldSpringTransition}
-                      className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 disabled:bg-slate-50 ${
-                        isDistrictInvalid
-                          ? invalidFieldGlow
-                          : isFieldFilled(checkoutForm.district)
-                            ? completedFieldGlow
-                            : 'border-slate-200'
-                      }`}
                     >
-                      <option value="">Select district *</option>
-                      {checkoutForm.division &&
-                        districts[checkoutForm.division]?.map((district) => (
-                          <option key={district} value={district}>
-                            {district}
-                          </option>
-                        ))}
-                    </motion.select>
+                      <SearchableDropdown
+                        value={checkoutForm.district}
+                        options={locationDistricts}
+                        placeholder="Select district *"
+                        disabled={!checkoutForm.division}
+                        onSelect={(value) =>
+                          handleCheckoutLocationSelect('district', value)
+                        }
+                        onBlur={() => handleCheckoutFieldBlur('district')}
+                        className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 disabled:bg-slate-50 ${
+                          isDistrictInvalid
+                            ? invalidFieldGlow
+                            : isFieldFilled(checkoutForm.district)
+                              ? completedFieldGlow
+                              : 'border-slate-200'
+                        }`}
+                      />
+                    </motion.div>
                   </div>
-                  <motion.select
-                    name="thana"
-                    value={checkoutForm.thana}
-                    onChange={handleCheckoutInputChange}
-                    onBlur={() => handleCheckoutFieldBlur('thana')}
-                    disabled={!checkoutForm.district}
+                  <motion.div
                     animate={
                       isFieldFilled(checkoutForm.thana)
                         ? { scale: 1.01, y: -1 }
                         : { scale: 1, y: 0 }
                     }
                     transition={fieldSpringTransition}
-                    className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 disabled:bg-slate-50 ${
-                      isThanaInvalid
-                        ? invalidFieldGlow
-                        : isFieldFilled(checkoutForm.thana)
-                          ? completedFieldGlow
-                          : 'border-slate-200'
-                    }`}
                   >
-                    <option value="">Select thana/upazila *</option>
-                    {checkoutForm.district &&
-                      (thanas[checkoutForm.district] || thanas.default)?.map(
-                        (thana) => (
-                          <option key={thana} value={thana}>
-                            {thana}
-                          </option>
-                        ),
-                      )}
-                  </motion.select>
+                    <SearchableDropdown
+                      value={checkoutForm.thana}
+                      options={groupedAreaOptions}
+                      placeholder="Select thana/upazila *"
+                      disabled={!checkoutForm.district}
+                      onSelect={(value) =>
+                        handleCheckoutLocationSelect('thana', value)
+                      }
+                      onBlur={() => handleCheckoutFieldBlur('thana')}
+                      className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 disabled:bg-slate-50 ${
+                        isThanaInvalid
+                          ? invalidFieldGlow
+                          : isFieldFilled(checkoutForm.thana)
+                            ? completedFieldGlow
+                            : 'border-slate-200'
+                      }`}
+                    />
+                  </motion.div>
                   <motion.textarea
                     name="address"
                     value={checkoutForm.address}
@@ -1183,22 +1223,22 @@ export default function Header() {
                       <button
                         type="button"
                         onClick={() => setPaymentMethod('bkash')}
-                        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-all duration-200 transform-gpu ${
-                          paymentMethod === 'bkash'
-                            ? 'scale-[1.03] border-2 border-pink-400 bg-pink-50 text-pink-700 shadow-[0_6px_16px_rgba(236,72,153,0.22)]'
-                            : 'border-pink-200 bg-pink-50/70 text-pink-700 hover:bg-pink-100/70'
-                        }`}
+                          className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold transition-all duration-200 transform-gpu ${
+                            paymentMethod === 'bkash'
+                              ? 'scale-[1.03] border-pink-400 bg-pink-50 text-pink-700 shadow-[0_6px_16px_rgba(236,72,153,0.22)]'
+                              : 'border-pink-200 bg-pink-50/70 text-pink-700 hover:bg-pink-100/70'
+                          }`}
                       >
                         bKash
                       </button>
                       <button
                         type="button"
                         onClick={() => setPaymentMethod('cod')}
-                        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-all duration-200 transform-gpu ${
-                          paymentMethod === 'cod'
-                            ? 'scale-[1.03] border-2 border-blue-400 bg-blue-50 text-slate-700 shadow-[0_6px_16px_rgba(59,130,246,0.22)]'
-                            : 'border-blue-200 bg-blue-50/70 text-slate-700 hover:bg-blue-100/70'
-                        }`}
+                          className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold transition-all duration-200 transform-gpu ${
+                            paymentMethod === 'cod'
+                              ? 'scale-[1.03] border-blue-400 bg-blue-50 text-slate-700 shadow-[0_6px_16px_rgba(59,130,246,0.22)]'
+                              : 'border-blue-200 bg-blue-50/70 text-slate-700 hover:bg-blue-100/70'
+                          }`}
                       >
                         Cash on Delivery
                       </button>
@@ -1228,18 +1268,23 @@ export default function Header() {
                     </span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handlePlaceOrder}
-                  disabled={!isCheckoutFormValid}
-                  className={`flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] !text-white transition ${
-                    isCheckoutFormValid
-                      ? 'bg-[#2d5db3] hover:bg-[#244a8f]'
-                      : 'cursor-not-allowed bg-slate-300'
-                  }`}
+                  <button
+                    type="button"
+                    onClick={handlePlaceOrder}
+                    disabled={!isCheckoutFormValid || isPlacingOrder}
+                    className={`flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] !text-white transition ${
+                      isCheckoutFormValid && !isPlacingOrder
+                        ? 'bg-[#2d5db3] hover:bg-[#244a8f]'
+                        : 'cursor-not-allowed bg-slate-300'
+                    }`}
                 >
-                  Place Order
+                  {isPlacingOrder ? 'Placing...' : 'Place Order'}
                 </button>
+                {placeOrderError && (
+                  <p className="mt-2 text-xs font-medium text-rose-600">
+                    {placeOrderError}
+                  </p>
+                )}
               </div>
             </>
           ) : (

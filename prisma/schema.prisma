@@ -371,3 +371,48 @@ model OrderProduct {
   @@index([productId])
   @@index([variantId])
 }
+
+model DeliveryDivision {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  districts DeliveryDistrict[]
+
+  @@index([isActive, name])
+}
+
+model DeliveryDistrict {
+  id         String           @id @default(cuid())
+  redxId     Int              @unique
+  divisionId String
+  division   DeliveryDivision @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  name       String
+  isActive   Boolean          @default(true)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  areas DeliveryArea[]
+
+  @@unique([divisionId, name])
+  @@index([divisionId, isActive, name])
+}
+
+model DeliveryArea {
+  id          String           @id @default(cuid())
+  redxId      Int              @unique
+  districtId  String
+  district    DeliveryDistrict @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  name        String
+  postCode    Int?
+  redxZoneId  Int?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([districtId, isActive, name])
+  @@index([postCode])
+  @@index([redxZoneId])
+}

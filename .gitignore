@@ -26,6 +26,14 @@
 .DS_Store
 *.pem
 /public/uploads/
+/.tmp-redx-area-data/
+/docs/redx-delivery-areas.*
+/redx-delivery-areas-*.tgz
+/redx-delivery-areas-readable/
+/package/
+/src/data/bd-geocode/
+/src/data/redx-areas-flat.json
+/src/data/redx-delivery-areas.json
 
 # debug
 npm-debug.log*
