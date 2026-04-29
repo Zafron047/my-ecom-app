@@ -21,6 +21,7 @@ type VariantFormRow = {
   compareAtPrice: string;
   costPrice: string;
   stockQuantity: string;
+  reorderLevel: string;
   isActive: boolean;
 };
 
@@ -101,6 +102,7 @@ const emptyVariant = (): VariantFormRow => ({
   compareAtPrice: '',
   costPrice: '',
   stockQuantity: '0',
+  reorderLevel: '10',
   isActive: true,
 });
 
@@ -457,6 +459,7 @@ export default function ProductForm({
   const [description, setDescription] = useState(initialProduct.description);
   const shortDescriptionRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
   const [specifications, setSpecifications] = useState(
     initialProduct.specifications.length > 0
       ? initialProduct.specifications
@@ -465,9 +468,10 @@ export default function ProductForm({
   const [removedSpecificationIds, setRemovedSpecificationIds] = useState<string[]>([]);
   const [rows, setRows] = useState(initialProduct.variants);
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState(
-    initialProduct.categoryIds[0] ?? '',
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>(
+    initialProduct.categoryIds,
   );
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState(initialProduct.status);
   const [imageItems, setImageItems] = useState<ProductImageItem[]>(() =>
     initialProduct.images.map((image) => ({
@@ -495,13 +499,6 @@ export default function ProductForm({
         value: getImageOrderKey(item),
       };
     });
-  const categoryOptions = [
-    { label: 'Select category', value: '' },
-    ...categories.map((category) => ({
-      label: category.name,
-      value: category.id,
-    })),
-  ];
   const statusOptions = statuses.map((status) => ({
     label: status.charAt(0).toUpperCase() + status.slice(1),
     value: status,
@@ -513,7 +510,7 @@ export default function ProductForm({
   const currentSnapshot = useMemo(
     () =>
       JSON.stringify({
-        categoryId: selectedCategoryId,
+        categoryIds: [...selectedCategoryIds].sort(),
         description,
         images: imageItems.map((item) =>
           item.type === 'existing'
@@ -537,6 +534,7 @@ export default function ProductForm({
           imageSelection: row.imageSelection,
           isActive: row.isActive,
           price: row.price,
+          reorderLevel: row.reorderLevel,
           size: row.size,
           stockQuantity: row.stockQuantity,
         })),
@@ -556,7 +554,7 @@ export default function ProductForm({
       removedSpecificationIds,
       removedVariantIds,
       rows,
-      selectedCategoryId,
+      selectedCategoryIds,
       selectedStatus,
       shortDescription,
       specifications,
@@ -565,7 +563,7 @@ export default function ProductForm({
   const initialSnapshot = useMemo(
     () =>
       JSON.stringify({
-        categoryId: initialProduct.categoryIds[0] ?? '',
+        categoryIds: [...initialProduct.categoryIds].sort(),
         description: initialProduct.description,
         images: initialProduct.images.map((image) => ({
           key: `existing:${image.id}`,
@@ -582,6 +580,7 @@ export default function ProductForm({
           imageSelection: row.imageSelection,
           isActive: row.isActive,
           price: row.price,
+          reorderLevel: row.reorderLevel,
           size: row.size,
           stockQuantity: row.stockQuantity,
         })),
@@ -628,6 +627,22 @@ export default function ProductForm({
     });
     field.files = files.files;
   }, [imageItems]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        categoryDropdownRef.current &&
+        !categoryDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsCategoryDropdownOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   function updateRow(index: number, patch: Partial<VariantFormRow>) {
     setRows((current) =>
@@ -1028,7 +1043,7 @@ export default function ProductForm({
                 htmlFor="categoryIds"
                 className="text-sm font-medium text-slate-900"
               >
-                Category
+                Categories
               </label>
               {categories.length > 0 && (
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
@@ -1036,13 +1051,75 @@ export default function ProductForm({
                 </span>
               )}
             </div>
-            <FormDropdown
-              id="categoryIds"
-              name="categoryIds"
-              options={categoryOptions}
-              value={selectedCategoryId}
-              onChange={setSelectedCategoryId}
-            />
+            {selectedCategoryIds.map((categoryId) => (
+              <input
+                key={`selected-category-${categoryId}`}
+                type="hidden"
+                name="categoryIds"
+                value={categoryId}
+              />
+            ))}
+            <div className="relative" id="categoryIds" ref={categoryDropdownRef}>
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={isCategoryDropdownOpen}
+                onClick={() =>
+                  setIsCategoryDropdownOpen((current) => !current)
+                }
+                className={`h-11 w-full rounded-xl border bg-white px-3.5 py-2.5 pr-11 text-left text-sm outline-none transition ${
+                  isCategoryDropdownOpen
+                    ? 'border-slate-500 text-slate-900 shadow-md ring-2 ring-slate-200'
+                    : 'border-slate-300 text-slate-800'
+                }`}
+              >
+                {selectedCategoryIds.length > 0
+                  ? `${selectedCategoryIds.length} categories selected`
+                  : 'Select categories'}
+              </button>
+              <SelectArrow />
+              <AnimatePresence>
+                {isCategoryDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                    className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 max-h-64 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-200/70"
+                    role="listbox"
+                  >
+                    {categories.map((category) => {
+                      const checked = selectedCategoryIds.includes(category.id);
+
+                      return (
+                        <label
+                          key={category.id}
+                          className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition ${
+                            checked
+                              ? 'bg-blue-50 text-blue-900'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => {
+                              setSelectedCategoryIds((current) =>
+                                event.target.checked
+                                  ? [...current, category.id]
+                                  : current.filter((id) => id !== category.id),
+                              );
+                            }}
+                            className="h-4 w-4 accent-blue-600"
+                          />
+                          <span className="truncate">{category.name}</span>
+                        </label>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
       </section>
@@ -1126,7 +1203,7 @@ export default function ProductForm({
                     </div>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-[minmax(150px,0.95fr)_minmax(150px,1fr)_minmax(120px,0.8fr)_minmax(110px,0.75fr)]">
+                  <div className="grid gap-3 md:grid-cols-[minmax(150px,0.95fr)_minmax(150px,1fr)_minmax(120px,0.8fr)_minmax(110px,0.75fr)_minmax(120px,0.85fr)]">
                     <label className={compactLabelClass}>
                       <span>Image</span>
                       <VariantImagePicker
@@ -1170,6 +1247,21 @@ export default function ProductForm({
                         onChange={(event) =>
                           updateRow(index, {
                             stockQuantity: event.target.value,
+                          })
+                        }
+                        className={fieldClass}
+                      />
+                    </label>
+                    <label className={compactLabelClass}>
+                      <span>Reorder Level</span>
+                      <input
+                        name="variantReorderLevel"
+                        required
+                        inputMode="numeric"
+                        value={row.reorderLevel}
+                        onChange={(event) =>
+                          updateRow(index, {
+                            reorderLevel: event.target.value,
                           })
                         }
                         className={fieldClass}

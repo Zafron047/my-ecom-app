@@ -133,6 +133,16 @@ function parseStock(value: string) {
   return parsed;
 }
 
+function parseReorderLevel(value: string) {
+  const normalized = value.trim();
+  const parsed = Number(normalized);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error('Reorder level must be a whole number.');
+  }
+
+  return parsed;
+}
+
 function normalizeSkuPart(value: string | null) {
   return (value ?? '')
     .trim()
@@ -171,6 +181,7 @@ function getVariantRows(formData: FormData) {
   const compareAtPrices = formData.getAll('variantCompareAtPrice');
   const costPrices = formData.getAll('variantCostPrice');
   const stockQuantities = formData.getAll('variantStockQuantity');
+  const reorderLevels = formData.getAll('variantReorderLevel');
   const activeStates = formData.getAll('variantIsActive');
   const rowCount = Math.max(
     colors.length,
@@ -179,6 +190,7 @@ function getVariantRows(formData: FormData) {
     compareAtPrices.length,
     costPrices.length,
     stockQuantities.length,
+    reorderLevels.length,
     activeStates.length,
   );
 
@@ -194,6 +206,7 @@ function getVariantRows(formData: FormData) {
     compareAtPrice: parseOptionalDecimal(String(compareAtPrices[index] ?? '')),
     costPrice: parseOptionalDecimal(String(costPrices[index] ?? '')),
     stockQuantity: parseStock(String(stockQuantities[index] ?? '0')),
+    reorderLevel: parseReorderLevel(String(reorderLevels[index] ?? '10')),
     isActive: activeStates[index] !== 'false',
   }));
 }
@@ -741,6 +754,7 @@ export async function createProduct(formData: FormData) {
       compareAtPrice: variant.compareAtPrice,
       costPrice: variant.costPrice,
       stockQuantity: variant.stockQuantity,
+      reorderLevel: variant.reorderLevel,
       isActive: variant.isActive,
     })),
   });
@@ -971,6 +985,7 @@ export async function updateProduct(formData: FormData) {
         compareAtPrice: variant.compareAtPrice,
         costPrice: variant.costPrice,
         stockQuantity: variant.stockQuantity,
+        reorderLevel: variant.reorderLevel,
         isActive: variant.isActive,
       };
 
@@ -1055,4 +1070,38 @@ export async function unarchiveProduct(formData: FormData) {
   });
 
   revalidatePath('/admin/products');
+}
+
+export async function updateVariantInventory(formData: FormData) {
+  await requireAdminPermission('/admin/products/stock', 'products.write');
+
+  const variantId = getString(formData, 'variantId');
+  if (!variantId) {
+    throw new Error('Variant id is required.');
+  }
+
+  const stockQuantity = parseStock(getString(formData, 'stockQuantity'));
+  const reorderLevel = parseReorderLevel(getString(formData, 'reorderLevel'));
+  const q = getString(formData, 'q');
+  const level = getString(formData, 'level');
+
+  await prisma.productVariant.update({
+    where: { id: variantId },
+    data: {
+      stockQuantity,
+      reorderLevel,
+    },
+  });
+
+  revalidatePath('/admin/products/stock');
+
+  const searchParams = new URLSearchParams();
+  if (q) searchParams.set('q', q);
+  if (level) searchParams.set('level', level);
+
+  redirect(
+    searchParams.toString()
+      ? `/admin/products/stock?${searchParams.toString()}`
+      : '/admin/products/stock',
+  );
 }

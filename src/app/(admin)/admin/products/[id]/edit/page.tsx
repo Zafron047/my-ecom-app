@@ -40,6 +40,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
             compareAtPrice: true,
             costPrice: true,
             stockQuantity: true,
+            reorderLevel: true,
             isActive: true,
           },
         },
@@ -117,6 +118,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
             compareAtPrice: decimalToString(variant.compareAtPrice),
             costPrice: decimalToString(variant.costPrice),
             stockQuantity: variant.stockQuantity.toString(),
+            reorderLevel: variant.reorderLevel.toString(),
             isActive: variant.isActive,
           };
         }),

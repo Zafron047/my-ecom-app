@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 type ProductListRow = {
@@ -32,6 +32,7 @@ export default function ProductsListTable({
   removeProductsBulkAction,
   unarchiveProductAction,
 }: ProductsListTableProps) {
+  const router = useRouter();
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
 
   const allSelected =
@@ -61,18 +62,20 @@ export default function ProductsListTable({
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="px-3 py-2">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={(event) =>
-                  setSelectedProductIds(
-                    event.target.checked ? products.map((product) => product.id) : [],
-                  )
-                }
-                aria-label="Select all products"
-                className="h-4 w-4 accent-blue-600"
-              />
+            <th className="px-3 py-2 align-middle">
+              <div className="flex items-center justify-center">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={(event) =>
+                    setSelectedProductIds(
+                      event.target.checked ? products.map((product) => product.id) : [],
+                    )
+                  }
+                  aria-label="Select all products"
+                  className="h-4 w-4 accent-blue-600"
+                />
+              </div>
             </th>
             <th className="px-3 py-2">Product</th>
             <th className="px-3 py-2">Status</th>
@@ -86,21 +89,27 @@ export default function ProductsListTable({
         <tbody className="divide-y divide-slate-100">
           {products.length > 0 ? (
             products.map((product) => (
-              <tr key={product.id} className="align-top">
-                <td className="px-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedSet.has(product.id)}
-                    onChange={(event) =>
-                      setSelectedProductIds((current) =>
-                        event.target.checked
-                          ? [...current, product.id]
-                          : current.filter((id) => id !== product.id),
-                      )
-                    }
-                    aria-label={`Select ${product.name}`}
-                    className="h-4 w-4 accent-blue-600"
-                  />
+              <tr
+                key={product.id}
+                className="align-top transition hover:bg-slate-50/70 cursor-pointer"
+                onClick={() => router.push(`/admin/products/${product.id}/edit`)}
+              >
+                <td className="px-3 py-3 align-middle" onClick={(event) => event.stopPropagation()}>
+                  <div className="flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedSet.has(product.id)}
+                      onChange={(event) =>
+                        setSelectedProductIds((current) =>
+                          event.target.checked
+                            ? [...current, product.id]
+                            : current.filter((id) => id !== product.id),
+                        )
+                      }
+                      aria-label={`Select ${product.name}`}
+                      className="h-4 w-4 accent-blue-600"
+                    />
+                  </div>
                 </td>
                 <td className="px-3 py-3">
                   <div className="flex items-center gap-3">
@@ -137,16 +146,21 @@ export default function ProductsListTable({
                 <td className="px-3 py-3 text-right text-slate-700">
                   {product.priceLabel}
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-3" onClick={(event) => event.stopPropagation()}>
                   <div className="flex justify-end gap-2">
-                    <Link
-                      href={`/admin/products/${product.id}/edit`}
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                    >
-                      Edit
-                    </Link>
                     {product.status === 'archived' ? (
-                      <form action={unarchiveProductAction}>
+                      <form
+                        action={unarchiveProductAction}
+                        onSubmit={(event) => {
+                          if (
+                            !window.confirm(
+                              `Unarchive "${product.name}"?`,
+                            )
+                          ) {
+                            event.preventDefault();
+                          }
+                        }}
+                      >
                         <input type="hidden" name="productId" value={product.id} />
                         <button
                           type="submit"
@@ -156,7 +170,18 @@ export default function ProductsListTable({
                         </button>
                       </form>
                     ) : (
-                      <form action={removeProductAction}>
+                      <form
+                        action={removeProductAction}
+                        onSubmit={(event) => {
+                          if (
+                            !window.confirm(
+                              `Remove "${product.name}"? This may archive it if linked to orders.`,
+                            )
+                          ) {
+                            event.preventDefault();
+                          }
+                        }}
+                      >
                         <input type="hidden" name="productId" value={product.id} />
                         <button
                           type="submit"

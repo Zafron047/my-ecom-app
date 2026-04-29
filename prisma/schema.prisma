@@ -193,6 +193,7 @@ model ProductVariant {
   costPrice      Decimal? @db.Decimal(12, 2)
 
   stockQuantity Int     @default(0)
+  reorderLevel Int     @default(10)
   isActive      Boolean @default(true)
 
   imagePath String?
@@ -205,6 +206,7 @@ model ProductVariant {
   @@index([color])
   @@index([size])
   @@index([stockQuantity])
+  @@index([reorderLevel])
 }
 
 model Category {
