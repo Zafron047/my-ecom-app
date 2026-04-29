@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import path from 'path';
+import sharp from 'sharp';
 import { ProductStatus } from '@prisma/client';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
@@ -13,6 +14,11 @@ const SHORT_DESCRIPTION_WORD_LIMIT = 40;
 const PRODUCT_STORAGE_FOLDER = 'products';
 const SUPABASE_STORAGE_BUCKET =
   process.env.SUPABASE_STORAGE_BUCKET || 'product-images';
+const PRODUCT_IMAGE_VARIANTS = [
+  { suffix: 'thumb', width: 320, quality: 72 },
+  { suffix: 'detail', width: 1200, quality: 78 },
+  { suffix: 'zoom', width: 1800, quality: 75 },
+] as const;
 
 function getSupabaseProjectUrlFromDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -357,12 +363,13 @@ function getStorageObjectKey(storagePath: string) {
 
 async function uploadStorageObject(objectKey: string, file: File) {
   const { bucket, serviceRoleKey, supabaseUrl } = getSupabaseStorageConfig();
+  const fileBytes = new Uint8Array(await file.arrayBuffer());
   const response = await fetch(
     `${supabaseUrl}/storage/v1/object/${bucket}/${encodeStorageObjectKey(
       objectKey,
     )}`,
     {
-      body: Buffer.from(await file.arrayBuffer()),
+      body: fileBytes,
       headers: {
         apikey: serviceRoleKey,
         Authorization: `Bearer ${serviceRoleKey}`,
@@ -380,6 +387,64 @@ async function uploadStorageObject(objectKey: string, file: File) {
   }
 
   return true;
+}
+
+async function uploadStorageBuffer(
+  objectKey: string,
+  bytes: Buffer,
+  contentType: string,
+) {
+  const { bucket, serviceRoleKey, supabaseUrl } = getSupabaseStorageConfig();
+  const bodyBytes = new Uint8Array(bytes);
+  const response = await fetch(
+    `${supabaseUrl}/storage/v1/object/${bucket}/${encodeStorageObjectKey(
+      objectKey,
+    )}`,
+    {
+      body: bodyBytes,
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        'Cache-Control': '31536000',
+        'Content-Type': contentType,
+        'x-upsert': 'true',
+      },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to upload optimized product image: ${await response.text()}`,
+    );
+  }
+}
+
+function getVariantObjectKey(objectKey: string, suffix: string) {
+  const extension = path.extname(objectKey);
+  const base = extension ? objectKey.slice(0, -extension.length) : objectKey;
+  return `${base}-${suffix}.webp`;
+}
+
+async function uploadOptimizedImageVariants(objectKey: string, file: File) {
+  const sourceBuffer = Buffer.from(await file.arrayBuffer());
+
+  for (const variant of PRODUCT_IMAGE_VARIANTS) {
+    const optimizedBuffer = await sharp(sourceBuffer)
+      .rotate()
+      .resize({
+        width: variant.width,
+        withoutEnlargement: true,
+      })
+      .webp({ quality: variant.quality })
+      .toBuffer();
+
+    await uploadStorageBuffer(
+      getVariantObjectKey(objectKey, variant.suffix),
+      optimizedBuffer,
+      'image/webp',
+    );
+  }
 }
 
 async function moveStorageObject(sourceKey: string, destinationKey: string) {
@@ -442,6 +507,7 @@ async function uploadWithUniqueName(
     if (!reservedObjectKeys.has(objectKey)) {
       reservedObjectKeys.add(objectKey);
       if (await uploadStorageObject(objectKey, file)) {
+        await uploadOptimizedImageVariants(objectKey, file);
         return objectKey;
       }
     }
@@ -936,6 +1002,11 @@ export async function removeProduct(formData: FormData) {
     throw new Error('Product id is required.');
   }
 
+  await removeProductById(productId);
+  revalidatePath('/admin/products');
+}
+
+async function removeProductById(productId: string) {
   const orderUsage = await prisma.orderProduct.count({
     where: { productId },
   });
@@ -950,6 +1021,38 @@ export async function removeProduct(formData: FormData) {
       where: { id: productId },
     });
   }
+}
+
+export async function removeProductsBulk(formData: FormData) {
+  await requireAdminPermission('/admin/products', 'products.write');
+  const productIds = formData
+    .getAll('productIds')
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (productIds.length === 0) {
+    throw new Error('Select at least one product to remove.');
+  }
+
+  for (const productId of productIds) {
+    await removeProductById(productId);
+  }
+
+  revalidatePath('/admin/products');
+}
+
+export async function unarchiveProduct(formData: FormData) {
+  await requireAdminPermission('/admin/products', 'products.write');
+  const productId = getString(formData, 'productId');
+  if (!productId) {
+    throw new Error('Product id is required.');
+  }
+
+  await prisma.product.update({
+    where: { id: productId },
+    data: { status: ProductStatus.active },
+  });
 
   revalidatePath('/admin/products');
 }

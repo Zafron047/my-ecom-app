@@ -34,7 +34,7 @@
 /src/data/bd-geocode/
 /src/data/redx-areas-flat.json
 /src/data/redx-delivery-areas.json
-
+/to_do.md
 # debug
 npm-debug.log*
 yarn-debug.log*

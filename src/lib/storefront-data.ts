@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { toVariantImageUrl } from '@/lib/image-variants';
 import type {
   StorefrontCatalogProduct,
   StorefrontProductDetail,
@@ -106,14 +107,33 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
   const { price, salePrice } = getPricing(product);
   const hasSale = typeof salePrice === 'number' && salePrice < price;
 
+  const variantRows = product.variants.map((variant) => {
+    const basePrice = variant.price.toNumber();
+    const compareAt = variant.compareAtPrice?.toNumber();
+    const hasVariantSale = typeof compareAt === 'number' && compareAt > basePrice;
+
+    return {
+      id: variant.id,
+      color: variant.color?.trim() || 'Standard',
+      size: variant.size?.trim() || 'Standard',
+      price: hasVariantSale ? compareAt : basePrice,
+      ...(hasVariantSale ? { salePrice: basePrice } : {}),
+      image: toVariantImageUrl(
+        variant.imagePath || getPrimaryImage(product),
+        'thumb',
+      ),
+    };
+  });
+
   return {
     id: product.id,
     name: product.name,
     price,
     ...(hasSale ? { salePrice } : {}),
-    image: getPrimaryImage(product),
+    image: toVariantImageUrl(getPrimaryImage(product), 'thumb'),
     category: getCategoryName(product),
     ...(hasSale ? { badge: 'Sale', superSale: true } : {}),
+    variants: variantRows,
   };
 }
 

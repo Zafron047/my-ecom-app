@@ -1,6 +1,7 @@
 'use client';
 
 import { useCart } from '@/components/CartProvider';
+import { toVariantImageUrl } from '@/lib/image-variants';
 import type {
   StorefrontCatalogProduct,
   StorefrontProductDetail,
@@ -12,13 +13,22 @@ import { useEffect, useMemo, useState } from 'react';
 export default function ProductDetail() {
   const params = useParams<{ id: string }>();
   const productId = params?.id;
-  const { addToCart } = useCart();
-  const [quantity, setQuantity] = useState(1);
+  const { addToCart, cartItems, updateQuantity } = useCart();
   const [selectedImage, setSelectedImage] = useState(0);
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
+  const [isZooming, setIsZooming] = useState(false);
+  const [zoomLensX, setZoomLensX] = useState(0);
+  const [zoomLensY, setZoomLensY] = useState(0);
   const [product, setProduct] = useState<StorefrontProductDetail | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<StorefrontCatalogProduct[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notFoundState, setNotFoundState] = useState(false);
+  const [fallbackImageSet, setFallbackImageSet] = useState<Record<number, boolean>>(
+    {},
+  );
+  const [zoomFallbackImageSet, setZoomFallbackImageSet] = useState<Record<number, boolean>>(
+    {},
+  );
 
   useEffect(() => {
     if (!productId) return;
@@ -74,10 +84,28 @@ export default function ProductDetail() {
     };
   }, [productId]);
 
+  const activeVariant = useMemo(
+    () => product?.variants?.[selectedVariantIndex],
+    [product, selectedVariantIndex],
+  );
+  const productCartItems = useMemo(
+    () => cartItems.filter((item) => item.detailId === product?.id),
+    [cartItems, product?.id],
+  );
+  const activeVariantCartItem = useMemo(
+    () =>
+      productCartItems.find((item) =>
+        activeVariant?.id ? item.variantId === activeVariant.id : false,
+      ),
+    [activeVariant?.id, productCartItems],
+  );
+  const activeVariantQuantity = activeVariantCartItem?.quantity ?? 0;
+  const activePrice = activeVariant?.price ?? product?.price ?? 0;
+  const activeSalePrice = activeVariant?.salePrice ?? product?.salePrice;
   const discount = useMemo(() => {
-    if (!product?.salePrice) return 0;
-    return Math.round(((product.price - product.salePrice) / product.price) * 100);
-  }, [product]);
+    if (!activeSalePrice || activePrice <= activeSalePrice) return 0;
+    return Math.round(((activePrice - activeSalePrice) / activePrice) * 100);
+  }, [activePrice, activeSalePrice]);
 
   if (notFoundState) {
     notFound();
@@ -92,9 +120,22 @@ export default function ProductDetail() {
   }
 
   const safeSelectedImage = product.images[selectedImage] ?? product.image;
+  const resolvedSelectedImage = fallbackImageSet[selectedImage]
+    ? safeSelectedImage
+    : toVariantImageUrl(safeSelectedImage, 'detail');
+  const zoomSelectedImage = zoomFallbackImageSet[selectedImage]
+    ? safeSelectedImage
+    : toVariantImageUrl(safeSelectedImage, 'zoom');
+  const DETAIL_BOX_SIZE = 584;
+  const LENS_SIZE = 140;
+  const ZOOM_SCALE = 2.2;
+  const toOriginalFromVariantUrl = (imageUrl: string) =>
+    imageUrl.replace(/-(thumb|detail|zoom)\.webp$/i, (match) =>
+      match.includes('.webp') ? '.webp' : match,
+    );
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       <nav className="mb-8 flex items-center space-x-2 text-sm">
         <Link href="/" className="text-blue-600 hover:text-blue-700">
           Home
@@ -107,49 +148,124 @@ export default function ProductDetail() {
         <span className="text-gray-600">{product.name}</span>
       </nav>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mb-16">
-        <div>
-          <div className="mb-4 overflow-hidden rounded-lg bg-gray-100 aspect-square">
-            {safeSelectedImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={safeSelectedImage}
-                alt={product.name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full grid place-items-center text-slate-500">
-                No image
-              </div>
-            )}
+      <div className="mb-16 grid grid-cols-1 gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="self-start lg:sticky lg:top-28">
+          <div className="relative z-20 mb-4">
+            <div
+              className="relative z-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+              style={{ width: DETAIL_BOX_SIZE, height: DETAIL_BOX_SIZE }}
+              onMouseEnter={() => setIsZooming(true)}
+              onMouseLeave={() => setIsZooming(false)}
+              onMouseMove={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                const x = Math.max(
+                  LENS_SIZE / 2,
+                  Math.min(event.clientX - rect.left, rect.width - LENS_SIZE / 2),
+                );
+                const y = Math.max(
+                  LENS_SIZE / 2,
+                  Math.min(event.clientY - rect.top, rect.height - LENS_SIZE / 2),
+                );
+                setZoomLensX(x - LENS_SIZE / 2);
+                setZoomLensY(y - LENS_SIZE / 2);
+              }}
+            >
+              {safeSelectedImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={resolvedSelectedImage}
+                  alt={product.name}
+                  className={`h-full w-full object-cover transition-opacity duration-150 ${isZooming ? 'opacity-0' : 'opacity-100'}`}
+                  onError={() =>
+                    setFallbackImageSet((current) => ({
+                      ...current,
+                      [selectedImage]: true,
+                    }))
+                  }
+                />
+              ) : (
+                <div className="w-full h-full grid place-items-center text-slate-500">
+                  No image
+                </div>
+              )}
+              {safeSelectedImage && isZooming && (
+                <div
+                  className="absolute inset-0 h-full w-full bg-no-repeat"
+                  style={{
+                    backgroundImage: `url(${zoomSelectedImage})`,
+                    backgroundPosition: `-${zoomLensX * ZOOM_SCALE}px -${zoomLensY * ZOOM_SCALE}px`,
+                    backgroundSize: `${DETAIL_BOX_SIZE * ZOOM_SCALE}px ${DETAIL_BOX_SIZE * ZOOM_SCALE}px`,
+                  }}
+                />
+              )}
+              {isZooming && safeSelectedImage && (
+                <div
+                  className="pointer-events-none absolute rounded-md border border-blue-500/90 bg-blue-200/15 shadow-[0_0_0_1px_rgba(255,255,255,0.7)] backdrop-blur-[1px]"
+                  style={{
+                    width: LENS_SIZE,
+                    height: LENS_SIZE,
+                    transform: `translate(${zoomLensX}px, ${zoomLensY}px)`,
+                  }}
+                />
+              )}
+              {safeSelectedImage && (
+                <div className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-slate-900/75 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white">
+                  Zoom
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             {product.images.map((image, index) => (
               <button
                 key={`${image}-${index}`}
                 onClick={() => setSelectedImage(index)}
-                className={`w-20 h-20 rounded overflow-hidden border-2 transition ${
+                className={`h-20 w-20 overflow-hidden rounded-md border-2 transition ${
                   selectedImage === index
                     ? 'border-blue-600'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={image} alt={`View ${index + 1}`} className="w-full h-full object-cover" />
+                <img
+                  src={fallbackImageSet[index] ? image : toVariantImageUrl(image, 'detail')}
+                  alt={`View ${index + 1}`}
+                  className="w-full h-full object-cover"
+                  onError={() =>
+                    setFallbackImageSet((current) => ({
+                      ...current,
+                      [index]: true,
+                    }))
+                  }
+                />
               </button>
             ))}
           </div>
+          {/* Preload zoom variant once selected; fallback to original if missing */}
+          {safeSelectedImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={zoomSelectedImage}
+              alt=""
+              className="hidden"
+              aria-hidden="true"
+              onError={() =>
+                setZoomFallbackImageSet((current) => ({
+                  ...current,
+                  [selectedImage]: true,
+                }))
+              }
+            />
+          ) : null}
         </div>
 
-        <div>
-          <div className="mb-4 flex items-start justify-between">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-5 flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{product.name}</h1>
-              <div className="flex items-center gap-2 mb-4">
-                <span className="text-sm text-gray-600">
-                  {product.rating} ({product.reviews} reviews)
-                </span>
-              </div>
+              <h1 className="mb-2 text-3xl font-bold text-gray-900">{product.name}</h1>
+              <p className="mb-1 bg-gradient-to-r from-violet-600 via-blue-600 to-cyan-500 bg-clip-text text-xs font-semibold uppercase tracking-[0.08em] text-transparent">
+                {product.category}
+              </p>
             </div>
             {discount > 0 && (
               <div className="bg-red-500 text-white px-3 py-1 rounded font-semibold">
@@ -160,18 +276,24 @@ export default function ProductDetail() {
 
           <div className="mb-6">
             <div className="flex items-baseline gap-3 mb-2">
-              {product.salePrice ? (
+              {activeSalePrice ? (
                 <>
                   <span className="text-3xl font-bold text-gray-900">
-                    ৳{product.salePrice.toFixed(2)}
+                    <span className="bg-gradient-to-r from-emerald-600 to-lime-500 bg-clip-text text-transparent">
+                      BDT {activeSalePrice.toFixed(2)}
+                    </span>
                   </span>
                   <span className="text-lg text-gray-500 line-through">
-                    ৳{product.price.toFixed(2)}
+                    <span className="bg-gradient-to-r from-rose-600 to-orange-500 bg-clip-text text-transparent">
+                      BDT {activePrice.toFixed(2)}
+                    </span>
                   </span>
                 </>
               ) : (
                 <span className="text-3xl font-bold text-gray-900">
-                  ৳{product.price.toFixed(2)}
+                  <span className="bg-gradient-to-r from-emerald-600 to-lime-500 bg-clip-text text-transparent">
+                    BDT {activePrice.toFixed(2)}
+                  </span>
                 </span>
               )}
             </div>
@@ -180,23 +302,118 @@ export default function ProductDetail() {
             </p>
           </div>
 
-          <div className="mb-8 border-t border-gray-200 pt-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Specifications</h3>
-            <dl className="space-y-3">
-              {product.specs.map((spec) => (
-                <div key={`${spec.name}-${spec.value}`} className="flex justify-between gap-4">
-                  <dt className="text-gray-600">{spec.name}:</dt>
-                  <dd className="text-gray-900 font-medium text-right">{spec.value}</dd>
+          {product.variants.length > 0 && (
+            <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+              <p className="mb-3 text-sm font-semibold text-slate-900">Variants</p>
+              <div className="flex flex-wrap gap-2">
+                {product.variants.map((variant, index) => (
+                  <button
+                    key={variant.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedVariantIndex(index);
+                      const variantImage = variant.image;
+                      const imageIndex = product.images.findIndex(
+                        (img) =>
+                          img === variantImage ||
+                          toVariantImageUrl(img, 'thumb') === variantImage ||
+                          img === toOriginalFromVariantUrl(variantImage),
+                      );
+                      setSelectedImage(imageIndex >= 0 ? imageIndex : 0);
+                    }}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                      index === selectedVariantIndex
+                        ? 'border-blue-600 bg-blue-600 text-white'
+                        : 'border-slate-300 bg-white text-slate-700 hover:border-blue-300'
+                    }`}
+                  >
+                    {variant.color} / {variant.size}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!activeVariantCartItem) return;
+                      updateQuantity(activeVariantCartItem.id, activeVariantCartItem.quantity - 1);
+                    }}
+                    className="px-4 py-2 text-lg leading-none text-slate-700 transition hover:bg-slate-100"
+                    aria-label="Decrease quantity"
+                  >
+                    -
+                  </button>
+                  <span className="min-w-10 text-center text-sm font-semibold text-slate-900">
+                    {activeVariantQuantity}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!activeVariantCartItem) {
+                        addToCart(
+                          {
+                            id: product.id,
+                            detailId: product.id,
+                            name: product.name,
+                            price: activePrice,
+                            salePrice: activeSalePrice,
+                            image: activeVariant?.image || product.image,
+                            variantId: activeVariant?.id,
+                            variantLabel: activeVariant
+                              ? `${activeVariant.color} / ${activeVariant.size}`
+                              : undefined,
+                          },
+                          1,
+                        );
+                        return;
+                      }
+                      updateQuantity(activeVariantCartItem.id, activeVariantCartItem.quantity + 1);
+                    }}
+                    className="px-4 py-2 text-lg leading-none text-slate-700 transition hover:bg-slate-100"
+                    aria-label="Increase quantity"
+                  >
+                    +
+                  </button>
                 </div>
-              ))}
-            </dl>
+
+                <button className="rounded-lg border-2 border-blue-600 px-4 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50">
+                  Wishlist
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="mb-6">
+            <button
+              type="button"
+              onClick={() =>
+                addToCart(
+                  {
+                    id: product.id,
+                    detailId: product.id,
+                    name: product.name,
+                    price: activePrice,
+                    salePrice: activeSalePrice,
+                    image: activeVariant?.image || product.image,
+                    variantId: activeVariant?.id,
+                    variantLabel: activeVariant
+                      ? `${activeVariant.color} / ${activeVariant.size}`
+                      : undefined,
+                  },
+                  1,
+                )
+              }
+              className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700"
+            >
+              Add to Cart
+            </button>
           </div>
 
-          <p className="text-gray-600 mb-6">{product.description}</p>
-
-          <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Key Features</h3>
-            <ul className="space-y-2">
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">Key Features</h3>
+            <ul className="space-y-2.5">
               {product.benefits.map((benefit, index) => (
                 <li key={`${benefit}-${index}`} className="flex items-start gap-3 text-gray-700">
                   <span className="mt-1 h-2 w-2 rounded-full bg-green-600" />
@@ -204,55 +421,6 @@ export default function ProductDetail() {
                 </li>
               ))}
             </ul>
-          </div>
-
-          <div className="mb-8">
-            <label className="block text-sm font-semibold text-gray-900 mb-2">Quantity</label>
-            <div className="flex items-center gap-4 mb-6">
-              <button
-                onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                className="px-4 py-2 border border-gray-200 rounded hover:bg-gray-100"
-              >
-                -
-              </button>
-              <input
-                type="number"
-                value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                className="w-16 text-center border border-gray-200 rounded py-2"
-              />
-              <button
-                onClick={() => setQuantity(quantity + 1)}
-                className="px-4 py-2 border border-gray-200 rounded hover:bg-gray-100"
-              >
-                +
-              </button>
-            </div>
-
-            <div className="flex gap-4">
-              <button
-                type="button"
-                onClick={() =>
-                  addToCart(
-                    {
-                      id: product.id,
-                      detailId: product.id,
-                      name: product.name,
-                      price: product.price,
-                      salePrice: product.salePrice,
-                      image: product.image,
-                    },
-                    quantity,
-                  )
-                }
-                className="flex-1 bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-700 transition"
-              >
-                Add to Cart
-              </button>
-              <button className="flex-1 border-2 border-blue-600 text-blue-600 font-semibold py-3 rounded-lg hover:bg-blue-50 transition">
-                Wishlist
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -274,7 +442,7 @@ export default function ProductDetail() {
                 {relatedProduct.name}
               </h3>
               <span className="text-gray-900 font-semibold">
-                ৳{(relatedProduct.salePrice ?? relatedProduct.price).toFixed(2)}
+                BDT {(relatedProduct.salePrice ?? relatedProduct.price).toFixed(2)}
               </span>
             </Link>
           ))}
@@ -283,3 +451,5 @@ export default function ProductDetail() {
     </div>
   );
 }
+
+

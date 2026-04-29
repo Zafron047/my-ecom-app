@@ -14,7 +14,8 @@
     "prisma:seed:admin": "node prisma/seed-admin.mjs",
     "prisma:seed:catalog": "node prisma/seed-catalog.mjs",
     "prisma:seed:delivery-areas": "node prisma/seed-delivery-areas.mjs",
-    "prisma:import:frontend-images": "node prisma/import-frontend-images.mjs"
+    "prisma:import:frontend-images": "node prisma/import-frontend-images.mjs",
+    "images:backfill:variants": "node scripts/backfill-product-image-variants.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

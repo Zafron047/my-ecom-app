@@ -1,8 +1,9 @@
 'use client';
 
 import { useCart } from '@/components/CartProvider';
-import { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
+import { useState } from 'react';
 
 interface Product {
   id: string;
@@ -12,18 +13,54 @@ interface Product {
   salePrice?: number;
   image: string;
   badge?: string;
+  variants: {
+    id: string;
+    color: string;
+    size: string;
+    price: number;
+    salePrice?: number;
+    image: string;
+  }[];
 }
 
 export default function ProductCard({ product }: { product: Product }) {
-  const [imageFailed, setImageFailed] = useState(false);
+  const [activeVariantIndex, setActiveVariantIndex] = useState(0);
   const { cartItems, addToCart, updateQuantity } = useCart();
   const productId = product.detailId ?? product.id;
-  const cartItem = cartItems.find((item) => item.id === productId);
-  const quantity = cartItem?.quantity ?? 0;
+  const productCartItems = cartItems.filter(
+    (item) => item.detailId === productId,
+  );
 
-  const discount = product.salePrice
-    ? Math.round(((product.price - product.salePrice) / product.price) * 100)
-    : 0;
+  const variants = product.variants ?? [];
+  const fallbackVariant = variants[0];
+  const selectedVariant = variants[activeVariantIndex] ?? fallbackVariant;
+  const selectedVariantCartItem = productCartItems.find(
+    (item) => item.variantId === selectedVariant?.id,
+  );
+  const activeVariantQuantity = selectedVariantCartItem?.quantity ?? 0;
+  const hasVariants = variants.length > 1;
+  const activeVariantLabel = selectedVariant
+    ? `${selectedVariant.color} / ${selectedVariant.size}`
+    : 'Standard';
+
+  const activeImage = selectedVariant?.image || product.image;
+  const activePrice = selectedVariant?.price ?? product.price;
+  const activeSalePrice = selectedVariant?.salePrice ?? product.salePrice;
+
+  const discount =
+    activeSalePrice && activePrice > activeSalePrice
+      ? Math.round(((activePrice - activeSalePrice) / activePrice) * 100)
+      : 0;
+
+  const handleVariantSlide = (direction: 'prev' | 'next') => {
+    if (variants.length === 0) return;
+    setActiveVariantIndex((current) => {
+      if (direction === 'prev') {
+        return current === 0 ? variants.length - 1 : current - 1;
+      }
+      return current === variants.length - 1 ? 0 : current + 1;
+    });
+  };
 
   return (
     <div className="group flex h-full flex-col">
@@ -31,26 +68,20 @@ export default function ProductCard({ product }: { product: Product }) {
         href={`/products/${product.detailId ?? product.id}`}
         className="flex flex-1 cursor-pointer flex-col"
       >
-        {/* Image Container */}
         <div className="mb-4 rounded-md border border-gray-200 bg-slate-200/45 transition group-hover:border-gray-300">
           <div className="relative m-[6px] aspect-square overflow-hidden bg-white">
-            {product.image && !imageFailed ? (
-              <img
-                src={product.image}
+            <AnimatePresence mode="wait">
+              <motion.img
+                key={activeImage || `${product.id}-fallback-image`}
+                src={activeImage}
                 alt={product.name}
-                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                onError={() => setImageFailed(true)}
+                initial={{ opacity: 0.35, scale: 0.985 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0.35, scale: 1.015 }}
+                transition={{ duration: 0.24, ease: 'easeOut' }}
+                className="h-full w-full object-contain p-2"
               />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 via-white to-slate-200 text-center">
-                <div>
-                  <p className="px-3 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    {product.name}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-400">Product Preview</p>
-                </div>
-              </div>
-            )}
+            </AnimatePresence>
             {product.badge && (
               <div className="absolute left-2 top-2 rounded-sm bg-[#e85a73] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.04em] text-white">
                 {product.badge}
@@ -64,57 +95,130 @@ export default function ProductCard({ product }: { product: Product }) {
           </div>
         </div>
 
-        {/* Product Info */}
-        <p className="mb-3 min-h-[2.5rem] line-clamp-2 text-center text-[0.8rem] font-normal leading-5 text-gray-900">
+        <p className="mb-2 min-h-[2.5rem] line-clamp-2 text-center text-[0.8rem] font-normal leading-5 text-gray-900">
           {product.name}
         </p>
 
-        {/* Price */}
+        <div className="mb-2 flex items-center justify-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-blue-700">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              handleVariantSlide('prev');
+            }}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!hasVariants}
+            aria-label={`Previous variant for ${product.name}`}
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+          </button>
+          <span className="min-w-[7.5rem] truncate text-center normal-case tracking-normal text-slate-700">
+            {activeVariantLabel}
+          </span>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              handleVariantSlide('next');
+            }}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!hasVariants}
+            aria-label={`Next variant for ${product.name}`}
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </button>
+        </div>
+      </Link>
+
+      <div className="min-h-[52px]">
         <div className="flex min-h-[1.75rem] items-center justify-center gap-2">
-          {product.salePrice ? (
+          {activeSalePrice ? (
             <>
               <span className="text-[0.85rem] text-gray-500 line-through">
-                ৳{product.price.toFixed(2)}
+                BDT {activePrice.toFixed(2)}
               </span>
               <span className="text-[0.96rem] font-medium text-gray-900">
-                ৳{product.salePrice.toFixed(2)}
+                BDT {activeSalePrice.toFixed(2)}
               </span>
             </>
           ) : (
             <span className="text-[0.96rem] font-medium text-gray-900">
-              ৳{product.price.toFixed(2)}
+              BDT {activePrice.toFixed(2)}
             </span>
           )}
         </div>
-      </Link>
+      </div>
 
-      <div className="mt-4 flex w-full items-center justify-between rounded-full border border-[#2d5db3] bg-[#2d5db3] px-4 py-2.5 text-[0.9rem] font-semibold text-white">
-        <button
-          type="button"
-          onClick={() => {
-            if (!cartItem) return;
-            updateQuantity(productId, cartItem.quantity - 1);
-          }}
-          className="leading-none transition hover:opacity-90"
-          aria-label={`Decrease quantity for ${product.name}`}
+      <div className="relative mt-4">
+        <div
+          className="flex w-full items-center justify-between rounded-full border border-[#2d5db3] bg-[#2d5db3] px-4 py-2.5 text-[0.9rem] font-semibold text-white"
+          style={{ display: 'flex' }}
         >
-          -
-        </button>
-        <span className="text-center leading-none">{quantity}</span>
-        <button
-          type="button"
-          onClick={() => {
-            if (!cartItem) {
-              addToCart(product, 1);
-              return;
-            }
-            updateQuantity(productId, cartItem.quantity + 1);
-          }}
-          className="leading-none transition hover:opacity-90"
-          aria-label={`Increase quantity for ${product.name}`}
-        >
-          +
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!selectedVariantCartItem) return;
+              updateQuantity(
+                selectedVariantCartItem.id,
+                selectedVariantCartItem.quantity - 1,
+              );
+            }}
+            className="leading-none transition hover:opacity-90"
+            style={{ width: '40%' }}
+            aria-label={`Decrease quantity for ${product.name}`}
+          >
+            -
+          </button>
+          <span style={{ fontSize: '1.12rem', lineHeight: 1 }}>
+            {activeVariantQuantity}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (!selectedVariantCartItem) {
+                addToCart(
+                  {
+                    ...product,
+                    variantId: selectedVariant?.id,
+                    variantLabel: activeVariantLabel,
+                    image: activeImage,
+                    price: activePrice,
+                    salePrice: activeSalePrice,
+                  },
+                  1,
+                );
+                return;
+              }
+              updateQuantity(
+                selectedVariantCartItem.id,
+                selectedVariantCartItem.quantity + 1,
+              );
+            }}
+            className="leading-none transition hover:opacity-90"
+            style={{ width: '40%' }}
+            aria-label={`Increase quantity for ${product.name}`}
+          >
+            +
+          </button>
+        </div>
       </div>
     </div>
   );

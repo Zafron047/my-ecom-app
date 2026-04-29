@@ -7,6 +7,14 @@ export interface StorefrontCatalogProduct {
   category: string;
   badge?: string;
   superSale?: boolean;
+  variants: {
+    id: string;
+    color: string;
+    size: string;
+    price: number;
+    salePrice?: number;
+    image: string;
+  }[];
 }
 
 export interface StorefrontProductDetail {
@@ -26,4 +34,12 @@ export interface StorefrontProductDetail {
   inStock: boolean;
   rating: number;
   reviews: number;
+  variants: {
+    id: string;
+    color: string;
+    size: string;
+    price: number;
+    salePrice?: number;
+    image: string;
+  }[];
 }

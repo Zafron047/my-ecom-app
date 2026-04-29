@@ -624,7 +624,8 @@ export default function Header() {
                     fill
                     sizes="(max-width: 639px) 51px, 64px"
                     className="object-contain p-0.5"
-                    priority
+                    loading="eager"
+                    fetchPriority="high"
                   />
                 </div>
               </Link>
@@ -1322,6 +1323,11 @@ export default function Header() {
                               >
                                 {item.name}
                               </Link>
+                              {item.variantLabel && (
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {item.variantLabel}
+                                </p>
+                              )}
                               <p className="mt-2 text-sm font-semibold text-slate-900">
                                 ৳{(item.salePrice ?? item.price).toFixed(2)}
                               </p>

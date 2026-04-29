@@ -54,7 +54,8 @@ export default function AdminTopbar({ onMenuToggle, session }: AdminTopbarProps)
               fill
               sizes="48px"
               className="object-contain p-0.5"
-              priority
+              loading="eager"
+              fetchPriority="high"
             />
           </div>
         </div>
@@ -102,7 +103,8 @@ export default function AdminTopbar({ onMenuToggle, session }: AdminTopbarProps)
               fill
               sizes="48px"
               className="object-contain p-0.5"
-              priority
+              loading="eager"
+              fetchPriority="high"
             />
           </div>
         </div>

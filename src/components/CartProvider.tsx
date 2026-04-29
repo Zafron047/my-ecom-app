@@ -12,6 +12,8 @@ import {
 type CartProduct = {
   id: string;
   detailId?: string;
+  variantId?: string;
+  variantLabel?: string;
   name: string;
   price: number;
   salePrice?: number;
@@ -67,10 +69,10 @@ type CartContextValue = {
   toggleCart: () => void;
   addToCart: (product: CartProduct, quantity?: number) => void;
   setShippingOption: (option: ShippingOption) => void;
-  toggleItemSelection: (productId: string) => void;
-  setItemSelection: (productId: string, selected: boolean) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
-  removeFromCart: (productId: string) => void;
+  toggleItemSelection: (lineId: string) => void;
+  setItemSelection: (lineId: string, selected: boolean) => void;
+  updateQuantity: (lineId: string, quantity: number) => void;
+  removeFromCart: (lineId: string) => void;
   clearSelectedItems: () => void;
 };
 
@@ -185,13 +187,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           const nextItems: CartItem[] = [];
 
           for (const item of currentItems) {
-            const product = productById.get(item.id);
+            const productLookupId = item.detailId ?? item.id;
+            const product = productById.get(productLookupId);
             if (!product) continue;
 
             nextItems.push({
               ...item,
               detailId: product.id,
-              id: product.id,
               image: product.image,
               name: product.name,
               price: product.price,
@@ -268,10 +270,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }
 
   function addToCart(product: CartProduct, quantity = 1) {
-    const normalizedId = product.detailId ?? product.id;
+    const productId = product.detailId ?? product.id;
+    const normalizedId = product.variantId
+      ? `${productId}::${product.variantId}`
+      : productId;
     const nextNotice = {
       id: `${normalizedId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: product.name,
+      name: product.variantLabel
+        ? `${product.name} (${product.variantLabel})`
+        : product.name,
       image: product.image,
     };
 
@@ -299,7 +306,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         {
           ...product,
           id: normalizedId,
-          detailId: normalizedId,
+          detailId: productId,
           quantity,
           selected: true,
         },
@@ -307,38 +314,38 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     });
   }
 
-  function toggleItemSelection(productId: string) {
+  function toggleItemSelection(lineId: string) {
     setCartItems((currentItems) =>
       currentItems.map((item) =>
-        item.id === productId ? { ...item, selected: !item.selected } : item,
+        item.id === lineId ? { ...item, selected: !item.selected } : item,
       ),
     );
   }
 
-  function setItemSelection(productId: string, selected: boolean) {
+  function setItemSelection(lineId: string, selected: boolean) {
     setCartItems((currentItems) =>
       currentItems.map((item) =>
-        item.id === productId ? { ...item, selected } : item,
+        item.id === lineId ? { ...item, selected } : item,
       ),
     );
   }
 
-  function updateQuantity(productId: string, quantity: number) {
+  function updateQuantity(lineId: string, quantity: number) {
     if (quantity <= 0) {
-      removeFromCart(productId);
+      removeFromCart(lineId);
       return;
     }
 
     setCartItems((currentItems) =>
       currentItems.map((item) =>
-        item.id === productId ? { ...item, quantity } : item,
+        item.id === lineId ? { ...item, quantity } : item,
       ),
     );
   }
 
-  function removeFromCart(productId: string) {
+  function removeFromCart(lineId: string) {
     setCartItems((currentItems) =>
-      currentItems.filter((item) => item.id !== productId),
+      currentItems.filter((item) => item.id !== lineId),
     );
   }
 

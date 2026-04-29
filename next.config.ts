@@ -31,14 +31,22 @@ const supabaseUrl =
 const supabaseStorageHostname = supabaseUrl
   ? new URL(supabaseUrl).hostname
   : undefined;
+const disableImageOptimization =
+  process.env.NEXT_DISABLE_IMAGE_OPTIMIZATION === 'true';
 
 const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb',
+    },
+  },
   ...(allowedDevOrigins?.length
     ? { allowedDevOrigins }
     : {}),
   ...(supabaseStorageHostname
     ? {
         images: {
+          unoptimized: disableImageOptimization,
           remotePatterns: [
             {
               hostname: supabaseStorageHostname,
@@ -48,7 +56,11 @@ const nextConfig: NextConfig = {
           ],
         },
       }
-    : {}),
+    : {
+        images: {
+          unoptimized: disableImageOptimization,
+        },
+      }),
 };
 
 export default nextConfig;
