@@ -128,6 +128,11 @@ const adminNavGroups: AdminNavGroup[] = [
         label: 'Manage Roles',
         allowedRoles: ['admin'],
       },
+      {
+        href: '/admin/settings/homepage-sections',
+        label: 'Homepage Sections',
+        allowedRoles: ['admin'],
+      },
     ],
   },
 ];

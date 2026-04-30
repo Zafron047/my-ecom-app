@@ -151,8 +151,13 @@ export default async function AdminOrdersPage({ searchParams }: OrdersPageProps)
           <tbody className="divide-y divide-slate-100">
             {orders.length > 0 ? (
               orders.map((order) => (
-                <tr key={order.id} className="align-top">
-                  <td className="px-3 py-3 font-medium text-slate-900">
+                <tr key={order.id} className="align-top transition hover:bg-slate-50">
+                  <td className="relative px-3 py-3 font-medium text-slate-900">
+                    <Link
+                      href={`/admin/orders/${order.id}`}
+                      className="absolute inset-0"
+                      aria-label={`View details for order ${order.orderNumber}`}
+                    />
                     {order.orderNumber}
                   </td>
                   <td className="px-3 py-3 text-slate-700">

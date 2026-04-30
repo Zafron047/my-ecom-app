@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
-import { toVariantImageUrl } from '@/lib/image-variants';
 import type {
   StorefrontCatalogProduct,
+  StorefrontHomepageSection,
   StorefrontProductDetail,
 } from '@/lib/storefront-types';
 
@@ -45,6 +45,16 @@ async function getStorefrontProducts() {
         },
         orderBy: {
           createdAt: 'asc',
+        },
+      },
+      tags: {
+        include: {
+          tag: {
+            select: {
+              name: true,
+              slug: true,
+            },
+          },
         },
       },
     },
@@ -118,20 +128,19 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
       size: variant.size?.trim() || 'Standard',
       price: hasVariantSale ? compareAt : basePrice,
       ...(hasVariantSale ? { salePrice: basePrice } : {}),
-      image: toVariantImageUrl(
-        variant.imagePath || getPrimaryImage(product),
-        'thumb',
-      ),
+      image: variant.imagePath || getPrimaryImage(product),
     };
   });
 
   return {
     id: product.id,
     name: product.name,
+    createdAt: product.createdAt.toISOString(),
     price,
     ...(hasSale ? { salePrice } : {}),
-    image: toVariantImageUrl(getPrimaryImage(product), 'thumb'),
+    image: getPrimaryImage(product),
     category: getCategoryName(product),
+    tags: product.tags.flatMap((row) => [row.tag.slug, row.tag.name]),
     ...(hasSale ? { badge: 'Sale', superSale: true } : {}),
     variants: variantRows,
   };
@@ -140,11 +149,120 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
 export async function getStorefrontCatalog() {
   const products = await getStorefrontProducts();
   const catalogProducts = products.map(toCatalogProduct);
-  const categorySet = new Set(catalogProducts.map((product) => product.category));
+  const homepageSectionDelegate = (prisma as { homepageSection?: unknown })
+    .homepageSection as
+    | {
+        findMany: (args: unknown) => Promise<
+          {
+            id: string;
+            title: string;
+            eyebrow: string | null;
+            variant: 'default' | 'sale';
+            layout: 'grid' | 'carousel';
+            sourceType: 'latest' | 'super_sale' | 'category' | 'tag';
+            sourceValue: string | null;
+            products: { productId: string }[];
+            productLimit: number;
+            displayOrder: number;
+            ctaLabel: string | null;
+            ctaHref: string | null;
+          }[]
+        >;
+      }
+    | undefined;
+  const homepageSections = homepageSectionDelegate
+    ? await homepageSectionDelegate.findMany({
+        orderBy: [
+          {
+            displayOrder: 'asc',
+          },
+          {
+            createdAt: 'asc',
+          },
+        ],
+        where: {
+          isActive: true,
+        },
+        include: {
+          products: {
+            orderBy: {
+              assignedAt: 'asc',
+            },
+            select: {
+              productId: true,
+            },
+          },
+        },
+      })
+    : [];
+  const activeCategories = await prisma.category.findMany({
+    where: {
+      isActive: true,
+      products: {
+        some: {
+          product: {
+            status: 'active',
+          },
+        },
+      },
+    },
+    orderBy: {
+      name: 'asc',
+    },
+    select: {
+      name: true,
+      imagePath: true,
+    },
+  });
 
   return {
     products: catalogProducts,
-    categories: ['All', ...[...categorySet].sort((a, b) => a.localeCompare(b))],
+    homepageSections:
+      homepageSections.length > 0
+        ? homepageSections.map(
+            (section): StorefrontHomepageSection => ({
+              id: section.id,
+              title: section.title,
+              ...(section.eyebrow ? { eyebrow: section.eyebrow } : {}),
+              variant: section.variant,
+              layout: section.layout,
+              sourceType: section.sourceType,
+              ...(section.sourceValue ? { sourceValue: section.sourceValue } : {}),
+              productIds: section.products.map((row) => row.productId),
+              productLimit: section.productLimit,
+              displayOrder: section.displayOrder,
+              ...(section.ctaLabel ? { ctaLabel: section.ctaLabel } : {}),
+              ...(section.ctaHref ? { ctaHref: section.ctaHref } : {}),
+            }),
+          )
+        : [
+            {
+              id: 'default-featured',
+              title: 'Featured Products',
+              eyebrow: 'Fresh Picks',
+              variant: 'default',
+              layout: 'grid',
+              sourceType: 'latest',
+              productLimit: 6,
+              displayOrder: 1,
+            },
+            {
+              id: 'default-super-sale',
+              title: 'Super Sale',
+              eyebrow: 'Limited-Time Offers',
+              variant: 'sale',
+              layout: 'grid',
+              sourceType: 'super_sale',
+              productLimit: 5,
+              displayOrder: 2,
+              ctaLabel: 'Shop all deals',
+              ctaHref: '/collections/super-sale',
+            },
+          ],
+    categories: ['All', ...activeCategories.map((category) => category.name)],
+    categoryThumbnails: Object.fromEntries(
+      activeCategories.map((category) => [category.name, category.imagePath || '']),
+    ),
   };
 }
 
@@ -187,6 +305,16 @@ export async function getStorefrontProductDetailById(productId: string) {
         },
         orderBy: {
           createdAt: 'asc',
+        },
+      },
+      tags: {
+        include: {
+          tag: {
+            select: {
+              name: true,
+              slug: true,
+            },
+          },
         },
       },
     },

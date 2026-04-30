@@ -1,10 +1,12 @@
 export interface StorefrontCatalogProduct {
   id: string;
   name: string;
+  createdAt: string;
   price: number;
   salePrice?: number;
   image: string;
   category: string;
+  tags: string[];
   badge?: string;
   superSale?: boolean;
   variants: {
@@ -15,6 +17,21 @@ export interface StorefrontCatalogProduct {
     salePrice?: number;
     image: string;
   }[];
+}
+
+export interface StorefrontHomepageSection {
+  id: string;
+  title: string;
+  eyebrow?: string;
+  variant: 'default' | 'sale';
+  layout: 'grid' | 'carousel';
+  sourceType: 'latest' | 'super_sale' | 'category' | 'tag';
+  sourceValue?: string;
+  productIds?: string[];
+  productLimit: number;
+  displayOrder: number;
+  ctaLabel?: string;
+  ctaHref?: string;
 }
 
 export interface StorefrontProductDetail {

@@ -77,6 +77,23 @@ enum CouponType {
   FIXED
 }
 
+enum HomepageSectionVariant {
+  default
+  sale
+}
+
+enum HomepageSectionLayout {
+  grid
+  carousel
+}
+
+enum HomepageSectionSourceType {
+  latest
+  super_sale
+  category
+  tag
+}
+
 model AdminUser {
   id           String         @id @default(cuid())
   email        String         @unique
@@ -159,9 +176,43 @@ model Product {
   images        ProductImage[]
   specifications ProductSpecification[]
   orderProducts OrderProduct[]
+  homepageSectionProducts HomepageSectionProduct[]
 
   @@index([status, createdAt])
   @@index([name])
+}
+
+model HomepageSection {
+  id          String                    @id @default(cuid())
+  title       String
+  eyebrow     String?
+  variant     HomepageSectionVariant    @default(default)
+  layout      HomepageSectionLayout     @default(grid)
+  sourceType  HomepageSectionSourceType @default(latest)
+  sourceValue String?
+  productLimit Int                      @default(6)
+  displayOrder Int                      @default(1)
+  ctaLabel    String?
+  ctaHref     String?
+  isActive    Boolean                   @default(true)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  products HomepageSectionProduct[]
+
+  @@index([isActive, displayOrder])
+}
+
+model HomepageSectionProduct {
+  homepageSectionId String
+  productId         String
+  assignedAt        DateTime @default(now())
+
+  homepageSection HomepageSection @relation(fields: [homepageSectionId], references: [id], onDelete: Cascade)
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([homepageSectionId, productId])
+  @@index([productId])
 }
 
 model ProductSpecification {
