@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 export const ADMIN_SESSION_COOKIE = 'admin_session';
+export const ADMIN_ROLE_COOKIE = 'admin_role';
+export const ADMIN_PASSWORD_MIN_LENGTH = 12;
 
 export function createSessionToken(): string {
   return randomBytes(32).toString('hex');
@@ -8,6 +10,15 @@ export function createSessionToken(): string {
 
 export function hashSessionToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+export function normalizeAdminEmail(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+
+  const email = value.trim().toLowerCase();
+  if (!email) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+  return email;
 }
 
 export function createSessionExpiry(rememberMe: boolean): Date {
@@ -25,4 +36,15 @@ export function sanitizeNextPath(value: unknown): string {
   if (!trimmed.startsWith('/')) return '/admin';
   if (trimmed.startsWith('//')) return '/admin';
   return trimmed;
+}
+
+export function validateAdminPassword(password: unknown): string | null {
+  if (typeof password !== 'string') return 'Password is required.';
+  if (password.length < ADMIN_PASSWORD_MIN_LENGTH) {
+    return `Password must be at least ${ADMIN_PASSWORD_MIN_LENGTH} characters.`;
+  }
+  if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+    return 'Password must include at least one letter and one number.';
+  }
+  return null;
 }

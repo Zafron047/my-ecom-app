@@ -6,7 +6,9 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await requireAdminSession('/admin');
+  const session = await requireAdminSession('/admin', {
+    allowPasswordResetRequired: true,
+  });
 
   return <AdminShell session={session}>{children}</AdminShell>;
 }

@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import {
+  ADMIN_ROLE_COOKIE,
   ADMIN_SESSION_COOKIE,
   createSessionExpiry,
   createSessionToken,
   hashSessionToken,
+  normalizeAdminEmail,
   sanitizeNextPath,
 } from '@/lib/admin-auth';
+import { logAdminAudit } from '@/lib/admin-audit';
 import { verifyPassword } from '@/lib/password-auth';
 import { prisma } from '@/lib/prisma';
 
@@ -30,8 +33,8 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid request payload.' }, { status: 400 });
   }
-  const email = body.email?.trim().toLowerCase();
-  const password = body.password?.trim();
+  const email = normalizeAdminEmail(body.email);
+  const password = typeof body.password === 'string' ? body.password : '';
 
   if (!email || !password) {
     return NextResponse.json(
@@ -45,11 +48,27 @@ export async function POST(request: Request) {
   });
 
   if (!adminUser || !adminUser.isActive) {
+    await logAdminAudit({
+      action: 'login',
+      entityId: email,
+      entityType: 'admin_auth',
+      message: 'Admin login failed.',
+      metadata: { email, reason: 'invalid_credentials_or_inactive' },
+      request,
+    });
     return createInvalidCredentialsResponse();
   }
 
   const isValidPassword = await verifyPassword(password, adminUser.passwordHash);
   if (!isValidPassword) {
+    await logAdminAudit({
+      action: 'login',
+      entityId: adminUser.id,
+      entityType: 'admin_auth',
+      message: 'Admin login failed.',
+      metadata: { email, reason: 'invalid_password' },
+      request,
+    });
     return createInvalidCredentialsResponse();
   }
 
@@ -66,8 +85,22 @@ export async function POST(request: Request) {
     },
   });
 
+  const redirectTo = adminUser.mustResetPassword
+    ? '/admin/profile?forcePasswordReset=1'
+    : sanitizeNextPath(body.nextPath);
+
+  await logAdminAudit({
+    action: 'login',
+    actorAdminId: adminUser.id,
+    entityId: adminUser.id,
+    entityType: 'admin_auth',
+    message: 'Admin login succeeded.',
+    metadata: { email, rememberMe },
+    request,
+  });
+
   const response = NextResponse.json({
-    redirectTo: sanitizeNextPath(body.nextPath),
+    redirectTo,
     success: true,
   });
 
@@ -80,7 +113,7 @@ export async function POST(request: Request) {
   });
 
   // Role hint helps proxy do optimistic redirects; server-side guards still enforce DB-backed auth.
-  response.cookies.set('admin_role', adminUser.role, {
+  response.cookies.set(ADMIN_ROLE_COOKIE, adminUser.role, {
     expires: expiresAt,
     httpOnly: true,
     path: '/',

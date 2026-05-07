@@ -18,6 +18,7 @@ export type AdminSession = {
   id: string;
   name: string;
   email: string;
+  mustResetPassword: boolean;
   role: AdminRole;
 };
 

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { ADMIN_SESSION_COOKIE } from '@/lib/admin-auth';
+import { ADMIN_ROLE_COOKIE, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth';
 import { canAccessAdminPath, parseAdminRole } from '@/lib/admin-rbac';
 
 function getEffectiveRole(request: NextRequest) {
-  const cookieRole = parseAdminRole(request.cookies.get('admin_role')?.value);
+  const cookieRole = parseAdminRole(request.cookies.get(ADMIN_ROLE_COOKIE)?.value);
   if (cookieRole) return cookieRole;
 
   if (process.env.NODE_ENV !== 'production') {

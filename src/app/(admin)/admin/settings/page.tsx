@@ -17,13 +17,13 @@ export default async function AdminSettingsPage() {
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="text-base font-semibold text-slate-900">Access Control</h3>
         <p className="mt-2 text-sm text-slate-600">
-          Manage admin roles and account status from one place.
+          Manage staff onboarding, roles, passwords, and sessions.
         </p>
         <Link
           href="/admin/settings/manage-roles"
           className="mt-4 inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
         >
-          Open Manage Roles
+          Open Admin Access
         </Link>
       </div>
 

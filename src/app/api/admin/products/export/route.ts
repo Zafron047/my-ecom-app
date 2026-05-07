@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAdminSession } from '@/lib/admin-session';
+import { requireAdminApiRole } from '@/lib/admin-api-auth';
 import { prisma } from '@/lib/prisma';
 
 function escapeCsvValue(value: string) {
@@ -19,10 +19,8 @@ function toCsvLine(values: Array<string | number | null>) {
 }
 
 export async function GET() {
-  const session = await getAdminSession();
-  if (!session || session.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
-  }
+  const auth = await requireAdminApiRole(['admin']);
+  if (auth.response) return auth.response;
 
   const products = await prisma.product.findMany({
     include: {

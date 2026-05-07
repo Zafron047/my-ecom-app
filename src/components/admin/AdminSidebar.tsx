@@ -125,7 +125,7 @@ const adminNavGroups: AdminNavGroup[] = [
     children: [
       {
         href: '/admin/settings/manage-roles',
-        label: 'Manage Roles',
+        label: 'Admin Access',
         allowedRoles: ['admin'],
       },
       {

@@ -15,9 +15,10 @@ import {
 type DbAdminSession = {
   adminUser: {
     email: string;
-    id: string;
-    name: string;
-    role: PrismaAdminRole;
+      id: string;
+      mustResetPassword: boolean;
+      name: string;
+      role: PrismaAdminRole;
   };
   id: string;
   lastSeenAt: Date;
@@ -41,6 +42,7 @@ function toSession(record: DbAdminSession): AdminSession | null {
     id: record.adminUser.id,
     name: record.adminUser.name,
     email: record.adminUser.email,
+    mustResetPassword: record.adminUser.mustResetPassword,
     role,
   };
 }
@@ -66,6 +68,7 @@ async function getSessionFromCookie(
           id: true,
           name: true,
           email: true,
+          mustResetPassword: true,
           role: true,
         },
       },
@@ -100,11 +103,19 @@ export async function getAdminSession(): Promise<AdminSession | null> {
     id: 'dev-admin',
     name: 'Development Admin',
     email: 'dev-admin@shopeasy.com.bd',
+    mustResetPassword: false,
     role,
   };
 }
 
-export async function requireAdminSession(pathname: string) {
+type RequireAdminSessionOptions = {
+  allowPasswordResetRequired?: boolean;
+};
+
+export async function requireAdminSession(
+  pathname: string,
+  options: RequireAdminSessionOptions = {},
+) {
   const session = await getAdminSession();
 
   if (!session) {
@@ -114,6 +125,10 @@ export async function requireAdminSession(pathname: string) {
 
   if (!canAccessAdminPath(pathname, session.role)) {
     redirect('/admin');
+  }
+
+  if (session.mustResetPassword && !options.allowPasswordResetRequired) {
+    redirect('/admin/profile?forcePasswordReset=1');
   }
 
   return session;

@@ -1,7 +1,7 @@
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { type AdminRole } from '@prisma/client';
-import { ADMIN_SESSION_COOKIE, hashSessionToken } from '@/lib/admin-auth';
+import { requireAdminApiRole } from '@/lib/admin-api-auth';
+import { logAdminAudit } from '@/lib/admin-audit';
 import { prisma } from '@/lib/prisma';
 
 type UpdateAdminUserBody = {
@@ -15,47 +15,13 @@ function isAllowedRole(role: unknown): role is AdminRole {
   return typeof role === 'string' && allowedRoles.includes(role as AdminRole);
 }
 
-async function getActorAdmin() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
-  if (!sessionToken) return null;
-
-  const sessionTokenHash = hashSessionToken(sessionToken);
-  const now = new Date();
-
-  const session = await prisma.adminSession.findFirst({
-    where: {
-      sessionTokenHash,
-      revokedAt: null,
-      expiresAt: { gt: now },
-      adminUser: { isActive: true },
-    },
-    include: {
-      adminUser: {
-        select: {
-          id: true,
-          role: true,
-        },
-      },
-    },
-  });
-
-  if (!session) return null;
-
-  return {
-    id: session.adminUser.id,
-    role: session.adminUser.role,
-  };
-}
-
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const actor = await getActorAdmin();
-  if (!actor || actor.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
-  }
+  const auth = await requireAdminApiRole(['admin']);
+  if (auth.response) return auth.response;
+  const { actor } = auth;
 
   const { id: targetUserId } = await context.params;
   if (!targetUserId) {
@@ -93,6 +59,8 @@ export async function PATCH(
       id: true,
       role: true,
       isActive: true,
+      mustResetPassword: true,
+      passwordUpdatedAt: true,
       email: true,
       name: true,
       createdAt: true,
@@ -116,6 +84,15 @@ export async function PATCH(
   const finalIsActive = typeof nextIsActive === 'boolean' ? nextIsActive : target.isActive;
   const demotesAdminRole = target.role === 'admin' && finalRole !== 'admin';
   const deactivatesAdmin = target.role === 'admin' && !finalIsActive;
+  const changesOwnAdminAccess =
+    actor.id === target.id && (finalRole !== target.role || !finalIsActive);
+
+  if (changesOwnAdminAccess) {
+    return NextResponse.json(
+      { error: 'Ask another admin to change your role or deactivate your account.' },
+      { status: 400 },
+    );
+  }
 
   if (demotesAdminRole || deactivatesAdmin) {
     const otherActiveAdmins = await prisma.adminUser.count({
@@ -137,62 +114,79 @@ export async function PATCH(
     }
   }
 
-  const updated = await prisma.adminUser.update({
-    where: { id: target.id },
-    data: {
-      role: finalRole,
-      isActive: finalIsActive,
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-      createdAt: true,
-      sessions: {
-        select: {
-          lastSeenAt: true,
-        },
-        orderBy: {
-          lastSeenAt: 'desc',
-        },
-        take: 1,
+  const now = new Date();
+  const updated = await prisma.$transaction(async (tx) => {
+    const nextUser = await tx.adminUser.update({
+      where: { id: target.id },
+      data: {
+        role: finalRole,
+        isActive: finalIsActive,
       },
-    },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        mustResetPassword: true,
+        passwordUpdatedAt: true,
+        createdAt: true,
+        sessions: {
+          select: {
+            lastSeenAt: true,
+          },
+          orderBy: {
+            lastSeenAt: 'desc',
+          },
+          take: 1,
+        },
+      },
+    });
+
+    if (target.role !== nextUser.role || !nextUser.isActive) {
+      await tx.adminSession.updateMany({
+        where: {
+          adminUserId: target.id,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+    }
+
+    return nextUser;
   });
 
   if (target.role !== updated.role) {
-    await prisma.auditLog.create({
-      data: {
-        action: 'update',
-        entityType: 'admin_user_role',
-        entityId: target.id,
-        actorAdminId: actor.id,
-        message: `Role changed from ${target.role} to ${updated.role}.`,
-        metadata: {
-          fromRole: target.role,
-          toRole: updated.role,
-          targetEmail: updated.email,
-        },
+    await logAdminAudit({
+      action: 'update',
+      actorAdminId: actor.id,
+      entityId: target.id,
+      entityType: 'admin_user_role',
+      message: `Role changed from ${target.role} to ${updated.role}.`,
+      metadata: {
+        fromRole: target.role,
+        targetEmail: updated.email,
+        toRole: updated.role,
       },
+      request,
     });
   }
 
   if (target.isActive !== updated.isActive) {
-    await prisma.auditLog.create({
-      data: {
-        action: 'update',
-        entityType: 'admin_user_status',
-        entityId: target.id,
-        actorAdminId: actor.id,
-        message: `User marked as ${updated.isActive ? 'active' : 'inactive'}.`,
-        metadata: {
-          fromStatus: target.isActive,
-          toStatus: updated.isActive,
-          targetEmail: updated.email,
-        },
+    await logAdminAudit({
+      action: 'status_change',
+      actorAdminId: actor.id,
+      entityId: target.id,
+      entityType: 'admin_user_status',
+      message: `User marked as ${updated.isActive ? 'active' : 'inactive'}.`,
+      metadata: {
+        fromStatus: target.isActive,
+        targetEmail: updated.email,
+        toStatus: updated.isActive,
       },
+      request,
     });
   }
 
@@ -203,6 +197,8 @@ export async function PATCH(
       email: updated.email,
       role: updated.role,
       isActive: updated.isActive,
+      mustResetPassword: updated.mustResetPassword,
+      passwordUpdatedAt: updated.passwordUpdatedAt?.toISOString() ?? null,
       createdAt: updated.createdAt.toISOString(),
       lastSeenAt: updated.sessions[0]?.lastSeenAt?.toISOString() ?? null,
     },

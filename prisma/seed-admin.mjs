@@ -48,12 +48,16 @@ async function main() {
       role,
       passwordHash,
       isActive: true,
+      mustResetPassword: false,
+      passwordUpdatedAt: new Date(),
     },
     update: {
       name,
       role,
       passwordHash,
       isActive: true,
+      mustResetPassword: false,
+      passwordUpdatedAt: new Date(),
     },
   });
 

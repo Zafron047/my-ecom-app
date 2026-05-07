@@ -41,6 +41,10 @@ npm run prisma:migrate -- --name admin_auth_foundation
 npm run prisma:seed:admin
 ```
 
+4. Use the handover runbook for staff access operations:
+
+[Admin auth runbook](docs/admin-auth-runbook.md)
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

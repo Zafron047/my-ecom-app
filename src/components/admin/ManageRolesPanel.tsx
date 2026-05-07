@@ -9,18 +9,39 @@ type ManageRolesUser = {
   id: string;
   isActive: boolean;
   lastSeenAt: string | null;
+  mustResetPassword: boolean;
   name: string;
+  passwordUpdatedAt: string | null;
   role: AdminRole;
 };
 
+type ManageRolesAuditLog = {
+  action: string;
+  actorLabel: string | null;
+  createdAt: string;
+  entityType: string;
+  id: string;
+  ipAddress: string | null;
+  message: string | null;
+};
+
 type ManageRolesPanelProps = {
+  auditLogs: ManageRolesAuditLog[];
   currentAdminId: string;
   users: ManageRolesUser[];
 };
 
 type RowBusyState = {
+  isResettingPassword: boolean;
+  isRevokingSessions: boolean;
   isTogglingActive: boolean;
   isUpdatingRole: boolean;
+};
+
+type ResetLinkState = {
+  email: string;
+  resetExpiresAt: string;
+  resetLink: string;
 };
 
 const roleOptions: AdminRole[] = ['admin', 'manager', 'support'];
@@ -35,6 +56,7 @@ function formatDate(value: string | null): string {
 }
 
 export default function ManageRolesPanel({
+  auditLogs,
   currentAdminId,
   users,
 }: ManageRolesPanelProps) {
@@ -47,6 +69,13 @@ export default function ManageRolesPanel({
     kind: 'error' | 'success';
     message: string;
   } | null>(null);
+  const [resetLink, setResetLink] = useState<ResetLinkState | null>(null);
+  const [createForm, setCreateForm] = useState({
+    email: '',
+    name: '',
+    role: 'support' as AdminRole,
+  });
+  const [isCreating, setIsCreating] = useState(false);
 
   const sortedRows = useMemo(
     () =>
@@ -62,6 +91,8 @@ export default function ManageRolesPanel({
     setBusyByRow((prev) => ({
       ...prev,
       [id]: {
+        isResettingPassword: prev[id]?.isResettingPassword ?? false,
+        isRevokingSessions: prev[id]?.isRevokingSessions ?? false,
         isTogglingActive: prev[id]?.isTogglingActive ?? false,
         isUpdatingRole: prev[id]?.isUpdatingRole ?? false,
         ...patch,
@@ -96,8 +127,62 @@ export default function ManageRolesPanel({
     return updatedUser;
   }
 
+  async function handleCreateUser(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFeedback(null);
+    setResetLink(null);
+    setIsCreating(true);
+
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(createForm),
+      });
+
+      const data = (await response.json()) as {
+        error?: string;
+        resetExpiresAt?: string;
+        resetLink?: string;
+        user?: ManageRolesUser;
+      };
+
+      if (!response.ok || !data.user || !data.resetLink || !data.resetExpiresAt) {
+        throw new Error(data.error ?? 'Failed to create admin user.');
+      }
+
+      const createdUser = data.user;
+      setRows((prev) => [...prev, createdUser]);
+      setPendingRole((prev) => ({
+        ...prev,
+        [createdUser.id]: createdUser.role,
+      }));
+      setCreateForm({ email: '', name: '', role: 'support' });
+      setResetLink({
+        email: createdUser.email,
+        resetExpiresAt: data.resetExpiresAt,
+        resetLink: data.resetLink,
+      });
+      setFeedback({
+        kind: 'success',
+        message: `Created ${createdUser.email}.`,
+      });
+    } catch (error) {
+      setFeedback({
+        kind: 'error',
+        message:
+          error instanceof Error ? error.message : 'Admin user creation failed.',
+      });
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
   async function handleRoleUpdate(userId: string) {
     setFeedback(null);
+    setResetLink(null);
     const role = pendingRole[userId];
     if (!role) return;
 
@@ -120,6 +205,7 @@ export default function ManageRolesPanel({
 
   async function handleToggleActive(userId: string, isActive: boolean) {
     setFeedback(null);
+    setResetLink(null);
 
     setRowBusy(userId, { isTogglingActive: true });
     try {
@@ -138,35 +224,234 @@ export default function ManageRolesPanel({
     }
   }
 
+  async function handlePasswordReset(user: ManageRolesUser) {
+    setFeedback(null);
+    setResetLink(null);
+    setRowBusy(user.id, { isResettingPassword: true });
+
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}/password-reset`, {
+        method: 'POST',
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        resetExpiresAt?: string;
+        resetLink?: string;
+      };
+
+      if (!response.ok || !data.resetLink || !data.resetExpiresAt) {
+        throw new Error(data.error ?? 'Failed to create reset link.');
+      }
+
+      setRows((prev) =>
+        prev.map((row) =>
+          row.id === user.id ? { ...row, mustResetPassword: true } : row,
+        ),
+      );
+      setResetLink({
+        email: user.email,
+        resetExpiresAt: data.resetExpiresAt,
+        resetLink: data.resetLink,
+      });
+      setFeedback({
+        kind: 'success',
+        message: `Created password reset link for ${user.email}.`,
+      });
+    } catch (error) {
+      setFeedback({
+        kind: 'error',
+        message: error instanceof Error ? error.message : 'Password reset failed.',
+      });
+    } finally {
+      setRowBusy(user.id, { isResettingPassword: false });
+    }
+  }
+
+  async function handleRevokeSessions(user: ManageRolesUser) {
+    setFeedback(null);
+    setResetLink(null);
+    setRowBusy(user.id, { isRevokingSessions: true });
+
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}/sessions/revoke`, {
+        method: 'POST',
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        revokedCount?: number;
+      };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? 'Failed to revoke sessions.');
+      }
+
+      setFeedback({
+        kind: 'success',
+        message: `Revoked ${data.revokedCount ?? 0} active session(s) for ${user.email}.`,
+      });
+    } catch (error) {
+      setFeedback({
+        kind: 'error',
+        message:
+          error instanceof Error ? error.message : 'Session revocation failed.',
+      });
+    } finally {
+      setRowBusy(user.id, { isRevokingSessions: false });
+    }
+  }
+
+  async function handleCopyResetLink() {
+    if (!resetLink) return;
+
+    try {
+      await navigator.clipboard.writeText(resetLink.resetLink);
+      setFeedback({
+        kind: 'success',
+        message: `Copied reset link for ${resetLink.email}.`,
+      });
+    } catch {
+      setFeedback({
+        kind: 'error',
+        message: 'Could not copy the reset link from this browser.',
+      });
+    }
+  }
+
   return (
-    <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">Manage Roles</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Change admin role and active status. Role changes are logged in audit
-          history.
-        </p>
+    <section className="space-y-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">Admin Access</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Create staff, update roles, reset passwords, and revoke sessions.
+          </p>
+        </div>
+
+        {feedback && (
+          <div
+            className={`mt-4 rounded-lg border px-3 py-2 text-sm ${
+              feedback.kind === 'error'
+                ? 'border-red-200 bg-red-50 text-red-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            {feedback.message}
+          </div>
+        )}
+
+        {resetLink && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm font-semibold text-amber-900">
+              One-time reset link for {resetLink.email}
+            </p>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+              <input
+                readOnly
+                value={resetLink.resetLink}
+                className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs text-slate-700"
+              />
+              <button
+                type="button"
+                onClick={handleCopyResetLink}
+                className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
+              >
+                Copy
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-amber-800">
+              Expires {formatDate(resetLink.resetExpiresAt)}.
+            </p>
+          </div>
+        )}
+
+        <form
+          onSubmit={handleCreateUser}
+          className="mt-5 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_160px_auto]"
+        >
+          <div>
+            <label
+              htmlFor="adminName"
+              className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+            >
+              Name
+            </label>
+            <input
+              id="adminName"
+              value={createForm.name}
+              onChange={(event) =>
+                setCreateForm((prev) => ({ ...prev, name: event.target.value }))
+              }
+              required
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="adminEmail"
+              className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+            >
+              Email
+            </label>
+            <input
+              id="adminEmail"
+              type="email"
+              value={createForm.email}
+              onChange={(event) =>
+                setCreateForm((prev) => ({ ...prev, email: event.target.value }))
+              }
+              required
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="adminRole"
+              className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+            >
+              Role
+            </label>
+            <select
+              id="adminRole"
+              value={createForm.role}
+              onChange={(event) =>
+                setCreateForm((prev) => ({
+                  ...prev,
+                  role: event.target.value as AdminRole,
+                }))
+              }
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+            >
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>
+                  {formatRole(role)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={isCreating}
+              className="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isCreating ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+        </form>
       </div>
 
-      {feedback && (
-        <div
-          className={`rounded-lg border px-3 py-2 text-sm ${
-            feedback.kind === 'error'
-              ? 'border-red-200 bg-red-50 text-red-700'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-          }`}
-        >
-          {feedback.message}
-        </div>
-      )}
-
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-3 py-2">User</th>
               <th className="px-3 py-2">Role</th>
               <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">Password</th>
+              <th className="px-3 py-2">Sessions</th>
               <th className="px-3 py-2">Last Seen</th>
               <th className="px-3 py-2">Created</th>
             </tr>
@@ -210,7 +495,9 @@ export default function ManageRolesPanel({
                       </select>
                       <button
                         type="button"
-                        disabled={busy?.isUpdatingRole || pendingRole[user.id] === user.role}
+                        disabled={
+                          busy?.isUpdatingRole || pendingRole[user.id] === user.role
+                        }
                         onClick={() => handleRoleUpdate(user.id)}
                         className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -238,6 +525,42 @@ export default function ManageRolesPanel({
                     </button>
                   </td>
 
+                  <td className="px-3 py-3">
+                    <div className="space-y-1">
+                      <span
+                        className={`inline-flex rounded-md px-2 py-1 text-xs font-semibold ${
+                          user.mustResetPassword
+                            ? 'bg-amber-50 text-amber-700'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {user.mustResetPassword ? 'Reset due' : 'Current'}
+                      </span>
+                      <p className="text-xs text-slate-500">
+                        Updated {formatDate(user.passwordUpdatedAt)}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handlePasswordReset(user)}
+                        disabled={busy?.isResettingPassword || !user.isActive}
+                        className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {busy?.isResettingPassword ? 'Creating...' : 'Reset'}
+                      </button>
+                    </div>
+                  </td>
+
+                  <td className="px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleRevokeSessions(user)}
+                      disabled={busy?.isRevokingSessions}
+                      className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {busy?.isRevokingSessions ? 'Revoking...' : 'Logout all'}
+                    </button>
+                  </td>
+
                   <td className="px-3 py-3 text-xs text-slate-600">
                     {formatDate(user.lastSeenAt)}
                   </td>
@@ -247,6 +570,52 @@ export default function ManageRolesPanel({
                 </tr>
               );
             })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Auth Audit</h2>
+        </div>
+        <table className="mt-4 min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-3 py-2">Time</th>
+              <th className="px-3 py-2">Actor</th>
+              <th className="px-3 py-2">Action</th>
+              <th className="px-3 py-2">Message</th>
+              <th className="px-3 py-2">IP</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {auditLogs.length > 0 ? (
+              auditLogs.map((entry) => (
+                <tr key={entry.id}>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    {formatDate(entry.createdAt)}
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    {entry.actorLabel ?? 'System'}
+                  </td>
+                  <td className="px-3 py-3 text-xs font-semibold text-slate-700">
+                    {entry.action}
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-700">
+                    {entry.message ?? entry.entityType}
+                  </td>
+                  <td className="px-3 py-3 text-xs text-slate-600">
+                    {entry.ipAddress ?? '-'}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="px-3 py-6 text-center text-slate-500" colSpan={5}>
+                  No auth audit entries yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
