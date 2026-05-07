@@ -3,10 +3,24 @@
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useActionState, useMemo, useState } from 'react';
-import {
-  INITIAL_PRODUCTS_BULK_ACTION_STATE,
-  type ProductsBulkActionState,
-} from '@/app/(admin)/admin/products/actions';
+
+type ProductsBulkActionState = {
+  error: string | null;
+  message: string | null;
+  appliedCount: number;
+  skipped: Array<{
+    id: string;
+    name: string;
+    reasons: string[];
+  }>;
+};
+
+const INITIAL_PRODUCTS_BULK_ACTION_STATE: ProductsBulkActionState = {
+  error: null,
+  message: null,
+  appliedCount: 0,
+  skipped: [],
+};
 
 type ProductListRow = {
   id: string;

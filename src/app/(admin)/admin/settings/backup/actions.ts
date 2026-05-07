@@ -221,8 +221,12 @@ function normalizeComparableText(value: string | null | undefined) {
   return normalizeText(value).normalize('NFKC').replace(/\s+/g, ' ');
 }
 
-function normalizeCurrency(value: string | null | undefined) {
-  return value ? Number(value).toFixed(2) : '';
+function normalizeCurrency(
+  value: string | { toNumber: () => number } | null | undefined,
+) {
+  if (!value) return '';
+  const numeric = typeof value === 'string' ? Number(value) : value.toNumber();
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : '';
 }
 
 function normalizeCategories(value: string) {

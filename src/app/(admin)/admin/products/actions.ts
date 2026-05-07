@@ -1905,7 +1905,7 @@ export async function applyProductsBulkAction(formData: FormData) {
   throw new Error('Unsupported bulk action.');
 }
 
-export type ProductsBulkActionState = {
+type ProductsBulkActionState = {
   error: string | null;
   message: string | null;
   appliedCount: number;
@@ -1916,7 +1916,7 @@ export type ProductsBulkActionState = {
   }>;
 };
 
-export const INITIAL_PRODUCTS_BULK_ACTION_STATE: ProductsBulkActionState = {
+const INITIAL_PRODUCTS_BULK_ACTION_STATE: ProductsBulkActionState = {
   error: null,
   message: null,
   appliedCount: 0,

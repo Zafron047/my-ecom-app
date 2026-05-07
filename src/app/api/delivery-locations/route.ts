@@ -11,13 +11,12 @@ export async function GET(request: Request) {
   const district = url.searchParams.get('district') ?? '';
 
   if (type === 'districts') {
-    return Response.json({ items: getDeliveryDistricts(division) });
+    return Response.json({ items: await getDeliveryDistricts(division) });
   }
 
   if (type === 'areas') {
-    return Response.json({ items: getDeliveryAreas(division, district) });
+    return Response.json({ items: await getDeliveryAreas(division, district) });
   }
 
-  return Response.json({ items: getDeliveryDivisions() });
+  return Response.json({ items: await getDeliveryDivisions() });
 }
-

@@ -1,6 +1,7 @@
 import rawDivisions from '@/data/bd-geocode/divisions.json';
 import rawDistricts from '@/data/bd-geocode/districts.json';
 import rawUpazilas from '@/data/bd-geocode/upazilas.json';
+import { prisma } from '@/lib/prisma';
 
 type TableEnvelope<T> = {
   type: 'table';
@@ -75,17 +76,17 @@ for (const upazila of upazilas) {
   upazilasByDistrict.get(districtName)?.add(upazila.name.trim());
 }
 
-export function getDeliveryDivisions() {
+function getFallbackDivisions() {
   return sortAsc(divisions.map((division) => division.name.trim()));
 }
 
-export function getDeliveryDistricts(divisionName: string) {
+function getFallbackDistricts(divisionName: string) {
   const districtSet = districtsByDivision.get(divisionName);
   if (!districtSet) return [];
   return sortAsc(Array.from(districtSet));
 }
 
-export function getDeliveryAreas(divisionName: string, districtName: string) {
+function getFallbackAreas(divisionName: string, districtName: string) {
   const districtSet = districtsByDivision.get(divisionName);
   if (!districtSet || !districtSet.has(districtName)) return [];
   const upazilaSet = upazilasByDistrict.get(districtName);
@@ -93,3 +94,72 @@ export function getDeliveryAreas(divisionName: string, districtName: string) {
   return sortAsc(Array.from(upazilaSet));
 }
 
+export async function getDeliveryDivisions() {
+  try {
+    const rows = await prisma.deliveryDivision.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+      select: { name: true },
+    });
+    if (rows.length > 0) {
+      return rows.map((row) => row.name.trim());
+    }
+  } catch {
+    // Fall back to static dataset when DB is unavailable.
+  }
+
+  return getFallbackDivisions();
+}
+
+export async function getDeliveryDistricts(divisionName: string) {
+  try {
+    const division = await prisma.deliveryDivision.findFirst({
+      where: { isActive: true, name: { equals: divisionName, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (division) {
+      const rows = await prisma.deliveryDistrict.findMany({
+        where: { divisionId: division.id, isActive: true },
+        orderBy: { name: 'asc' },
+        select: { name: true },
+      });
+      if (rows.length > 0) {
+        return rows.map((row) => row.name.trim());
+      }
+    }
+  } catch {
+    // Fall back to static dataset when DB is unavailable.
+  }
+
+  return getFallbackDistricts(divisionName);
+}
+
+export async function getDeliveryAreas(divisionName: string, districtName: string) {
+  try {
+    const district = await prisma.deliveryDistrict.findFirst({
+      where: {
+        isActive: true,
+        name: { equals: districtName, mode: 'insensitive' },
+        division: {
+          isActive: true,
+          name: { equals: divisionName, mode: 'insensitive' },
+        },
+      },
+      select: { id: true },
+    });
+    if (district) {
+      const rows = await prisma.deliveryArea.findMany({
+        where: { districtId: district.id, isActive: true },
+        orderBy: { name: 'asc' },
+        select: { name: true },
+      });
+      if (rows.length > 0) {
+        return rows.map((row) => row.name.trim());
+      }
+    }
+  } catch {
+    // Fall back to static dataset when DB is unavailable.
+  }
+
+  return getFallbackAreas(divisionName, districtName);
+}
