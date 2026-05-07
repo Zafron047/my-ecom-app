@@ -197,3 +197,17 @@ a:hover {
   animation: fadeIn 0.8s ease-out 0.6s forwards;
   opacity: 0;
 }
+
+@keyframes bundleShine {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.bundle-title-shine {
+  background-size: 200% auto;
+  animation: bundleShine 2.6s linear infinite;
+}

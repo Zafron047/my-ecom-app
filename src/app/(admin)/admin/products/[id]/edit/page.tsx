@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import ProductForm from '@/components/admin/ProductForm';
-import { requireAdminPermission } from '@/lib/admin-session';
+import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import { updateProduct } from '../../actions';
 
@@ -14,11 +14,18 @@ function decimalToString(value: { toString: () => string } | null) {
   return value?.toString() ?? '';
 }
 
+function normalizeImagePathForMatch(path: string | null) {
+  if (!path) return null;
+  const withoutQuery = path.split('?')[0] ?? '';
+  return withoutQuery.replace(/-(thumb|detail|zoom)(\.[a-z0-9]+)$/i, '$2');
+}
+
 export default async function EditProductPage({ params }: EditProductPageProps) {
   const { id } = await params;
   await requireAdminPermission(`/admin/products/${id}/edit`, 'products.write');
+  await requireAdminRole(`/admin/products/${id}/edit`, ['admin']);
 
-  const [product, categories] = await Promise.all([
+  const [product, categories, brands] = await Promise.all([
     prisma.product.findUnique({
       include: {
         categories: {
@@ -28,7 +35,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
         },
         variants: {
           orderBy: {
-            createdAt: 'asc',
+            sortOrder: 'asc',
           },
           select: {
             id: true,
@@ -36,6 +43,14 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
             color: true,
             size: true,
             imagePath: true,
+            variantImages: {
+              orderBy: {
+                sortOrder: 'asc',
+              },
+              select: {
+                imagePath: true,
+              },
+            },
             price: true,
             compareAtPrice: true,
             costPrice: true,
@@ -64,10 +79,40 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
             value: true,
           },
         },
+        bundleOffers: {
+          orderBy: {
+            sortOrder: 'asc',
+          },
+          select: {
+            id: true,
+            title: true,
+            imagePath: true,
+            minTotalQty: true,
+            discountPercent: true,
+            isActive: true,
+            variants: {
+              select: {
+                variantId: true,
+              },
+            },
+          },
+        },
       },
       where: { id },
     }),
     prisma.category.findMany({
+      orderBy: {
+        name: 'asc',
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      where: {
+        isActive: true,
+      },
+    }),
+    prisma.brand.findMany({
       orderBy: {
         name: 'asc',
       },
@@ -89,6 +134,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
     <ProductForm
       action={updateProduct}
       categories={categories}
+      brands={brands}
       product={{
         id: product.id,
         name: product.name,
@@ -96,6 +142,9 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
         images: product.images,
         shortDescription: product.shortDescription ?? '',
         description: product.description ?? '',
+        brandId: product.brandId ?? '',
+        seoTitle: product.seoTitle ?? '',
+        seoDescription: product.seoDescription ?? '',
         status: product.status,
         categoryIds: product.categories.map((category) => category.categoryId),
         specifications: product.specifications.map((specification) => ({
@@ -103,16 +152,50 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
           name: specification.name,
           value: specification.value,
         })),
-        variants: product.variants.map((variant) => {
+        bundleOffers: product.bundleOffers.map((offer) => {
+          const normalizedBundleImagePath = normalizeImagePathForMatch(offer.imagePath);
           const selectedImage = product.images.find(
-            (image) => image.storagePath === variant.imagePath,
+            (image) =>
+              image.storagePath === offer.imagePath ||
+              normalizeImagePathForMatch(image.storagePath) === normalizedBundleImagePath,
           );
+          return {
+            id: offer.id,
+            title: offer.title ?? '',
+            imageSelection: selectedImage ? `existing:${selectedImage.id}` : '',
+            variantSelection: offer.variants
+              .map((variant) => `existing:${variant.variantId}`)
+              .join(','),
+            minTotalQty: offer.minTotalQty.toString(),
+            discountPercent: decimalToString(offer.discountPercent),
+            isActive: offer.isActive,
+          };
+        }),
+        variants: product.variants.map((variant) => {
+          const imagePathsFromVariant =
+            variant.variantImages.length > 0
+              ? variant.variantImages.map((item) => item.imagePath)
+              : variant.imagePath
+                ? [variant.imagePath]
+                : [];
+          const imageSelectionKeys = imagePathsFromVariant
+            .map((imagePath) => {
+              const normalizedVariantPath = normalizeImagePathForMatch(imagePath);
+              const selectedImage = product.images.find(
+                (image) =>
+                  image.storagePath === imagePath ||
+                  normalizeImagePathForMatch(image.storagePath) ===
+                    normalizedVariantPath,
+              );
+              return selectedImage ? `existing:${selectedImage.id}` : '';
+            })
+            .filter(Boolean);
 
           return {
             id: variant.id,
             sku: variant.sku,
             color: variant.color ?? '',
-            imageSelection: selectedImage ? `existing:${selectedImage.id}` : '',
+            imageSelection: imageSelectionKeys.join(','),
             size: variant.size ?? '',
             price: decimalToString(variant.price),
             compareAtPrice: decimalToString(variant.compareAtPrice),

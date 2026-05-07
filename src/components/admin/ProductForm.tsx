@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Image from 'next/image';
 import Link from 'next/link';
@@ -7,6 +7,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import type { ProductStatus } from '@prisma/client';
 
 type CategoryOption = {
+  id: string;
+  name: string;
+};
+
+type BrandOption = {
   id: string;
   name: string;
 };
@@ -29,6 +34,16 @@ type SpecificationFormRow = {
   id: string;
   name: string;
   value: string;
+};
+
+type BundleOfferFormRow = {
+  id: string;
+  title: string;
+  imageSelection: string;
+  variantSelection: string;
+  minTotalQty: string;
+  discountPercent: string;
+  isActive: boolean;
 };
 
 type ExistingImageItem = {
@@ -58,22 +73,43 @@ type ProductFormValue = {
   }[];
   shortDescription: string;
   description: string;
+  brandId: string;
+  seoTitle: string;
+  seoDescription: string;
   status: ProductStatus;
   categoryIds: string[];
   specifications: SpecificationFormRow[];
   variants: VariantFormRow[];
+  bundleOffers: BundleOfferFormRow[];
 };
 
 type ProductFormProps = {
-  action: (formData: FormData) => void;
+  action: (formData: FormData) => Promise<void> | void;
   categories: CategoryOption[];
+  brands: BrandOption[];
   product?: ProductFormValue;
   submitLabel: string;
 };
 
+type ActivationRequirementsState = {
+  categories: boolean;
+  media: boolean;
+  variants: boolean;
+};
+
+type VariantVisibility = 'all' | 'active' | 'inactive';
+
 const statuses: ProductStatus[] = ['draft', 'active', 'archived'];
 const PRODUCT_NAME_WORD_LIMIT = 6;
 const SHORT_DESCRIPTION_WORD_LIMIT = 40;
+const MAX_PRODUCT_IMAGE_FILES = 10;
+const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_PRODUCT_IMAGE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+]);
 const fieldClass =
   'w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-normal text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-500 focus:shadow-md focus:ring-2 focus:ring-slate-200';
 const readOnlyFieldClass =
@@ -112,6 +148,16 @@ const emptySpecification = (): SpecificationFormRow => ({
   value: '',
 });
 
+const emptyBundleOffer = (): BundleOfferFormRow => ({
+  id: '',
+  title: '',
+  imageSelection: '',
+  variantSelection: '',
+  minTotalQty: '',
+  discountPercent: '',
+  isActive: false,
+});
+
 function getInitialProduct(product: ProductFormValue | undefined): ProductFormValue {
   return (
     product ?? {
@@ -120,10 +166,14 @@ function getInitialProduct(product: ProductFormValue | undefined): ProductFormVa
       images: [],
       shortDescription: '',
       description: '',
+      brandId: '',
+      seoTitle: '',
+      seoDescription: '',
       status: 'draft',
       categoryIds: [],
       specifications: [emptySpecification()],
       variants: [emptyVariant()],
+      bundleOffers: [emptyBundleOffer()],
     }
   );
 }
@@ -144,25 +194,35 @@ function slugify(value: string) {
     .replace(/(^-|-$)/g, '');
 }
 
-function getProductInitials(name: string) {
-  const initials = name
-    .trim()
-    .toUpperCase()
-    .match(/[A-Z0-9]+/g)
-    ?.map((part) => part[0])
-    .join('');
+function getProductSkuBase(name: string) {
+  const slugParts = slugify(name)
+    .split('-')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const normalized = slugParts
+    .map((part) => part.toUpperCase())
+    .filter(Boolean);
 
-  return initials || 'PRODUCT';
+  if (normalized.length > 0) {
+    return normalized.join('-');
+  }
+
+  return 'PRODUCT';
 }
 
 function generateSku(name: string, color: string, size: string) {
   return [
-    getProductInitials(name),
+    getProductSkuBase(name),
     normalizeSkuPart(color),
     normalizeSkuPart(size),
   ]
     .filter(Boolean)
     .join('-');
+}
+
+function buildProductSlug(name: string, fallbackSlug: string) {
+  return slugify(name || fallbackSlug) || fallbackSlug || 'product';
 }
 
 function getWords(value: string) {
@@ -203,6 +263,20 @@ function formatDescriptionAsBullets(value: string) {
   return lines.map((line) => `\u2022 ${line}`).join('\n');
 }
 
+function extractPercentFromBundleTitle(title: string) {
+  const match = title.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function extractMinQtyFromBundleTitle(title: string) {
+  const match = title.match(/(?:buy|min)\D*(\d+)/i);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function moveItem<T>(items: T[], fromIndex: number, toIndex: number) {
   const nextItems = [...items];
   const [item] = nextItems.splice(fromIndex, 1);
@@ -211,9 +285,14 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number) {
   return nextItems;
 }
 
+function appendUniqueId(ids: string[], id: string) {
+  if (!id) return ids;
+  return ids.includes(id) ? ids : [...ids, id];
+}
+
 function SelectArrow() {
   return (
-    <span className="pointer-events-none absolute inset-y-0 right-3 flex flex-col items-center justify-center text-slate-500">
+    <span className="pointer-events-none absolute inset-y-0 right-4 flex flex-col items-center justify-center text-slate-500">
       <svg
         className="h-3 w-3"
         viewBox="0 0 20 20"
@@ -321,7 +400,16 @@ function VariantImagePicker({
   value: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const selectedOption = mediaOptions.find((option) => option.value === value);
+  const selectedValues = new Set(
+    value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
+  const selectedOptions = mediaOptions.filter((option) =>
+    selectedValues.has(option.value),
+  );
+  const firstSelectedOption = selectedOptions[0];
 
   return (
     <div className="relative">
@@ -332,14 +420,14 @@ function VariantImagePicker({
         aria-expanded={isOpen}
         onClick={() => setIsOpen((current) => !current)}
         onBlur={() => setTimeout(() => setIsOpen(false), 120)}
-        className="flex h-11 w-full items-center gap-2 rounded-xl border border-slate-300 bg-white px-2.5 text-slate-700 transition hover:border-slate-400"
+        className="flex h-11 w-full items-center gap-2 rounded-xl border border-slate-300 bg-white px-2.5 pr-12 text-slate-700 transition hover:border-slate-400"
       >
-        {selectedOption ? (
+        {firstSelectedOption ? (
           <>
             <span className="relative block h-7 w-7 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
               <Image
-                src={selectedOption.previewUrl}
-                alt={selectedOption.label}
+                src={firstSelectedOption.previewUrl}
+                alt={firstSelectedOption.label}
                 fill
                 unoptimized
                 sizes="28px"
@@ -347,7 +435,7 @@ function VariantImagePicker({
               />
             </span>
             <span className="min-w-0 text-left text-xs font-semibold text-slate-600">
-              Change
+              {selectedOptions.length} selected
             </span>
             <span className="ml-auto text-slate-400">
               <svg
@@ -395,14 +483,14 @@ function VariantImagePicker({
               <button
                 type="button"
                 role="option"
-                aria-selected={value === ''}
+                aria-selected={selectedValues.size === 0}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   onChange('');
                   setIsOpen(false);
                 }}
                 className={`flex aspect-square items-center justify-center rounded-xl border text-xl font-semibold transition ${
-                  value === ''
+                  selectedValues.size === 0
                     ? 'border-slate-900 bg-slate-100 text-slate-900'
                     : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
                 }`}
@@ -414,14 +502,19 @@ function VariantImagePicker({
                   key={option.value}
                   type="button"
                   role="option"
-                  aria-selected={value === option.value}
+                  aria-selected={selectedValues.has(option.value)}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
-                    onChange(option.value);
-                    setIsOpen(false);
+                    const nextValues = new Set(selectedValues);
+                    if (nextValues.has(option.value)) {
+                      nextValues.delete(option.value);
+                    } else {
+                      nextValues.add(option.value);
+                    }
+                    onChange([...nextValues].join(','));
                   }}
                   className={`relative aspect-square overflow-hidden rounded-xl border transition ${
-                    value === option.value
+                    selectedValues.has(option.value)
                       ? 'border-slate-900 bg-slate-100'
                       : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100'
                   }`}
@@ -448,15 +541,26 @@ function VariantImagePicker({
 export default function ProductForm({
   action,
   categories,
+  brands,
   product,
   submitLabel,
 }: ProductFormProps) {
   const initialProduct = useMemo(() => getInitialProduct(product), [product]);
+  const initialVariantRows = useMemo(
+    () =>
+      initialProduct.variants.length > 0
+        ? initialProduct.variants
+        : [emptyVariant()],
+    [initialProduct.variants],
+  );
   const [productName, setProductName] = useState(initialProduct.name);
   const [shortDescription, setShortDescription] = useState(
     initialProduct.shortDescription,
   );
   const [description, setDescription] = useState(initialProduct.description);
+  const [selectedBrandId, setSelectedBrandId] = useState(initialProduct.brandId);
+  const [seoTitle, setSeoTitle] = useState(initialProduct.seoTitle);
+  const [seoDescription, setSeoDescription] = useState(initialProduct.seoDescription);
   const shortDescriptionRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
@@ -466,8 +570,23 @@ export default function ProductForm({
       : [emptySpecification()],
   );
   const [removedSpecificationIds, setRemovedSpecificationIds] = useState<string[]>([]);
-  const [rows, setRows] = useState(initialProduct.variants);
+  const [draggedSpecificationIndex, setDraggedSpecificationIndex] = useState<number | null>(null);
+  const [rows, setRows] = useState(initialVariantRows);
+  const [openVariantIndexes, setOpenVariantIndexes] = useState<Set<number>>(
+    () => new Set([0]),
+  );
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
+  const [variantVisibility, setVariantVisibility] =
+    useState<VariantVisibility>('all');
+  const [bundleOffers, setBundleOffers] = useState<BundleOfferFormRow[]>(
+    initialProduct.bundleOffers.length > 0
+      ? initialProduct.bundleOffers
+      : [emptyBundleOffer()],
+  );
+  const [openBundleIndexes, setOpenBundleIndexes] = useState<Set<number>>(
+    () => new Set([0]),
+  );
+  const [removedBundleOfferIds, setRemovedBundleOfferIds] = useState<string[]>([]);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>(
     initialProduct.categoryIds,
   );
@@ -482,6 +601,14 @@ export default function ProductForm({
   const imageItemsRef = useRef<ProductImageItem[]>(imageItems);
   const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
   const [draggedImageKey, setDraggedImageKey] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [activationRequirements, setActivationRequirements] =
+    useState<ActivationRequirementsState>({
+      categories: false,
+      media: false,
+      variants: false,
+    });
+  const isEditing = Boolean(initialProduct.id);
   const productNameWordsLeft = PRODUCT_NAME_WORD_LIMIT - getWords(productName).length;
   const shortDescriptionWordsLeft =
     SHORT_DESCRIPTION_WORD_LIMIT - getWords(shortDescription).length;
@@ -499,6 +626,30 @@ export default function ProductForm({
         value: getImageOrderKey(item),
       };
     });
+  const variantMediaOptions = isEditing
+    ? mediaOptions.filter((option) => option.value.startsWith('existing:'))
+    : mediaOptions;
+  const hasPersistedVariants = rows.some((row) => Boolean(row.id));
+  const isVariantSectionEnabled = isEditing;
+  const isBundleSectionEnabled = isEditing && hasPersistedVariants;
+  const visibleVariantIndexes = rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => {
+      if (variantVisibility === 'active') return row.isActive;
+      if (variantVisibility === 'inactive') return !row.isActive;
+      return true;
+    })
+    .map(({ index }) => index);
+  const bundleVariantOptions = rows
+    .filter((row) => Boolean(row.id) && row.isActive)
+    .map((row, index) => {
+      const parts = [row.color.trim(), row.size.trim()].filter(Boolean);
+      const labelBase = parts.length > 0 ? parts.join(' / ') : `Variant ${index + 1}`;
+      return {
+        label: `${labelBase}${row.sku ? ` (${row.sku})` : ''}`,
+        value: `existing:${row.id}`,
+      };
+    });
   const statusOptions = statuses.map((status) => ({
     label: status.charAt(0).toUpperCase() + status.slice(1),
     value: status,
@@ -512,6 +663,9 @@ export default function ProductForm({
       JSON.stringify({
         categoryIds: [...selectedCategoryIds].sort(),
         description,
+        selectedBrandId,
+        seoTitle,
+        seoDescription,
         images: imageItems.map((item) =>
           item.type === 'existing'
             ? { key: getImageOrderKey(item) }
@@ -526,6 +680,16 @@ export default function ProductForm({
         removedImageIds: [...removedImageIds].sort(),
         removedSpecificationIds: [...removedSpecificationIds].sort(),
         removedVariantIds: [...removedVariantIds].sort(),
+        removedBundleOfferIds: [...removedBundleOfferIds].sort(),
+        bundleOffers: bundleOffers.map((offer) => ({
+          id: offer.id,
+          title: offer.title,
+          imageSelection: offer.imageSelection,
+          variantSelection: offer.variantSelection,
+          minTotalQty: offer.minTotalQty,
+          discountPercent: offer.discountPercent,
+          isActive: offer.isActive,
+        })),
         rows: rows.map((row) => ({
           color: row.color,
           compareAtPrice: row.compareAtPrice,
@@ -548,11 +712,16 @@ export default function ProductForm({
       }),
     [
       description,
+      selectedBrandId,
+      seoTitle,
+      seoDescription,
       imageItems,
       productName,
       removedImageIds,
       removedSpecificationIds,
       removedVariantIds,
+      removedBundleOfferIds,
+      bundleOffers,
       rows,
       selectedCategoryIds,
       selectedStatus,
@@ -565,6 +734,9 @@ export default function ProductForm({
       JSON.stringify({
         categoryIds: [...initialProduct.categoryIds].sort(),
         description: initialProduct.description,
+        selectedBrandId: initialProduct.brandId,
+        seoTitle: initialProduct.seoTitle,
+        seoDescription: initialProduct.seoDescription,
         images: initialProduct.images.map((image) => ({
           key: `existing:${image.id}`,
         })),
@@ -572,7 +744,21 @@ export default function ProductForm({
         removedImageIds: [],
         removedSpecificationIds: [],
         removedVariantIds: [],
-        rows: initialProduct.variants.map((row) => ({
+        removedBundleOfferIds: [],
+        bundleOffers: (
+          initialProduct.bundleOffers.length > 0
+            ? initialProduct.bundleOffers
+            : [emptyBundleOffer()]
+        ).map((offer) => ({
+          id: offer.id,
+          title: offer.title,
+          imageSelection: offer.imageSelection,
+          variantSelection: offer.variantSelection,
+          minTotalQty: offer.minTotalQty,
+          discountPercent: offer.discountPercent,
+          isActive: offer.isActive,
+        })),
+        rows: initialVariantRows.map((row) => ({
           color: row.color,
           compareAtPrice: row.compareAtPrice,
           costPrice: row.costPrice,
@@ -596,9 +782,180 @@ export default function ProductForm({
           value: specification.value,
         })),
       }),
-    [initialProduct],
+    [
+      initialVariantRows,
+      initialProduct.bundleOffers,
+      initialProduct.categoryIds,
+      initialProduct.description,
+      initialProduct.images,
+      initialProduct.name,
+      initialProduct.shortDescription,
+      initialProduct.specifications,
+      initialProduct.status,
+    ],
   );
   const hasChanges = currentSnapshot !== initialSnapshot;
+  const currentProductSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        categoryIds: [...selectedCategoryIds].sort(),
+        description,
+        selectedBrandId,
+        seoTitle,
+        seoDescription,
+        images: imageItems.map((item) =>
+          item.type === 'existing'
+            ? { key: getImageOrderKey(item) }
+            : {
+                key: getImageOrderKey(item),
+                lastModified: item.file.lastModified,
+                name: item.file.name,
+                size: item.file.size,
+              },
+        ),
+        productName,
+        removedImageIds: [...removedImageIds].sort(),
+        removedSpecificationIds: [...removedSpecificationIds].sort(),
+        selectedStatus,
+        shortDescription,
+        specifications: specifications.map((specification) => ({
+          id: specification.id,
+          name: specification.name,
+          value: specification.value,
+        })),
+      }),
+    [
+      description,
+      selectedBrandId,
+      seoTitle,
+      seoDescription,
+      imageItems,
+      productName,
+      removedImageIds,
+      removedSpecificationIds,
+      selectedCategoryIds,
+      selectedStatus,
+      shortDescription,
+      specifications,
+    ],
+  );
+  const initialProductSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        categoryIds: [...initialProduct.categoryIds].sort(),
+        description: initialProduct.description,
+        selectedBrandId: initialProduct.brandId,
+        seoTitle: initialProduct.seoTitle,
+        seoDescription: initialProduct.seoDescription,
+        images: initialProduct.images.map((image) => ({
+          key: `existing:${image.id}`,
+        })),
+        productName: initialProduct.name,
+        removedImageIds: [],
+        removedSpecificationIds: [],
+        selectedStatus: initialProduct.status,
+        shortDescription: initialProduct.shortDescription,
+        specifications: (
+          initialProduct.specifications.length > 0
+            ? initialProduct.specifications
+            : [emptySpecification()]
+        ).map((specification) => ({
+          id: specification.id,
+          name: specification.name,
+          value: specification.value,
+        })),
+      }),
+    [initialProduct],
+  );
+  const hasProductChanges = currentProductSnapshot !== initialProductSnapshot;
+
+  const currentVariantSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        removedVariantIds: [...removedVariantIds].sort(),
+        rows: rows.map((row) => ({
+          color: row.color,
+          compareAtPrice: row.compareAtPrice,
+          costPrice: row.costPrice,
+          id: row.id,
+          imageSelection: row.imageSelection,
+          isActive: row.isActive,
+          price: row.price,
+          reorderLevel: row.reorderLevel,
+          size: row.size,
+          stockQuantity: row.stockQuantity,
+        })),
+      }),
+    [removedVariantIds, rows],
+  );
+  const initialVariantSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        removedVariantIds: [],
+        rows: initialVariantRows.map((row) => ({
+          color: row.color,
+          compareAtPrice: row.compareAtPrice,
+          costPrice: row.costPrice,
+          id: row.id,
+          imageSelection: row.imageSelection,
+          isActive: row.isActive,
+          price: row.price,
+          reorderLevel: row.reorderLevel,
+          size: row.size,
+          stockQuantity: row.stockQuantity,
+        })),
+      }),
+    [initialVariantRows],
+  );
+  const hasVariantChanges = currentVariantSnapshot !== initialVariantSnapshot;
+  const currentBundleSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        removedBundleOfferIds: [...removedBundleOfferIds].sort(),
+        bundleOffers: bundleOffers.map((offer) => ({
+          id: offer.id,
+          title: offer.title,
+          imageSelection: offer.imageSelection,
+          variantSelection: offer.variantSelection,
+          minTotalQty: offer.minTotalQty,
+          discountPercent: offer.discountPercent,
+          isActive: offer.isActive,
+        })),
+      }),
+    [removedBundleOfferIds, bundleOffers],
+  );
+  const initialBundleSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        removedBundleOfferIds: [],
+        bundleOffers: (
+          initialProduct.bundleOffers.length > 0
+            ? initialProduct.bundleOffers
+            : [emptyBundleOffer()]
+        ).map((offer) => ({
+          id: offer.id,
+          title: offer.title,
+          imageSelection: offer.imageSelection,
+          variantSelection: offer.variantSelection,
+          minTotalQty: offer.minTotalQty,
+          discountPercent: offer.discountPercent,
+          isActive: offer.isActive,
+        })),
+      }),
+    [initialProduct.bundleOffers],
+  );
+  const hasBundleChanges = currentBundleSnapshot !== initialBundleSnapshot;
+  const activeEditorSection = hasProductChanges
+    ? 'product'
+    : hasVariantChanges
+      ? 'variants'
+      : hasBundleChanges
+        ? 'bundles'
+        : null;
+  const isProductEditorEnabled =
+    activeEditorSection === null || activeEditorSection === 'product';
+  const isVariantEditorEnabled = isVariantSectionEnabled;
+  const isBundleEditorEnabled = isBundleSectionEnabled;
 
   useEffect(() => {
     imageItemsRef.current = imageItems;
@@ -669,11 +1026,22 @@ export default function ProductForm({
     setRows((current) => {
       const row = current[index];
       if (row?.id) {
-        setRemovedVariantIds((ids) => [...ids, row.id]);
+        setRemovedVariantIds((ids) => appendUniqueId(ids, row.id));
       }
 
       const nextRows = current.filter((_, rowIndex) => rowIndex !== index);
       return nextRows.length > 0 ? nextRows : [emptyVariant()];
+    });
+    setOpenVariantIndexes((current) => {
+      const next = new Set<number>();
+      current.forEach((openIndex) => {
+        if (openIndex === index) return;
+        next.add(openIndex > index ? openIndex - 1 : openIndex);
+      });
+      if (next.size === 0) {
+        next.add(0);
+      }
+      return next;
     });
   }
 
@@ -681,7 +1049,9 @@ export default function ProductForm({
     setSpecifications((current) => {
       const specification = current[index];
       if (specification?.id) {
-        setRemovedSpecificationIds((ids) => [...ids, specification.id]);
+        setRemovedSpecificationIds((ids) =>
+          appendUniqueId(ids, specification.id),
+        );
       }
 
       const nextSpecifications = current.filter(
@@ -702,43 +1072,248 @@ export default function ProductForm({
   }
 
   function handleImageSelection(files: FileList | null) {
-    const nextItems: NewImageItem[] = Array.from(files ?? []).map((file) => ({
+    const incomingFiles = Array.from(files ?? []);
+    const existingCount = imageItems.length;
+
+    if (existingCount + incomingFiles.length > MAX_PRODUCT_IMAGE_FILES) {
+      setSubmitError(
+        `You can upload up to ${MAX_PRODUCT_IMAGE_FILES} images per product.`,
+      );
+      return;
+    }
+
+    for (const file of incomingFiles) {
+      if (!ALLOWED_PRODUCT_IMAGE_MIME_TYPES.has(file.type)) {
+        setSubmitError(
+          `Unsupported image type "${file.type || 'unknown'}". Allowed: JPG, PNG, WEBP, AVIF.`,
+        );
+        return;
+      }
+      if (file.size > MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES) {
+        setSubmitError(
+          `Image "${file.name}" exceeds ${(MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES / (1024 * 1024)).toFixed(0)}MB limit.`,
+        );
+        return;
+      }
+    }
+
+    setSubmitError(null);
+    const nextItems: NewImageItem[] = incomingFiles.map((file) => ({
       clientId: crypto.randomUUID(),
       file,
       previewUrl: URL.createObjectURL(file),
       type: 'new',
     }));
 
-    setImageItems((current) => [...current, ...nextItems]);
+    setImageItems((current) => {
+      const nextImageItems = [...current, ...nextItems];
+      syncFileInputWithImageItems(nextImageItems);
+      return nextImageItems;
+    });
+  }
+
+  function updateBundleOffer(index: number, patch: Partial<BundleOfferFormRow>) {
+    setBundleOffers((current) =>
+      current.map((offer, offerIndex) =>
+        offerIndex === index ? { ...offer, ...patch } : offer,
+      ),
+    );
+  }
+
+  function removeBundleOffer(index: number) {
+    setBundleOffers((current) => {
+      const offer = current[index];
+      if (offer?.id) {
+        setRemovedBundleOfferIds((ids) => appendUniqueId(ids, offer.id));
+      }
+      const nextOffers = current.filter((_, offerIndex) => offerIndex !== index);
+      return nextOffers.length > 0 ? nextOffers : [emptyBundleOffer()];
+    });
+    setOpenBundleIndexes((current) => {
+      const next = new Set<number>();
+      current.forEach((openIndex) => {
+        if (openIndex === index) return;
+        next.add(openIndex > index ? openIndex - 1 : openIndex);
+      });
+      if (next.size === 0) {
+        next.add(0);
+      }
+      return next;
+    });
+  }
+
+  function addBundleOfferBelow(index: number) {
+    const insertIndex = index + 1;
+    setBundleOffers((current) => {
+      const source = current[index] ?? emptyBundleOffer();
+      const copy: BundleOfferFormRow = {
+        ...source,
+        id: '',
+        isActive: false,
+      };
+      const next = [...current];
+      next.splice(index + 1, 0, copy);
+      return next;
+    });
+    setOpenBundleIndexes((current) => {
+      const next = new Set<number>();
+      current.forEach((openIndex) => {
+        next.add(openIndex >= insertIndex ? openIndex + 1 : openIndex);
+      });
+      next.add(insertIndex);
+      return next;
+    });
+  }
+
+  function moveDraggedSpecification(targetIndex: number, sourceIndex?: number) {
+    const effectiveSourceIndex = sourceIndex ?? draggedSpecificationIndex;
+    if (
+      effectiveSourceIndex === null ||
+      effectiveSourceIndex === targetIndex ||
+      effectiveSourceIndex < 0
+    ) {
+      return;
+    }
+
+    setSpecifications((current) => {
+      if (
+        effectiveSourceIndex >= current.length ||
+        targetIndex < 0 ||
+        targetIndex >= current.length
+      ) {
+        return current;
+      }
+      return moveItem(current, effectiveSourceIndex, targetIndex);
+    });
+
+    setDraggedSpecificationIndex(null);
+  }
+
+  function addRowBelow(index: number) {
+    const insertIndex = index + 1;
+    setRows((current) => {
+      const source = current[index] ?? emptyVariant();
+      const copy: VariantFormRow = {
+        ...source,
+        id: '',
+        imageSelection: '',
+        sku: '',
+      };
+      const nextRows = [...current];
+      nextRows.splice(index + 1, 0, copy);
+      return nextRows;
+    });
+    setOpenVariantIndexes((current) => {
+      const next = new Set<number>();
+      current.forEach((openIndex) => {
+        next.add(openIndex >= insertIndex ? openIndex + 1 : openIndex);
+      });
+      next.add(insertIndex);
+      return next;
+    });
+  }
+
+  function moveRow(index: number, direction: 'up' | 'down') {
+    setRows((current) => {
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= current.length) return current;
+      return moveItem(current, index, targetIndex);
+    });
+    setOpenVariantIndexes((current) => {
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      const next = new Set<number>();
+      current.forEach((openIndex) => {
+        if (openIndex === index) {
+          next.add(targetIndex);
+        } else if (openIndex === targetIndex) {
+          next.add(index);
+        } else {
+          next.add(openIndex);
+        }
+      });
+      return next;
+    });
+  }
+
+  function toggleVariantOpen(index: number) {
+    setOpenVariantIndexes((current) => {
+      const next = new Set(current);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }
+
+  function toggleBundleOpen(index: number) {
+    setOpenBundleIndexes((current) => {
+      const next = new Set(current);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }
+
+  function syncFileInputWithImageItems(items: ProductImageItem[]) {
+    const imageInput = imageInputRef.current;
+    if (!imageInput) return;
+
+    const dataTransfer = new DataTransfer();
+    items.forEach((item) => {
+      if (item.type === 'new') {
+        dataTransfer.items.add(item.file);
+      }
+    });
+
+    imageInput.files = dataTransfer.files;
   }
 
   function removeImage(item: ProductImageItem) {
     const imageKey = getImageOrderKey(item);
     if (item.type === 'existing') {
-      setRemovedImageIds((ids) => [...ids, item.id]);
+      setRemovedImageIds((ids) => appendUniqueId(ids, item.id));
     } else {
       URL.revokeObjectURL(item.previewUrl);
     }
 
     setRows((current) =>
       current.map((row) =>
-        row.imageSelection === imageKey
-          ? { ...row, imageSelection: '' }
-          : row,
+        {
+          const nextSelections = row.imageSelection
+            .split(',')
+            .map((selection) => selection.trim())
+            .filter(Boolean)
+            .filter((selection) => selection !== imageKey);
+          return nextSelections.length === 0 && row.imageSelection.length === 0
+            ? row
+            : { ...row, imageSelection: nextSelections.join(',') };
+        },
       ),
     );
 
     setImageItems((current) =>
-      current.filter((currentItem) => getImageOrderKey(currentItem) !== imageKey),
+      {
+        const nextImageItems = current.filter(
+          (currentItem) => getImageOrderKey(currentItem) !== imageKey,
+        );
+        syncFileInputWithImageItems(nextImageItems);
+        return nextImageItems;
+      },
     );
   }
 
-  function moveDraggedImage(targetKey: string) {
-    if (!draggedImageKey || draggedImageKey === targetKey) return;
+  function moveDraggedImage(targetKey: string, sourceKey?: string) {
+    const effectiveSourceKey = sourceKey ?? draggedImageKey;
+    if (!effectiveSourceKey || effectiveSourceKey === targetKey) return;
 
     setImageItems((current) => {
       const fromIndex = current.findIndex(
-        (item) => getImageOrderKey(item) === draggedImageKey,
+        (item) => getImageOrderKey(item) === effectiveSourceKey,
       );
       const toIndex = current.findIndex(
         (item) => getImageOrderKey(item) === targetKey,
@@ -751,8 +1326,125 @@ export default function ProductForm({
     setDraggedImageKey(null);
   }
 
+  function resetProductSection() {
+    setProductName(initialProduct.name);
+    setShortDescription(initialProduct.shortDescription);
+    setDescription(initialProduct.description);
+    setSelectedBrandId(initialProduct.brandId);
+    setSeoTitle(initialProduct.seoTitle);
+    setSeoDescription(initialProduct.seoDescription);
+    setSelectedStatus(initialProduct.status);
+    setSelectedCategoryIds(initialProduct.categoryIds);
+    setSpecifications(
+      initialProduct.specifications.length > 0
+        ? initialProduct.specifications
+        : [emptySpecification()],
+    );
+    setRemovedSpecificationIds([]);
+    setRemovedImageIds([]);
+    setImageItems((current) => {
+      current.forEach((item) => {
+        if (item.type === 'new') {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      });
+      return initialProduct.images.map((image) => ({
+        ...image,
+        type: 'existing' as const,
+      }));
+    });
+    setSubmitError(null);
+    setActivationRequirements({
+      categories: false,
+      media: false,
+      variants: false,
+    });
+  }
+
+  function resetVariantSection() {
+    setRows(initialVariantRows);
+    setOpenVariantIndexes(new Set([0]));
+    setRemovedVariantIds([]);
+    setSubmitError(null);
+  }
+
+  function resetBundleSection() {
+    setBundleOffers(
+      initialProduct.bundleOffers.length > 0
+        ? initialProduct.bundleOffers
+        : [emptyBundleOffer()],
+    );
+    setOpenBundleIndexes(new Set([0]));
+    setRemovedBundleOfferIds([]);
+    setSubmitError(null);
+  }
+
+  function getActivationMissingRequirements() {
+    const hasMedia = imageItems.length > 0;
+    const hasCategories = selectedCategoryIds.length > 0;
+    const hasVariantWithPrice = rows.some(
+      (row) => Boolean(row.id) || row.price.trim().length > 0,
+    );
+
+    return {
+      categories: !hasCategories,
+      media: !hasMedia,
+      variants: !hasVariantWithPrice,
+    };
+  }
+
+  async function handleSubmit(formData: FormData) {
+    setSubmitError(null);
+    const submitIntent = String(formData.get('submitIntent') ?? '').trim();
+    const shouldValidateActivation =
+      submitIntent !== 'variants' && submitIntent !== 'bundleOffers';
+    const intendedStatus = String(formData.get('status') ?? selectedStatus)
+      .trim()
+      .toLowerCase();
+    if (shouldValidateActivation && intendedStatus === 'active') {
+      const missing = getActivationMissingRequirements();
+      setActivationRequirements(missing);
+
+      if (missing.categories || missing.media || missing.variants) {
+        setSelectedStatus('draft');
+        formData.set('status', 'draft');
+      }
+    } else if (shouldValidateActivation) {
+      setActivationRequirements({
+        categories: false,
+        media: false,
+        variants: false,
+      });
+    }
+
+    if (imageItems.length > MAX_PRODUCT_IMAGE_FILES) {
+      setSubmitError(
+        `You can upload up to ${MAX_PRODUCT_IMAGE_FILES} images per product.`,
+      );
+      return;
+    }
+    try {
+      await action(formData);
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'digest' in error &&
+        typeof (error as { digest?: unknown }).digest === 'string' &&
+        (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+      ) {
+        throw error;
+      }
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to save product. Please try again.';
+      setSubmitError(message);
+    }
+  }
+
   return (
-    <form action={action} className="space-y-6 pb-2">
+    <form action={handleSubmit} className="space-y-6 pb-2">
       {initialProduct.id && (
         <input type="hidden" name="productId" value={initialProduct.id} />
       )}
@@ -761,6 +1453,9 @@ export default function ProductForm({
       ))}
       {removedSpecificationIds.map((id) => (
         <input key={id} type="hidden" name="removeSpecificationIds" value={id} />
+      ))}
+      {removedBundleOfferIds.map((id) => (
+        <input key={id} type="hidden" name="removeBundleOfferIds" value={id} />
       ))}
       {removedImageIds.map((id) => (
         <input key={id} type="hidden" name="removeImageIds" value={id} />
@@ -783,9 +1478,25 @@ export default function ProductForm({
             value={item.clientId}
           />
         ))}
-
+      <input type="hidden" name="name" value={productName} />
+      <input
+        type="hidden"
+        name="slug"
+        value={buildProductSlug(productName, initialProduct.slug)}
+      />
+      <input type="hidden" name="status" value={selectedStatus} />
       <section className="space-y-4 border-b border-slate-200 pb-6">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Product</h3>
+        </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          {!isProductEditorEnabled && (
+            <p className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
+              Another section has pending changes. Save or reset it first.
+            </p>
+          )}
+          <fieldset disabled={!isProductEditorEnabled} className="space-y-0 disabled:opacity-70">
+          <input type="hidden" name="brandId" value={selectedBrandId} />
           <div className="grid gap-4 md:grid-cols-[minmax(220px,1fr)_140px]">
             <label className={labelClass}>
               <span className="flex items-center justify-between gap-3">
@@ -819,10 +1530,50 @@ export default function ProductForm({
                 name="status"
                 options={statusOptions}
                 value={selectedStatus}
-                onChange={(value) => setSelectedStatus(value as ProductStatus)}
+                onChange={(value) => {
+                  const nextValue = value as ProductStatus;
+                  setSelectedStatus(nextValue);
+                  if (nextValue !== 'active') {
+                    setActivationRequirements({
+                      categories: false,
+                      media: false,
+                      variants: false,
+                    });
+                    if (submitError?.includes('Cannot set status to active')) {
+                      setSubmitError(null);
+                    }
+                    return;
+                  }
+
+                  const missing = getActivationMissingRequirements();
+                  setActivationRequirements(missing);
+                  if (missing.categories || missing.media || missing.variants) {
+                    setSubmitError(
+                      'Cannot set status to active yet. Complete required media, category, and variant/price fields highlighted below.',
+                    );
+                  } else {
+                    setSubmitError(null);
+                  }
+                }}
               />
             </label>
           </div>
+
+          <label className={`${labelClass} mt-4 block`}>
+            <span>Brand</span>
+            <select
+              value={selectedBrandId}
+              onChange={(event) => setSelectedBrandId(event.target.value)}
+              className={`${fieldClass} h-11`}
+            >
+              <option value="">No brand selected</option>
+              {brands.map((brand) => (
+                <option key={brand.id} value={brand.id}>
+                  {brand.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <label className={`${labelClass} mt-4 block`}>
             <span className="flex items-center justify-between gap-3">
@@ -856,13 +1607,60 @@ export default function ProductForm({
               {specifications.map((specification, index) => (
                 <div
                   key={`${specification.id || 'new-spec'}-${index}`}
-                  className="grid gap-3 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_40px]"
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const sourceIndexRaw =
+                      event.dataTransfer.getData('text/plain');
+                    const sourceIndex = Number.parseInt(sourceIndexRaw, 10);
+                    moveDraggedSpecification(
+                      index,
+                      Number.isNaN(sourceIndex) ? undefined : sourceIndex,
+                    );
+                  }}
+                  onDragEnd={() => setDraggedSpecificationIndex(null)}
+                  className="grid gap-3 md:grid-cols-[36px_minmax(0,0.9fr)_minmax(0,1.1fr)_40px]"
                 >
                   <input
                     type="hidden"
                     name="specificationId"
                     value={specification.id}
                   />
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      draggable
+                      aria-label={`Drag specification ${index + 1}`}
+                      onDragStart={(event) => {
+                        setDraggedSpecificationIndex(index);
+                        event.dataTransfer.effectAllowed = 'move';
+                        event.dataTransfer.setData('text/plain', String(index));
+                      }}
+                      onDragEnd={() => setDraggedSpecificationIndex(null)}
+                      className="flex h-11 w-11 cursor-grab items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-600 transition hover:bg-slate-50 active:cursor-grabbing"
+                    >
+                      <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="9" cy="6" r="1.2" />
+                        <circle cx="15" cy="6" r="1.2" />
+                        <circle cx="9" cy="12" r="1.2" />
+                        <circle cx="15" cy="12" r="1.2" />
+                        <circle cx="9" cy="18" r="1.2" />
+                        <circle cx="15" cy="18" r="1.2" />
+                      </svg>
+                    </button>
+                  </div>
                   <label className={`${compactLabelClass} mb-0`}>
                     <span>Spec Name</span>
                     <input
@@ -955,15 +1753,45 @@ export default function ProductForm({
                   target.setSelectionRange(nextCaretPosition, nextCaretPosition);
                 });
               }}
-              className={`${fieldClass} resize-y`}
-            />
+            className={`${fieldClass} resize-y`}
+          />
           </label>
-        </div>
-      </section>
 
-      <section className="space-y-4 border-b border-slate-200 pb-6">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-medium text-slate-900">Media</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className={labelClass}>
+              <span>SEO Title</span>
+              <input
+                name="seoTitle"
+                placeholder="Search title for product page"
+                value={seoTitle}
+                onChange={(event) => setSeoTitle(event.target.value)}
+                className={fieldClass}
+              />
+            </label>
+            <label className={labelClass}>
+              <span>SEO Description</span>
+              <input
+                name="seoDescription"
+                placeholder="Search description summary"
+                value={seoDescription}
+                onChange={(event) => setSeoDescription(event.target.value)}
+                className={fieldClass}
+              />
+            </label>
+          </div>
+
+          <p
+            className={`mt-5 text-sm font-medium ${
+              activationRequirements.media ? 'text-red-700' : 'text-slate-900'
+            }`}
+          >
+            Media
+          </p>
+          {activationRequirements.media ? (
+            <p className="mt-1 text-xs font-semibold text-red-700">
+              At least one product image is required to set status to active.
+            </p>
+          ) : null}
           <input
             ref={imageInputRef}
             name="productImages"
@@ -974,7 +1802,13 @@ export default function ProductForm({
             className="sr-only"
           />
 
-          <div className="mt-3 flex flex-wrap items-start gap-2">
+          <div
+            className={`mt-3 flex flex-wrap items-start gap-2 rounded-xl p-2 ${
+              activationRequirements.media
+                ? 'border border-red-300 bg-red-50/40'
+                : ''
+            }`}
+          >
             {imageItems.map((image, index) => {
               const imageKey = getImageOrderKey(image);
               const imageUrl =
@@ -988,9 +1822,23 @@ export default function ProductForm({
                 <div
                   key={imageKey}
                   draggable
-                  onDragStart={() => setDraggedImageKey(imageKey)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => moveDraggedImage(imageKey)}
+                  onDragStart={(event) => {
+                    setDraggedImageKey(imageKey);
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', imageKey);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const sourceKey =
+                      event.dataTransfer.getData('text/plain') || draggedImageKey;
+                    if (!sourceKey || sourceKey === imageKey) return;
+                    moveDraggedImage(imageKey, sourceKey);
+                  }}
+                  onDragEnd={() => setDraggedImageKey(null)}
                   className={`shrink-0 cursor-grab active:cursor-grabbing ${
                     isFeatured ? 'w-56' : 'w-[108px]'
                   }`}
@@ -1027,17 +1875,25 @@ export default function ProductForm({
               );
             })}
 
-            <button
-              type="button"
-              aria-label="Add product images"
-              onClick={() => imageInputRef.current?.click()}
-              className="flex h-[108px] w-[108px] shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-3xl font-light text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-            >
-              +
-            </button>
+            {imageItems.length < MAX_PRODUCT_IMAGE_FILES && (
+              <button
+                type="button"
+                aria-label="Add product images"
+                onClick={() => imageInputRef.current?.click()}
+                className="flex h-[108px] w-[108px] shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-3xl font-light text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+              >
+                +
+              </button>
+            )}
           </div>
 
-          <div className="mt-5">
+          <div
+            className={`mt-5 rounded-xl p-2 ${
+              activationRequirements.categories
+                ? 'border border-red-300 bg-red-50/40'
+                : ''
+            }`}
+          >
             <div className="mb-2 flex items-center justify-between gap-3">
               <label
                 htmlFor="categoryIds"
@@ -1051,6 +1907,11 @@ export default function ProductForm({
                 </span>
               )}
             </div>
+            {activationRequirements.categories ? (
+              <p className="mb-2 text-xs font-semibold text-red-700">
+                At least one category is required to set status to active.
+              </p>
+            ) : null}
             {selectedCategoryIds.map((categoryId) => (
               <input
                 key={`selected-category-${categoryId}`}
@@ -1067,10 +1928,12 @@ export default function ProductForm({
                 onClick={() =>
                   setIsCategoryDropdownOpen((current) => !current)
                 }
-                className={`h-11 w-full rounded-xl border bg-white px-3.5 py-2.5 pr-11 text-left text-sm outline-none transition ${
-                  isCategoryDropdownOpen
-                    ? 'border-slate-500 text-slate-900 shadow-md ring-2 ring-slate-200'
-                    : 'border-slate-300 text-slate-800'
+                className={`h-11 w-full rounded-xl border bg-white px-3.5 py-2.5 pr-12 text-left text-sm outline-none transition ${
+                  activationRequirements.categories
+                    ? 'border-red-300 text-slate-900 ring-2 ring-red-100'
+                    : isCategoryDropdownOpen
+                      ? 'border-slate-500 text-slate-900 shadow-md ring-2 ring-slate-200'
+                      : 'border-slate-300 text-slate-800'
                 }`}
               >
                 {selectedCategoryIds.length > 0
@@ -1121,6 +1984,48 @@ export default function ProductForm({
               </AnimatePresence>
             </div>
           </div>
+
+          <div className="mt-5">
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                name="submitIntent"
+                value={isEditing ? 'productMedia' : 'full'}
+                disabled={
+                  !isProductEditorEnabled || (isEditing ? !hasProductChanges : !hasChanges)
+                }
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${
+                  !isProductEditorEnabled || (isEditing ? !hasProductChanges : !hasChanges)
+                    ? 'cursor-not-allowed bg-slate-300'
+                    : 'bg-blue-700 hover:bg-blue-600'
+                }`}
+              >
+                {isEditing ? 'Save Product' : submitLabel}
+              </button>
+              {isEditing ? (
+                <button
+                  type="button"
+                  disabled={!isProductEditorEnabled || !hasProductChanges}
+                  onClick={resetProductSection}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                    !isProductEditorEnabled || !hasProductChanges
+                      ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Cancel
+                </button>
+              ) : (
+                <Link
+                  href="/admin/products"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Cancel
+                </Link>
+              )}
+            </div>
+          </div>
+          </fieldset>
         </div>
       </section>
 
@@ -1128,14 +2033,62 @@ export default function ProductForm({
         <div>
           <h3 className="text-sm font-semibold text-slate-900">Variants</h3>
           <p className="mt-1 text-sm text-slate-600">
-            Each product needs at least one variant for stock and order entry.
+            Variants are optional during product setup. Removing a variant deactivates
+            it safely, preserving order history and allowing future revival.
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="space-y-4">
-            {rows.map((row, index) => {
+        <div
+          className={`rounded-xl bg-white p-5 shadow-sm ${
+            activationRequirements.variants
+              ? 'border border-red-300'
+              : 'border border-slate-200'
+          }`}
+        >
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Variant Visibility
+            </p>
+            <select
+              value={variantVisibility}
+              onChange={(event) =>
+                setVariantVisibility(event.target.value as VariantVisibility)
+              }
+              className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-500"
+            >
+              <option value="all">All ({rows.length})</option>
+              <option value="active">
+                Active ({rows.filter((row) => row.isActive).length})
+              </option>
+              <option value="inactive">
+                Inactive ({rows.filter((row) => !row.isActive).length})
+              </option>
+            </select>
+          </div>
+          {activationRequirements.variants ? (
+            <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+              At least one variant with price is required to set status to active.
+            </p>
+          ) : null}
+          {!isVariantSectionEnabled && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+              Save product first. Variant section activates after product ID is created.
+            </p>
+          )}
+          {isVariantSectionEnabled && !isVariantEditorEnabled && (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+              Another section has pending changes. Save or reset it first.
+            </p>
+          )}
+          <fieldset
+            disabled={!isVariantEditorEnabled}
+            className="space-y-4 disabled:opacity-70"
+          >
+            {visibleVariantIndexes.map((index) => {
+              const row = rows[index];
+              if (!row) return null;
               const generatedSku = generateSku(productName, row.color, row.size);
+              const isOpen = openVariantIndexes.has(index);
 
               return (
                 <div
@@ -1143,11 +2096,91 @@ export default function ProductForm({
                   className="rounded-xl border border-slate-200 bg-slate-50/70 p-4"
                 >
                   <input type="hidden" name="variantId" value={row.id} />
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+                  <div
+                    className="mb-4 flex cursor-pointer flex-wrap items-center justify-between gap-4"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleVariantOpen(index)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        toggleVariantOpen(index);
+                      }
+                    }}
+                    aria-label={isOpen ? `Collapse variant ${index + 1}` : `Expand variant ${index + 1}`}
+                    aria-expanded={isOpen}
+                  >
                     <div className="flex flex-wrap items-center gap-4">
-                      <p className="inline-flex items-center self-center text-xs font-semibold uppercase leading-none tracking-wide text-slate-500">
-                        Variant {index + 1}
-                      </p>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          aria-label={`Move variant ${index + 1} up`}
+                          onClick={() => moveRow(index, 'up')}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onClickCapture={(event) => event.stopPropagation()}
+                          disabled={index === 0}
+                          className={`flex h-7 w-7 items-center justify-center rounded-md border text-slate-700 transition ${
+                            index === 0
+                              ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                              : 'border-slate-300 bg-white hover:bg-slate-100'
+                          }`}
+                        >
+                          <svg
+                            className="h-4 w-4"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="m5 12 5-5 5 5" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Move variant ${index + 1} down`}
+                          onClick={() => moveRow(index, 'down')}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onClickCapture={(event) => event.stopPropagation()}
+                          disabled={index === rows.length - 1}
+                          className={`flex h-7 w-7 items-center justify-center rounded-md border text-slate-700 transition ${
+                            index === rows.length - 1
+                              ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                              : 'border-slate-300 bg-white hover:bg-slate-100'
+                          }`}
+                        >
+                          <svg
+                            className="h-4 w-4"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="m5 8 5 5 5-5" />
+                          </svg>
+                        </button>
+                        <p className="inline-flex items-center self-center text-xs font-semibold uppercase leading-none tracking-wide text-slate-500">
+                          Variant {index + 1}
+                        </p>
+                        <span className="text-slate-500" aria-hidden="true">
+                          <svg
+                            className={`h-3.5 w-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                            viewBox="0 0 20 20"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="m5 8 5 5 5-5" />
+                          </svg>
+                        </span>
+                      </div>
                       <label className="mb-0 inline-flex items-center gap-2">
                         <span className="inline-flex shrink-0 items-center text-xs font-semibold leading-none text-slate-600">
                           SKU
@@ -1160,10 +2193,10 @@ export default function ProductForm({
                         />
                       </label>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <label className="mb-0 flex h-11 items-center gap-2">
                         <span className="shrink-0 text-xs font-semibold text-slate-600">
-                          Status
+                          Active
                         </span>
                         <div className="w-[110px]">
                           <FormDropdown
@@ -1179,8 +2212,26 @@ export default function ProductForm({
                       </label>
                       <button
                         type="button"
+                        aria-label={`Add variant below ${index + 1}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          addRowBelow(index);
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100"
+                      >
+                        <span className="relative -top-px text-2xl leading-none font-semibold">
+                          +
+                        </span>
+                      </button>
+                      <button
+                        type="button"
                         aria-label={`Remove variant ${index + 1}`}
-                        onClick={() => removeRow(index)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeRow(index);
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
                         className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 bg-white text-red-700 transition hover:bg-red-50"
                       >
                         <svg
@@ -1202,13 +2253,13 @@ export default function ProductForm({
                       </button>
                     </div>
                   </div>
-
+                  <div className={isOpen ? '' : 'hidden'}>
                   <div className="grid gap-3 md:grid-cols-[minmax(150px,0.95fr)_minmax(150px,1fr)_minmax(120px,0.8fr)_minmax(110px,0.75fr)_minmax(120px,0.85fr)]">
                     <label className={compactLabelClass}>
                       <span>Image</span>
                       <VariantImagePicker
                         name="variantImageSelection"
-                        mediaOptions={mediaOptions}
+                        mediaOptions={variantMediaOptions}
                         value={row.imageSelection}
                         onChange={(value) =>
                           updateRow(index, { imageSelection: value })
@@ -1241,7 +2292,6 @@ export default function ProductForm({
                       <span>Stock</span>
                       <input
                         name="variantStockQuantity"
-                        required
                         inputMode="numeric"
                         value={row.stockQuantity}
                         onChange={(event) =>
@@ -1256,7 +2306,6 @@ export default function ProductForm({
                       <span>Reorder Level</span>
                       <input
                         name="variantReorderLevel"
-                        required
                         inputMode="numeric"
                         value={row.reorderLevel}
                         onChange={(event) =>
@@ -1274,7 +2323,6 @@ export default function ProductForm({
                       <span>Price</span>
                       <input
                         name="variantPrice"
-                        required
                         inputMode="decimal"
                         value={row.price}
                         onChange={(event) =>
@@ -1310,55 +2358,426 @@ export default function ProductForm({
                       />
                     </label>
                   </div>
+                  </div>
                 </div>
               );
             })}
-          </div>
+            {visibleVariantIndexes.length === 0 ? (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                No variants match the selected visibility filter.
+              </p>
+            ) : null}
+          </fieldset>
 
-          <button
-            type="button"
-            aria-label="Add variant"
-            onClick={() =>
-              setRows((current) => {
-                const lastRow = current[current.length - 1] ?? emptyVariant();
-                return [
-                  ...current,
-                  {
-                    ...lastRow,
-                    id: '',
-                    sku: '',
-                  },
-                ];
-              })
-            }
-            className="mt-4 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 shadow-sm transition hover:bg-blue-100"
-          >
-            <span className="relative -top-px text-2xl leading-none font-semibold">
-              +
-            </span>
-          </button>
+          {isEditing && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  name="submitIntent"
+                  value="variants"
+                  disabled={!isVariantEditorEnabled || !hasVariantChanges}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${
+                    isVariantEditorEnabled && hasVariantChanges
+                      ? 'bg-slate-900 hover:bg-slate-800'
+                      : 'cursor-not-allowed bg-slate-300'
+                  }`}
+                >
+                  Save Variants
+                </button>
+                {isEditing ? (
+                  <button
+                    type="button"
+                    disabled={!isVariantEditorEnabled || !hasVariantChanges}
+                    onClick={resetVariantSection}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                      !isVariantEditorEnabled || !hasVariantChanges
+                        ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                ) : (
+                  <Link
+                    href="/admin/products"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Cancel
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
-      <div className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-5 py-4 shadow-lg shadow-slate-200/70 backdrop-blur">
-        <button
-          type="submit"
-          disabled={!hasChanges}
-          className={`rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition ${
-            hasChanges
-              ? 'bg-blue-700 text-white hover:bg-blue-600'
-              : 'cursor-not-allowed bg-slate-200 text-slate-500 shadow-none'
-          }`}
-        >
-          {submitLabel}
-        </button>
-        <Link
-          href="/admin/products"
-          className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold !text-red-700 shadow-sm transition hover:bg-red-50 hover:!text-red-700"
-        >
-          Cancel
-        </Link>
-      </div>
+      <section className="space-y-4 border-b border-slate-200 pb-6">
+        <div>
+          <h3 className="text-sm font-semibold text-amber-900">Bundles</h3>
+          <p className="mt-1 text-sm text-slate-600">
+            Create threshold-based discount bundles tied to saved variants.
+          </p>
+        </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-amber-900">Bundle Offers</p>
+            </div>
+            {!isBundleSectionEnabled && (
+              <p className="rounded-md border border-amber-200 bg-amber-100/70 px-2 py-1 text-xs font-semibold text-amber-900">
+                Bundle section activates after at least one saved variant exists.
+              </p>
+            )}
+            {isBundleSectionEnabled && !isBundleEditorEnabled && (
+              <p className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
+                Another section has pending changes. Save or reset it first.
+              </p>
+            )}
+            <fieldset disabled={!isBundleEditorEnabled} className="space-y-3 disabled:opacity-70">
+              {bundleOffers.map((offer, index) => {
+                const isOpen = openBundleIndexes.has(index);
+                const titlePercent = extractPercentFromBundleTitle(offer.title);
+                const titleMinQty = extractMinQtyFromBundleTitle(offer.title);
+                const configuredPercent = Number(offer.discountPercent);
+                const configuredMinQty = Number(offer.minTotalQty);
+                const hasConfiguredPercent =
+                  offer.discountPercent.trim() !== '' &&
+                  Number.isFinite(configuredPercent);
+                const hasConfiguredMinQty =
+                  offer.minTotalQty.trim() !== '' &&
+                  Number.isFinite(configuredMinQty);
+                const hasConflict =
+                  titlePercent !== null &&
+                  hasConfiguredPercent &&
+                  Math.abs(titlePercent - configuredPercent) > 0.0001;
+                const hasMinQtyConflict =
+                  titleMinQty !== null &&
+                  hasConfiguredMinQty &&
+                  Math.abs(titleMinQty - configuredMinQty) > 0.0001;
+                return (
+                <div
+                  key={`${offer.id || 'new-offer'}-${index}`}
+                  className="rounded-lg border border-amber-200 bg-white p-3"
+                >
+                  <input type="hidden" name="bundleOfferId" value={offer.id} />
+                  <input
+                    type="hidden"
+                    name="bundleOfferImageSelection"
+                    value={offer.imageSelection}
+                  />
+                  <div
+                    className="flex cursor-pointer items-center justify-between gap-3"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleBundleOpen(index)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        toggleBundleOpen(index);
+                      }
+                    }}
+                    aria-label={isOpen ? `Collapse bundle ${index + 1}` : `Expand bundle ${index + 1}`}
+                    aria-expanded={isOpen}
+                  >
+                    <div className="inline-flex min-w-0 items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-900">
+                      <span>Bundle {index + 1}</span>
+                      <span className="max-w-[360px] truncate text-[11px] font-semibold normal-case tracking-normal text-amber-800/90">
+                        {offer.title?.trim() || 'Untitled bundle'}
+                      </span>
+                      <span className="text-amber-900" aria-hidden="true">
+                        <svg
+                          className={`h-3.5 w-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="m5 8 5 5 5-5" />
+                        </svg>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="mb-0 flex h-11 items-center gap-2">
+                        <span className="shrink-0 text-xs font-semibold text-slate-600">
+                          Active
+                        </span>
+                        <div className="w-[110px]">
+                          <FormDropdown
+                            id={`bundleIsActive-${index}`}
+                            name="bundleOfferIsActive"
+                            options={activeOptions}
+                            value={offer.isActive ? 'true' : 'false'}
+                            onChange={(value) =>
+                              updateBundleOffer(index, { isActive: value === 'true' })
+                            }
+                          />
+                        </div>
+                      </label>
+                      <button
+                        type="button"
+                        aria-label={`Add bundle below ${index + 1}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          addBundleOfferBelow(index);
+                        }}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100"
+                      >
+                        <span className="relative -top-px text-2xl leading-none font-semibold">
+                          +
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Remove bundle offer ${index + 1}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeBundleOffer(index);
+                        }}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 bg-white text-red-700 transition hover:bg-red-50"
+                      >
+                        <svg
+                          className="h-4 w-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M3 6h18" />
+                          <path d="M8 6V4h8v2" />
+                          <path d="m19 6-1 14H6L5 6" />
+                          <path d="M10 11v5" />
+                          <path d="M14 11v5" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className={isOpen ? '' : 'hidden'}>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className={compactLabelClass}>
+                      <span>Title</span>
+                      <input
+                        name="bundleOfferTitle"
+                        value={offer.title}
+                        onChange={(event) =>
+                          updateBundleOffer(index, { title: event.target.value })
+                        }
+                        className={fieldClass}
+                      />
+                    </label>
+                  <label className={compactLabelClass}>
+                    <span>Eligible Variants</span>
+                    <VariantMultiSelectDropdown
+                      name="bundleOfferVariantSelection"
+                      options={bundleVariantOptions}
+                      value={offer.variantSelection}
+                      onChange={(value) =>
+                        updateBundleOffer(index, { variantSelection: value })
+                      }
+                    />
+                  </label>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className={compactLabelClass}>
+                        <span>Min Qty</span>
+                        <input
+                          name="bundleOfferMinTotalQty"
+                          inputMode="numeric"
+                          value={offer.minTotalQty}
+                          onChange={(event) =>
+                            updateBundleOffer(index, { minTotalQty: event.target.value })
+                          }
+                          className={fieldClass}
+                        />
+                      </label>
+                      <label className={compactLabelClass}>
+                        <span>Discount %</span>
+                        <input
+                          name="bundleOfferDiscountPercent"
+                          inputMode="decimal"
+                          value={offer.discountPercent}
+                          onChange={(event) =>
+                            updateBundleOffer(index, { discountPercent: event.target.value })
+                          }
+                          className={fieldClass}
+                        />
+                        {hasConflict ? (
+                          <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800">
+                            Warning: Title says {titlePercent}% but Discount % is{' '}
+                            {configuredPercent}%.
+                          </p>
+                        ) : null}
+                        {hasMinQtyConflict ? (
+                          <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800">
+                            Warning: Title says min qty {titleMinQty} but Min Qty is{' '}
+                            {configuredMinQty}.
+                          </p>
+                        ) : null}
+                      </label>
+                    </div>
+                  </div>
+                  </div>
+                </div>
+                );
+              })}
+            </fieldset>
+          </div>
+
+          {isEditing && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  name="submitIntent"
+                  value="bundleOffers"
+                  disabled={!isBundleEditorEnabled || !hasBundleChanges}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${
+                    isBundleEditorEnabled && hasBundleChanges
+                      ? 'bg-amber-700 hover:bg-amber-600'
+                      : 'cursor-not-allowed bg-slate-300'
+                  }`}
+                >
+                  Save Bundles
+                </button>
+                <button
+                  type="button"
+                  disabled={!isBundleEditorEnabled || !hasBundleChanges}
+                  onClick={resetBundleSection}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                    !isBundleEditorEnabled || !hasBundleChanges
+                      ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                      : 'border-amber-300 bg-white text-amber-800 hover:bg-amber-100'
+                  }`}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {submitError && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          {submitError}
+        </p>
+      )}
+
     </form>
   );
 }
+
+function VariantMultiSelectDropdown({
+  name,
+  options,
+  value,
+  onChange,
+}: {
+  name: string;
+  options: { label: string; value: string }[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedValues = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const selectedSet = new Set(selectedValues);
+  const allChecked =
+    options.length > 0 && options.every((option) => selectedSet.has(option.value));
+  const summary =
+    selectedValues.length === 0
+      ? 'Select variants'
+      : `${selectedValues.length} selected`;
+
+  return (
+    <div className="relative">
+      <input type="hidden" name={name} value={value} />
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((current) => !current)}
+        onBlur={() => setTimeout(() => setIsOpen(false), 140)}
+        className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 transition hover:border-slate-400"
+      >
+        <span className="truncate">{summary}</span>
+        <span className="text-slate-500" aria-hidden="true">
+          <svg
+            className={`h-3.5 w-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m5 8 5 5 5-5" />
+          </svg>
+        </span>
+      </button>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-200/70"
+            role="listbox"
+          >
+            {options.length > 0 ? (
+              <>
+                <label className="mb-2 flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    onChange={(event) =>
+                      onChange(
+                        event.target.checked
+                          ? options.map((option) => option.value).join(',')
+                          : '',
+                      )
+                    }
+                    className="h-3.5 w-3.5 accent-amber-600"
+                  />
+                  <span>Check all</span>
+                </label>
+                {options.map((option) => {
+                  const checked = selectedSet.has(option.value);
+                  return (
+                    <label
+                      key={option.value}
+                      className="mb-1 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          const next = event.target.checked
+                            ? [...selectedValues, option.value]
+                            : selectedValues.filter((valueItem) => valueItem !== option.value);
+                          onChange([...new Set(next)].join(','));
+                        }}
+                        className="h-3.5 w-3.5 accent-amber-600"
+                      />
+                      <span className="truncate">{option.label}</span>
+                    </label>
+                  );
+                })}
+              </>
+            ) : (
+              <p className="px-2 py-1 text-xs text-slate-500">No saved variants yet.</p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
