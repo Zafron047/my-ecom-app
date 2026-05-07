@@ -12,6 +12,18 @@ type LoginBody = {
 const CUSTOMER_SESSION_COOKIE = 'customer_id';
 const CUSTOMER_AUTH_COOKIE = 'customer_auth';
 
+function normalizePhoneVariants(phone: string) {
+  const trimmed = phone.trim();
+  if (trimmed.startsWith('+880')) {
+    const local = `0${trimmed.slice(4)}`;
+    return [local, trimmed];
+  }
+  if (/^01[3-9]\d{8}$/.test(trimmed)) {
+    return [trimmed, `+88${trimmed}`];
+  }
+  return [trimmed];
+}
+
 function sanitizeNextPath(value: unknown): string {
   if (typeof value !== 'string') return '/';
 
@@ -49,10 +61,11 @@ export async function POST(request: Request) {
   }
 
   const isEmail = identifier.includes('@');
+  const phoneCandidates = isEmail ? [] : normalizePhoneVariants(identifier);
   const customer = await prisma.customer.findFirst({
     where: isEmail
       ? { email: identifier.toLowerCase() }
-      : { phone: identifier },
+      : { phone: { in: phoneCandidates } },
     select: {
       id: true,
       isBlocked: true,

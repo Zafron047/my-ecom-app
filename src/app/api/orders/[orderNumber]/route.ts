@@ -1,3 +1,5 @@
+import { cookies } from 'next/headers';
+import { getAdminSession } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(
@@ -28,6 +30,19 @@ export async function GET(
 
   if (!order) {
     return Response.json({ error: 'Order not found.' }, { status: 404 });
+  }
+
+  const adminSession = await getAdminSession();
+  const cookieStore = await cookies();
+  const customerSessionId = cookieStore.get('customer_id')?.value ?? null;
+  const recentOrderNumber = cookieStore.get('recent_order_number')?.value ?? null;
+  const canAccess =
+    Boolean(adminSession) ||
+    (customerSessionId !== null && order.customerId === customerSessionId) ||
+    (recentOrderNumber !== null && recentOrderNumber === order.orderNumber);
+
+  if (!canAccess) {
+    return Response.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
   const items = order.products.map((item) => ({

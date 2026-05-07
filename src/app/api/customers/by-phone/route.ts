@@ -1,3 +1,5 @@
+import { cookies } from 'next/headers';
+import { getAdminSession } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 
 function normalizePhone(phone: string) {
@@ -13,6 +15,14 @@ function normalizePhone(phone: string) {
 }
 
 export async function GET(request: Request) {
+  const adminSession = await getAdminSession();
+  const cookieStore = await cookies();
+  const customerSessionId = cookieStore.get('customer_id')?.value ?? null;
+
+  if (!adminSession && !customerSessionId) {
+    return Response.json({ error: 'Unauthorized.' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const phone = searchParams.get('phone') ?? '';
   if (!phone.trim()) {
@@ -20,10 +30,16 @@ export async function GET(request: Request) {
   }
 
   const normalized = normalizePhone(phone);
+  const where = adminSession
+    ? {
+        OR: [{ phone: normalized.local }, { phone: normalized.intl }],
+      }
+    : {
+        id: customerSessionId ?? '',
+        OR: [{ phone: normalized.local }, { phone: normalized.intl }],
+      };
   const customer = await prisma.customer.findFirst({
-    where: {
-      OR: [{ phone: normalized.local }, { phone: normalized.intl }],
-    },
+    where,
     select: {
       id: true,
       firstName: true,
@@ -39,4 +55,3 @@ export async function GET(request: Request) {
 
   return Response.json({ customer });
 }
-
