@@ -31,7 +31,6 @@
 /redx-delivery-areas-*.tgz
 /redx-delivery-areas-readable/
 /package/
-/src/data/bd-geocode/
 /src/data/redx-areas-flat.json
 /src/data/redx-delivery-areas.json
 /to_do.md
