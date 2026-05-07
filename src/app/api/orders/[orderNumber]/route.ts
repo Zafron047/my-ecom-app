@@ -16,8 +16,28 @@ export async function GET(
     return Response.json({ error: 'Order number is required.' }, { status: 400 });
   }
 
-  const order = await prisma.order.findUnique({
-    where: { orderNumber },
+  const adminSession = await getAdminSession();
+  const customerSession = await getCustomerSession();
+  const cookieStore = await cookies();
+  const recentOrderToken = cookieStore.get(CUSTOMER_RECENT_ORDER_COOKIE)?.value ?? null;
+  const recentOrderNumber = recentOrderToken
+    ? verifyRecentOrderAccessToken(recentOrderToken)
+    : null;
+  const hasRecentOrderAccess = recentOrderNumber === orderNumber;
+
+  let orderWhere: { orderNumber: string; customerId?: string };
+  if (adminSession || hasRecentOrderAccess) {
+    orderWhere = { orderNumber };
+  } else {
+    if (!customerSession) {
+      return Response.json({ error: 'Unauthorized.' }, { status: 401 });
+    }
+
+    orderWhere = { orderNumber, customerId: customerSession.customerId };
+  }
+
+  const order = await prisma.order.findFirst({
+    where: orderWhere,
     include: {
       products: {
         include: {
@@ -35,22 +55,6 @@ export async function GET(
 
   if (!order) {
     return Response.json({ error: 'Order not found.' }, { status: 404 });
-  }
-
-  const adminSession = await getAdminSession();
-  const customerSession = await getCustomerSession();
-  const cookieStore = await cookies();
-  const recentOrderToken = cookieStore.get(CUSTOMER_RECENT_ORDER_COOKIE)?.value ?? null;
-  const recentOrderNumber = recentOrderToken
-    ? verifyRecentOrderAccessToken(recentOrderToken)
-    : null;
-  const canAccess =
-    Boolean(adminSession) ||
-    (customerSession !== null && order.customerId === customerSession.customerId) ||
-    (recentOrderNumber !== null && recentOrderNumber === order.orderNumber);
-
-  if (!canAccess) {
-    return Response.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
   const items = order.products.map((item) => ({
