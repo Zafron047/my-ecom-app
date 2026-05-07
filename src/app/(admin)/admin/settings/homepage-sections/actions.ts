@@ -180,42 +180,6 @@ export async function updateHomepageSection(formData: FormData) {
   revalidateHomepageSectionPaths();
 }
 
-export async function moveHomepageSection(formData: FormData) {
-  await requireAdminRole('/admin/settings/homepage-sections', ['admin']);
-  const sectionId = getString(formData, 'sectionId');
-  const direction = getString(formData, 'direction');
-  if (!sectionId) throw new Error('Section id is required.');
-  if (direction !== 'up' && direction !== 'down') {
-    throw new Error('Direction must be up or down.');
-  }
-
-  const sections = await prisma.homepageSection.findMany({
-    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
-    select: { id: true, displayOrder: true },
-  });
-
-  const currentIndex = sections.findIndex((section) => section.id === sectionId);
-  if (currentIndex < 0) return;
-  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-  if (targetIndex < 0 || targetIndex >= sections.length) return;
-
-  const current = sections[currentIndex];
-  const target = sections[targetIndex];
-
-  await prisma.$transaction([
-    prisma.homepageSection.update({
-      where: { id: current.id },
-      data: { displayOrder: target.displayOrder },
-    }),
-    prisma.homepageSection.update({
-      where: { id: target.id },
-      data: { displayOrder: current.displayOrder },
-    }),
-  ]);
-
-  revalidateHomepageSectionPaths();
-}
-
 export async function reorderHomepageSections(formData: FormData) {
   await requireAdminRole('/admin/settings/homepage-sections', ['admin']);
   const orderedIds = getStringList(formData, 'orderedSectionIds');

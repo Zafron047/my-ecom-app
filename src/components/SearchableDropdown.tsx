@@ -65,12 +65,6 @@ export default function SearchableDropdown({
   }, [normalizedGroups, query]);
 
   useEffect(() => {
-    if (!isOpen) {
-      setQuery('');
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
     function handleOtherDropdownOpen(event: Event) {
       const customEvent = event as CustomEvent<string>;
       if (customEvent.detail !== dropdownId) {

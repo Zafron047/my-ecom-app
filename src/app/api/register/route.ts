@@ -11,6 +11,19 @@ type RegisterBody = {
   password?: string;
 };
 
+function getPhoneVariants(phone: string) {
+  const trimmed = phone.trim();
+  if (trimmed.startsWith('+880')) {
+    const local = `0${trimmed.slice(4)}`;
+    return { canonical: local, variants: [local, trimmed] };
+  }
+  if (/^01[3-9]\d{8}$/.test(trimmed)) {
+    const intl = `+88${trimmed}`;
+    return { canonical: trimmed, variants: [trimmed, intl] };
+  }
+  return { canonical: trimmed, variants: [trimmed] };
+}
+
 export async function POST(request: Request) {
   let body: RegisterBody;
   try {
@@ -41,13 +54,29 @@ export async function POST(request: Request) {
 
   try {
     const passwordHash = await hashPassword(password);
+    const normalizedPhone = getPhoneVariants(phone);
+
+    const existingByPhone = await prisma.customer.findFirst({
+      where: {
+        phone: {
+          in: normalizedPhone.variants,
+        },
+      },
+      select: { id: true },
+    });
+    if (existingByPhone) {
+      return NextResponse.json(
+        { error: 'A customer with this phone already exists.' },
+        { status: 409 },
+      );
+    }
 
     const customer = await prisma.customer.create({
       data: {
         firstName,
         lastName: lastName || null,
         email,
-        phone,
+        phone: normalizedPhone.canonical,
         passwordHash,
         customerType: 'retail',
         isBlocked: false,

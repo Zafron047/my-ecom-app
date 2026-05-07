@@ -34,19 +34,6 @@ function isLineEligibleForOffer(
   return offer.variantIds.includes(line.variantId);
 }
 
-function pickBestEligibleOffer(offers: Array<BundleOfferLite & { eligibleQty: number }>) {
-  if (offers.length === 0) return undefined;
-  return offers.sort((a, b) => {
-    if (b.discountPercent !== a.discountPercent) {
-      return b.discountPercent - a.discountPercent;
-    }
-    if (b.minTotalQty !== a.minTotalQty) {
-      return b.minTotalQty - a.minTotalQty;
-    }
-    return a.id.localeCompare(b.id);
-  })[0];
-}
-
 type OfferApplication = {
   offer: BundleOfferLite;
   affectedLineIndexes: number[];

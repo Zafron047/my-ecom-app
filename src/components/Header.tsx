@@ -42,7 +42,6 @@ export default function Header() {
     selectedItemCount,
     selectedCartItems,
     isPricingAuthoritative,
-    subtotalBeforeDiscount,
     subtotal,
     linePricingById,
     closeCart,

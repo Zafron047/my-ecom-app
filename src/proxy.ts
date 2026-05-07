@@ -21,13 +21,13 @@ export function proxy(request: NextRequest) {
   );
   const role = getEffectiveRole(request);
 
-  if (!hasSessionCookie && !role) {
+  if (!hasSessionCookie || !role) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('next', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  if (role && !canAccessAdminPath(pathname, role)) {
+  if (!canAccessAdminPath(pathname, role)) {
     return NextResponse.redirect(new URL('/admin', request.url));
   }
 

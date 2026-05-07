@@ -440,11 +440,11 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
   }, []);
 
   useEffect(() => {
-    if (!draft.division) {
-      setLocationDistricts([]);
-      return;
-    }
     async function loadDistricts() {
+      if (!draft.division) {
+        setLocationDistricts([]);
+        return;
+      }
       try {
         const query = new URLSearchParams({
           type: 'districts',
@@ -461,11 +461,11 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
   }, [draft.division]);
 
   useEffect(() => {
-    if (!draft.division || !draft.district) {
-      setLocationThanas([]);
-      return;
-    }
     async function loadThanas() {
+      if (!draft.division || !draft.district) {
+        setLocationThanas([]);
+        return;
+      }
       try {
         const query = new URLSearchParams({
           type: 'areas',
