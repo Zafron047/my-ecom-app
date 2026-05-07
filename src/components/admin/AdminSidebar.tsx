@@ -163,7 +163,7 @@ export default function AdminSidebar({ isOpen, onClose, role }: AdminSidebarProp
       });
     } finally {
       onClose();
-      router.push('/login');
+      router.push('/login?next=/admin');
       router.refresh();
       setIsLoggingOut(false);
     }

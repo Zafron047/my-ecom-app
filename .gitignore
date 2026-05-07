@@ -55,6 +55,7 @@ next-env.d.ts
 
 # local ops/debug artifacts
 /backups/
+/.tmp-next-dev-*.log
 /.tmp-admin-products.html
 /.tmp-catalog.json
 /.tmp-product-detail.json

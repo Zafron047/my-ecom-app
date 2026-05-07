@@ -22,7 +22,7 @@ function createPrismaClient() {
     throw new Error('DATABASE_URL is not set.');
   }
 
-  const maxConnections = readPositiveIntEnv('PRISMA_PG_POOL_MAX', 5);
+  const maxConnections = readPositiveIntEnv('PRISMA_PG_POOL_MAX', 2);
   const idleTimeoutMs = readPositiveIntEnv('PRISMA_PG_IDLE_TIMEOUT_MS', 10_000);
   const connectionTimeoutMs = readPositiveIntEnv(
     'PRISMA_PG_CONNECTION_TIMEOUT_MS',
