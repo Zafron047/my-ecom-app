@@ -133,6 +133,11 @@ const adminNavGroups: AdminNavGroup[] = [
         label: 'Homepage Sections',
         allowedRoles: ['admin'],
       },
+      {
+        href: '/admin/settings/backup',
+        label: 'Backup',
+        allowedRoles: ['admin'],
+      },
     ],
   },
 ];

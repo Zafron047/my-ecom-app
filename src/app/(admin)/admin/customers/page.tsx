@@ -1,4 +1,5 @@
 import { CustomerType } from '@prisma/client';
+import Link from 'next/link';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 
@@ -127,56 +128,70 @@ export default async function AdminCustomersPage({
             {customers.length > 0 ? (
               customers.map((customer) => {
                 const lastOrder = customer.orders[0];
+                const customerHref = `/admin/customers/${customer.id}`;
 
                 return (
-                  <tr key={customer.id} className="align-top">
+                  <tr key={customer.id} className="align-top hover:bg-slate-50">
                     <td className="px-3 py-3">
-                      <p className="font-medium text-slate-900">
+                      <Link
+                        href={customerHref}
+                        className="font-medium text-slate-900 hover:underline"
+                      >
                         {[customer.firstName, customer.lastName]
                           .filter(Boolean)
                           .join(' ')}
-                      </p>
+                      </Link>
                       <p className="text-xs text-slate-500">{customer.phone}</p>
                       {customer.email && (
                         <p className="text-xs text-slate-500">{customer.email}</p>
                       )}
                     </td>
                     <td className="px-3 py-3">
-                      <span className="rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold capitalize text-blue-700">
-                        {customer.customerType}
-                      </span>
+                      <Link href={customerHref} className="block">
+                        <span className="rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold capitalize text-blue-700">
+                          {customer.customerType}
+                        </span>
+                      </Link>
                     </td>
                     <td className="px-3 py-3 text-xs text-slate-600">
-                      <p>{customer.identifierTag.replaceAll('_', ' ')}</p>
-                      {customer.behaviorTags.length > 0 && (
-                        <p className="mt-1">
-                          {customer.behaviorTags
-                            .map((tag) => tag.replaceAll('_', ' '))
-                            .join(', ')}
-                        </p>
-                      )}
+                      <Link href={customerHref} className="block">
+                        <p>{customer.identifierTag.replaceAll('_', ' ')}</p>
+                        {customer.behaviorTags.length > 0 && (
+                          <p className="mt-1">
+                            {customer.behaviorTags
+                              .map((tag) => tag.replaceAll('_', ' '))
+                              .join(', ')}
+                          </p>
+                        )}
+                      </Link>
                     </td>
                     <td className="px-3 py-3 text-right font-semibold text-slate-900">
-                      {customer._count.orders}
+                      <Link href={customerHref} className="block">
+                        {customer._count.orders}
+                      </Link>
                     </td>
                     <td className="px-3 py-3 text-right text-slate-700">
-                      {lastOrder ? formatMoney(lastOrder.totalAmount) : 'None'}
-                      {lastOrder && (
-                        <p className="text-xs text-slate-500">
-                          {lastOrder.placedAt.toLocaleDateString()}
-                        </p>
-                      )}
+                      <Link href={customerHref} className="block">
+                        {lastOrder ? formatMoney(lastOrder.totalAmount) : 'None'}
+                        {lastOrder && (
+                          <p className="text-xs text-slate-500">
+                            {lastOrder.placedAt.toLocaleDateString()}
+                          </p>
+                        )}
+                      </Link>
                     </td>
                     <td className="px-3 py-3">
-                      <span
-                        className={`rounded-md px-2 py-1 text-xs font-semibold ${
-                          customer.isBlocked
-                            ? 'bg-red-50 text-red-700'
-                            : 'bg-emerald-50 text-emerald-700'
-                        }`}
-                      >
-                        {customer.isBlocked ? 'Blocked' : 'Active'}
-                      </span>
+                      <Link href={customerHref} className="block">
+                        <span
+                          className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                            customer.isBlocked
+                              ? 'bg-red-50 text-red-700'
+                              : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          {customer.isBlocked ? 'Blocked' : 'Active'}
+                        </span>
+                      </Link>
                     </td>
                   </tr>
                 );

@@ -1,7 +1,9 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireAdminPermission } from '@/lib/admin-session';
+import OrderDetailsEditor from '@/components/admin/OrderDetailsEditor';
+import OrderPrintButton from '@/components/admin/OrderPrintButton';
 import { prisma } from '@/lib/prisma';
+import { computeCartPricing } from '@/lib/cart-bundle-pricing';
 
 type OrderDetailsPageProps = {
   params: Promise<{
@@ -9,12 +11,11 @@ type OrderDetailsPageProps = {
   }>;
 };
 
-function formatMoney(value: { toNumber: () => number }) {
-  return new Intl.NumberFormat('en-BD', {
-    style: 'currency',
-    currency: 'BDT',
-    maximumFractionDigits: 0,
-  }).format(value.toNumber());
+function formatTk(value: number) {
+  return `Tk ${value.toLocaleString('en-BD', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export default async function AdminOrderDetailsPage({
@@ -33,6 +34,10 @@ export default async function AdminOrderDetailsPage({
           lastName: true,
           phone: true,
           email: true,
+          division: true,
+          district: true,
+          thana: true,
+          address: true,
         },
       },
       products: {
@@ -41,6 +46,19 @@ export default async function AdminOrderDetailsPage({
             select: {
               id: true,
               name: true,
+              bundleOffers: {
+                where: { isActive: true },
+                orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                select: {
+                  id: true,
+                  title: true,
+                  minTotalQty: true,
+                  discountPercent: true,
+                  variants: {
+                    select: { variantId: true },
+                  },
+                },
+              },
             },
           },
           variant: {
@@ -49,6 +67,7 @@ export default async function AdminOrderDetailsPage({
               color: true,
               size: true,
               sku: true,
+              imagePath: true,
             },
           },
         },
@@ -60,115 +79,361 @@ export default async function AdminOrderDetailsPage({
   });
 
   if (!order) notFound();
+  const orderNotes = await prisma.$queryRaw<
+    Array<{ id: string; note: string; createdByName: string; createdAt: Date }>
+  >`SELECT id, note, "createdByName", "createdAt" FROM "OrderNote" WHERE "orderId" = ${id} ORDER BY "createdAt" DESC`;
+  const catalogVariants = await prisma.productVariant.findMany({
+    where: {
+      isActive: true,
+      product: { status: 'active' },
+    },
+    select: {
+      id: true,
+      productId: true,
+      sku: true,
+      color: true,
+      size: true,
+      price: true,
+      imagePath: true,
+      product: {
+        select: { name: true },
+      },
+    },
+    orderBy: [{ product: { name: 'asc' } }, { sortOrder: 'asc' }],
+  });
+  const isFulfilled = order.status === 'delivered';
+  const effectiveFirstName = isFulfilled
+    ? order.firstName
+    : order.customer.firstName || order.firstName;
+  const effectiveLastName = isFulfilled
+    ? order.lastName ?? ''
+    : order.customer.lastName ?? order.lastName ?? '';
+  const effectivePhone = isFulfilled ? order.phone : order.customer.phone || order.phone;
+  const effectiveEmail = isFulfilled
+    ? order.email ?? ''
+    : order.customer.email ?? order.email ?? '';
+  const effectiveDivision = isFulfilled
+    ? order.division
+    : order.customer.division ?? order.division;
+  const effectiveDistrict = isFulfilled
+    ? order.district
+    : order.customer.district ?? order.district;
+  const effectiveThana = isFulfilled ? order.thana : order.customer.thana ?? order.thana;
+  const effectiveAddress = isFulfilled
+    ? order.address
+    : order.customer.address ?? order.address;
+  const paidAmountValue =
+    order.paidAmount && typeof order.paidAmount.toNumber === 'function'
+      ? order.paidAmount.toNumber()
+      : 0;
+  const productLinesForPricing = order.products.map((item) => ({
+    id: item.id,
+    productId: item.productId,
+    variantId: item.variantId,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice.toNumber(),
+  }));
+  const offersByProductId = new Map(
+    order.products.map((item) => [
+      item.productId,
+      (item.product.bundleOffers ?? []).map((offer) => ({
+        id: offer.id,
+        title: offer.title?.trim() || 'Bundle Offer',
+        minTotalQty: offer.minTotalQty,
+        discountPercent: offer.discountPercent.toNumber(),
+        variantIds: offer.variants.map((entry) => entry.variantId),
+        isActive: true,
+      })),
+    ]),
+  );
+  const pricingWithCurrentOffers = computeCartPricing(
+    productLinesForPricing,
+    (productId) => offersByProductId.get(productId) ?? [],
+  );
+  const eligibleQtyByOfferId = new Map<string, number>();
+  for (const line of productLinesForPricing) {
+    const offers = offersByProductId.get(line.productId) ?? [];
+    for (const offer of offers) {
+      const isEligibleVariant =
+        offer.variantIds.length === 0 || offer.variantIds.includes(line.variantId);
+      if (!isEligibleVariant) continue;
+      eligibleQtyByOfferId.set(
+        offer.id,
+        (eligibleQtyByOfferId.get(offer.id) ?? 0) + line.quantity,
+      );
+    }
+  }
 
   return (
     <section className="space-y-5">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <style>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 12mm;
+          }
+
+          body * {
+            visibility: hidden !important;
+          }
+
+          #order-print-sheet,
+          #order-print-sheet * {
+            visibility: visible !important;
+          }
+
+          #order-print-sheet {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+            background: white;
+            color: black;
+            padding: 2mm 4mm;
+            margin: 0;
+            border: 0;
+          }
+        }
+      `}</style>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm print:hidden">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Order
-            </p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-900">
-              {order.orderNumber}
-            </h2>
+            <h2 className="text-xl font-semibold text-slate-900">{order.orderNumber}</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Placed {order.placedAt.toLocaleString()}
+              {new Intl.DateTimeFormat('en-US', {
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+              }).format(order.placedAt)}
             </p>
           </div>
-          <Link
-            href="/admin/orders"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            Back To Orders
-          </Link>
+          <div className="flex items-center gap-2">
+            <OrderPrintButton />
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Status</p>
-          <p className="mt-2 text-sm font-semibold capitalize text-slate-900">
-            {order.status}
-          </p>
-        </article>
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Payment</p>
-          <p className="mt-2 text-sm font-semibold text-slate-900">
-            {order.paymentMethod}
-          </p>
-        </article>
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Total</p>
-          <p className="mt-2 text-sm font-semibold text-slate-900">
-            {formatMoney(order.totalAmount)}
-          </p>
-        </article>
-      </div>
+      <OrderDetailsEditor
+        initialOrder={{
+          id: order.id,
+          updatedAt: order.updatedAt.toISOString(),
+          orderStatus: order.status,
+          paymentMethod: order.paymentMethod,
+          paymentStatus: order.tags.includes('PREPAID_ORDER') ? 'paid' : 'unpaid',
+          firstName: effectiveFirstName,
+          lastName: effectiveLastName,
+          phone: effectivePhone,
+          receiverPhone: order.receiverPhone,
+          email: effectiveEmail,
+          division: effectiveDivision,
+          district: effectiveDistrict,
+          thana: effectiveThana,
+          address: effectiveAddress,
+          notes: '',
+          noteHistory: orderNotes.map((entry) => ({
+            id: entry.id,
+            note: entry.note,
+            createdByName: entry.createdByName,
+            createdAt: entry.createdAt.toISOString(),
+          })),
+          subtotalAmount: order.subtotalAmount.toNumber(),
+          discountAmount: order.discountAmount.toNumber(),
+          orderLevelDiscount: Math.max(
+            0,
+            order.discountAmount.toNumber() -
+              order.products.reduce(
+                (sum, item) => sum + item.discountAmount.toNumber(),
+                0,
+              ),
+          ),
+          deliveryCharge: order.deliveryCharge.toNumber(),
+          totalAmount: order.totalAmount.toNumber(),
+          paidAmount: paidAmountValue,
+          variantCatalog: catalogVariants.map((variant) => ({
+            variantId: variant.id,
+            productId: variant.productId,
+            productName: variant.product.name,
+            variantLabel: [variant.color, variant.size].filter(Boolean).join(' / ') || 'Standard',
+            sku: variant.sku,
+            unitPrice: variant.price.toNumber(),
+            imagePath: variant.imagePath ?? '',
+          })),
+          items: order.products.map((item) => ({
+            id: item.id,
+            productId: item.productId,
+            variantId: item.variantId,
+            productName: item.productName,
+            variantLabel:
+              item.variantLabel ??
+                `${item.variant.color || 'Standard'} / ${item.variant.size || 'Standard'}`,
+            imagePath: item.variant.imagePath ?? '',
+            quantity: item.quantity,
+            unitPrice: item.unitPrice.toNumber(),
+            discountAmount: item.discountAmount.toNumber(),
+            lineTotal: item.lineTotal.toNumber(),
+            appliedBundleTitle:
+              pricingWithCurrentOffers.linePricingById[item.id]?.bundleTitle,
+            activeBundleOffers: (item.product.bundleOffers ?? []).map((offer) => {
+              const eligibleQty = eligibleQtyByOfferId.get(offer.id) ?? 0;
+              const variantMatch =
+                offer.variants.length === 0 ||
+                offer.variants.some((entry) => entry.variantId === item.variantId);
+              return {
+                id: offer.id,
+                title: offer.title?.trim() || 'Bundle Offer',
+                minTotalQty: offer.minTotalQty,
+                discountPercent: offer.discountPercent.toNumber(),
+                variantIds: offer.variants.map((entry) => entry.variantId),
+                variantMatch,
+                eligibleQty,
+                triggered: eligibleQty >= offer.minTotalQty,
+              };
+            }),
+          })),
+        }}
+      />
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-sm font-semibold text-slate-900">Customer</h3>
-          <div className="mt-3 space-y-1 text-sm text-slate-700">
-            <p>
-              {[order.firstName, order.lastName].filter(Boolean).join(' ') || '-'}
-            </p>
-            <p>{order.phone}</p>
-            <p>{order.email || '-'}</p>
+      <section
+        id="order-print-sheet"
+        className="hidden text-[12px] text-black print:block"
+      >
+        <div className="mx-auto max-w-[760px]">
+          <div className="h-[2.5in] overflow-hidden">
+            <div className="mb-1 flex items-start justify-between leading-tight">
+              <div className="h-14 w-20 overflow-hidden bg-white">
+                <img
+                  src="/logo.png"
+                  alt="BuyEasy logo"
+                  className="h-full w-full object-contain"
+                />
+              </div>
+              <div className="leading-tight">
+                <p className="text-right text-[20px] font-medium">
+                  Receipt / Invoice #{order.orderNumber}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 leading-tight">
+              <div className="leading-tight">
+                <p className="mb-1 text-[14px] font-semibold uppercase">Shipping Address</p>
+                <p className="text-[14px]">{[effectiveFirstName, effectiveLastName].filter(Boolean).join(' ') || '-'}</p>
+                <p className="text-[14px]">
+                  {[effectiveAddress, effectiveThana, effectiveDistrict].filter(Boolean).join(', ')}
+                </p>
+                <p className="text-[14px]">{effectiveDivision}, Bangladesh</p>
+                <p className="mt-1 text-[14px]">Tel. {order.receiverPhone || '-'}</p>
+              </div>
+              <div className="leading-tight">
+                <p className="mb-1 text-[14px] font-semibold uppercase">Customer</p>
+                <p className="text-[14px]">{[effectiveFirstName, effectiveLastName].filter(Boolean).join(' ') || '-'}</p>
+                <p className="text-[14px]">
+                  {[effectiveAddress, effectiveThana, effectiveDistrict].filter(Boolean).join(', ')}
+                </p>
+                <p className="text-[14px]">{effectiveDivision}, Bangladesh</p>
+                <p className="mt-1 text-[14px]">Tel. {effectivePhone || '-'}</p>
+              </div>
+              <div className="leading-tight">
+                <p className="mb-1 text-[14px] font-semibold uppercase">Payment Method</p>
+                <p className="text-[14px]">
+                  {order.paymentMethod === 'COD' ? 'Cash on Delivery (COD)' : 'bKash'}
+                </p>
+                <p className="mb-1 mt-2 text-[14px] font-semibold uppercase">Shipping Method</p>
+                <p className="text-[14px]">Home Delivery</p>
+              </div>
+            </div>
           </div>
-        </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-sm font-semibold text-slate-900">Delivery</h3>
-          <div className="mt-3 space-y-1 text-sm text-slate-700">
-            <p>{[order.address, order.thana, order.district, order.division].join(', ')}</p>
-            <p>Receiver: {order.receiverPhone}</p>
-            {order.notes ? <p>Note: {order.notes}</p> : null}
+          <hr className="my-5 border-0 border-t-[4px] border-black" />
+
+          <div className="grid grid-cols-[1fr_170px_90px_170px] text-[18px] font-semibold uppercase">
+            <p>Items</p>
+            <p className="text-right">Price</p>
+            <p className="text-right">Qty</p>
+            <p className="text-right">Item Total</p>
           </div>
-        </section>
-      </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-slate-900">Items</h3>
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-3 py-2">Product</th>
-                <th className="px-3 py-2">Variant</th>
-                <th className="px-3 py-2">SKU</th>
-                <th className="px-3 py-2 text-right">Qty</th>
-                <th className="px-3 py-2 text-right">Unit</th>
-                <th className="px-3 py-2 text-right">Discount</th>
-                <th className="px-3 py-2 text-right">Line Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {order.products.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-3 py-3 text-slate-800">{item.productName}</td>
-                  <td className="px-3 py-3 text-slate-700">
-                    {(item.variant.color || 'Standard') + ' / ' + (item.variant.size || 'Standard')}
-                  </td>
-                  <td className="px-3 py-3 text-slate-600">{item.sku}</td>
-                  <td className="px-3 py-3 text-right font-medium text-slate-900">
-                    {item.quantity}
-                  </td>
-                  <td className="px-3 py-3 text-right text-slate-700">
-                    {formatMoney(item.unitPrice)}
-                  </td>
-                  <td className="px-3 py-3 text-right text-slate-700">
-                    {formatMoney(item.discountAmount)}
-                  </td>
-                  <td className="px-3 py-3 text-right font-semibold text-slate-900">
-                    {formatMoney(item.lineTotal)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="mt-3 space-y-2 leading-tight">
+            {order.products.map((item) => (
+              <div key={item.id} className="grid grid-cols-[1fr_170px_90px_170px] items-center gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-16 w-16 overflow-hidden border border-slate-300">
+                    {item.variant.imagePath ? (
+                      <img
+                        src={item.variant.imagePath}
+                        alt={item.productName}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : null}
+                  </div>
+                  <div>
+                    <p className="text-[18px] leading-6">{item.productName}</p>
+                    <p className="text-[18px]">
+                      {item.variantLabel ??
+                        `${item.variant.color || 'Standard'} / ${item.variant.size || 'Standard'}`}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right text-[18px]">
+                  <p className={item.discountAmount.toNumber() > 0 ? 'line-through' : ''}>
+                    {formatTk(item.unitPrice.toNumber())}
+                  </p>
+                  {item.discountAmount.toNumber() > 0 ? (
+                    <>
+                      <p>{formatTk(item.unitPrice.toNumber() - item.discountAmount.toNumber())}</p>
+                      <p className="text-[15px]">
+                        (-{formatTk(item.discountAmount.toNumber())} / unit)
+                      </p>
+                    </>
+                  ) : null}
+                </div>
+                <p className="text-right text-[18px]">{item.quantity}</p>
+                <p className="text-right text-[18px]">{formatTk(item.lineTotal.toNumber())}</p>
+              </div>
+            ))}
+          </div>
+
+          <hr className="my-5 border-0 border-t-[4px] border-black" />
+
+          <div className="ml-auto w-[350px]">
+            <div className="space-y-3 text-[20px]">
+              <div className="flex justify-between">
+                <p>Subtotal</p>
+                <p>{formatTk(order.subtotalAmount.toNumber())}</p>
+              </div>
+              <div className="flex justify-between">
+                <p>Shipping</p>
+                <p>{formatTk(order.deliveryCharge.toNumber())}</p>
+              </div>
+              <div className="flex justify-between">
+                <p>Total discount</p>
+                <p>{formatTk(order.discountAmount.toNumber())}</p>
+              </div>
+              <div className="flex justify-between font-bold">
+                <p>TOTAL (BDT)</p>
+                <p>{formatTk(order.totalAmount.toNumber())}</p>
+              </div>
+              <div className="flex justify-between">
+                <p>Total due</p>
+                <p>{formatTk(Math.max(0, order.totalAmount.toNumber() - paidAmountValue))}</p>
+              </div>
+            </div>
+            <hr className="mt-4 border-0 border-t-[4px] border-black" />
+          </div>
+
+          <div className="mt-12 text-center text-[18px] leading-tight">
+            <p>Thank you for shopping with us!</p>
+            <p className="mt-3 font-bold">BuyEasy</p>
+            <p>Oli Miar Tek, Shewrapara, Mirpur, Dhaka</p>
+            <p>01712345678</p>
+          </div>
         </div>
       </section>
+
     </section>
   );
 }

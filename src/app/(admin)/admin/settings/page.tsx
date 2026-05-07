@@ -39,6 +39,19 @@ export default async function AdminSettingsPage() {
           Open Homepage Sections
         </Link>
       </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="text-base font-semibold text-slate-900">Backup</h3>
+        <p className="mt-2 text-sm text-slate-600">
+          Download snapshot backups from a single admin-only place.
+        </p>
+        <Link
+          href="/admin/settings/backup"
+          className="mt-4 inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+        >
+          Open Backup
+        </Link>
+      </div>
     </section>
   );
 }
