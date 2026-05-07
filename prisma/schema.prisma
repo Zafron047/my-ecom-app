@@ -160,6 +160,7 @@ model Customer {
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
   orders        Order[]
+  sessions      CustomerSession[]
 
   @@index([customerType, isBlocked])
   @@index([createdAt])
@@ -199,6 +200,21 @@ model Product {
   @@index([status, createdAt])
   @@index([name])
   @@index([brandId, status])
+}
+
+model CustomerSession {
+  id               String   @id @default(cuid())
+  customerId       String
+  sessionTokenHash String   @unique
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  lastSeenAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  customer         Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([expiresAt])
 }
 
 model HomepageSection {

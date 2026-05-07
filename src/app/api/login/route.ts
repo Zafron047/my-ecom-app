@@ -1,4 +1,11 @@
 import { NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
+import {
+  CUSTOMER_AUTH_COOKIE,
+  CUSTOMER_SESSION_COOKIE,
+  createCustomerSessionToken,
+  hashCustomerSessionToken,
+} from '@/lib/customer-auth';
 import { verifyPassword } from '@/lib/password-auth';
 import { prisma } from '@/lib/prisma';
 
@@ -8,9 +15,6 @@ type LoginBody = {
   password?: string;
   rememberMe?: boolean;
 };
-
-const CUSTOMER_SESSION_COOKIE = 'customer_id';
-const CUSTOMER_AUTH_COOKIE = 'customer_auth';
 
 function normalizePhoneVariants(phone: string) {
   const trimmed = phone.trim();
@@ -86,12 +90,27 @@ export async function POST(request: Request) {
     redirectTo: sanitizeNextPath(body.nextPath),
     success: true,
   });
+  const sessionToken = createCustomerSessionToken();
+  const sessionTokenHash = hashCustomerSessionToken(sessionToken);
 
   const expiresAt = new Date(
     Date.now() + (rememberMe ? 1000 * 60 * 60 * 24 * 30 : 1000 * 60 * 60 * 24 * 7),
   );
+  const now = new Date();
+  await prisma.$executeRawUnsafe(
+    `
+      INSERT INTO "CustomerSession"
+      ("id", "customerId", "sessionTokenHash", "expiresAt", "lastSeenAt", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, $5, $5, $5)
+    `,
+    randomUUID(),
+    customer.id,
+    sessionTokenHash,
+    expiresAt,
+    now,
+  );
 
-  response.cookies.set(CUSTOMER_SESSION_COOKIE, customer.id, {
+  response.cookies.set(CUSTOMER_SESSION_COOKIE, sessionToken, {
     expires: expiresAt,
     httpOnly: true,
     path: '/',

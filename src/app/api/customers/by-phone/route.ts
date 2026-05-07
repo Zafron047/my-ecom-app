@@ -1,5 +1,5 @@
-import { cookies } from 'next/headers';
 import { getAdminSession } from '@/lib/admin-session';
+import { getCustomerSession } from '@/lib/customer-session';
 import { prisma } from '@/lib/prisma';
 
 function normalizePhone(phone: string) {
@@ -16,8 +16,8 @@ function normalizePhone(phone: string) {
 
 export async function GET(request: Request) {
   const adminSession = await getAdminSession();
-  const cookieStore = await cookies();
-  const customerSessionId = cookieStore.get('customer_id')?.value ?? null;
+  const customerSession = await getCustomerSession();
+  const customerSessionId = customerSession?.customerId ?? null;
 
   if (!adminSession && !customerSessionId) {
     return Response.json({ error: 'Unauthorized.' }, { status: 401 });

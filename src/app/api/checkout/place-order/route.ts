@@ -2,6 +2,10 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { buildCheckoutPricing, type CheckoutItemInput } from '@/lib/checkout-pricing';
+import {
+  CUSTOMER_RECENT_ORDER_COOKIE,
+  createRecentOrderAccessToken,
+} from '@/lib/customer-auth';
 
 type PlaceOrderPayload = {
   customer: {
@@ -223,13 +227,16 @@ export async function POST(request: Request) {
       success: true,
       orderId: order.orderNumber,
     });
-    response.cookies.set('recent_order_number', order.orderNumber, {
-      httpOnly: true,
-      path: '/',
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24,
-    });
+    const recentOrderToken = createRecentOrderAccessToken(order.orderNumber);
+    if (recentOrderToken) {
+      response.cookies.set(CUSTOMER_RECENT_ORDER_COOKIE, recentOrderToken, {
+        httpOnly: true,
+        path: '/',
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 60 * 60 * 24,
+      });
+    }
     return response;
   } catch (error) {
     console.error(error);
