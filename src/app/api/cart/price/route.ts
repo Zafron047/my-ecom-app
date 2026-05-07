@@ -29,6 +29,21 @@ export async function POST(request: Request) {
       );
     }
 
+    const seenLineIds = new Set<string>();
+    for (const item of payload.items) {
+      const lineId = typeof item?.id === 'string' ? item.id.trim() : '';
+      if (!lineId) {
+        return Response.json({ error: 'Invalid cart line id.' }, { status: 400 });
+      }
+      if (seenLineIds.has(lineId)) {
+        return Response.json(
+          { error: `Duplicate cart line id detected: ${lineId}` },
+          { status: 400 },
+        );
+      }
+      seenLineIds.add(lineId);
+    }
+
     const productIds = [...new Set(payload.items.map((item) => item.detailId ?? item.id).filter(Boolean))];
     const products = await prisma.product.findMany({
       where: {
@@ -123,4 +138,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

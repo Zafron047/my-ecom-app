@@ -123,6 +123,14 @@ export function computeCartPricing(
   lines: CartLineInput[],
   getOffersForProduct: (productId: string) => BundleOfferLite[],
 ): CartPricingResult {
+  const seenLineIds = new Set<string>();
+  for (const line of lines) {
+    if (seenLineIds.has(line.id)) {
+      throw new Error(`Duplicate cart line id detected: ${line.id}`);
+    }
+    seenLineIds.add(line.id);
+  }
+
   const linePricingById: Record<string, CartLinePricing> = {};
   const grouped = new Map<string, CartLineInput[]>();
 

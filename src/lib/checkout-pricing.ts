@@ -135,6 +135,18 @@ export function buildCheckoutPricing(
     });
   }
 
+  const seenLineIds = new Set<string>();
+  for (const line of rawLines) {
+    if (seenLineIds.has(line.lineId)) {
+      return {
+        ok: false,
+        error:
+          'Your cart contains duplicate line IDs. Please refresh cart and try again.',
+      };
+    }
+    seenLineIds.add(line.lineId);
+  }
+
   const pricing = computeCartPricing(
     rawLines.map((line) => ({
       id: line.lineId,
@@ -185,4 +197,3 @@ export function buildCheckoutPricing(
     lines,
   };
 }
-
