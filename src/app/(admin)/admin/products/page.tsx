@@ -4,7 +4,9 @@ import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import ProductsFilters from '@/components/admin/ProductsFilters';
 import ProductsListTable from '@/components/admin/ProductsListTable';
-import { removeProduct, removeProductsBulk, unarchiveProduct } from './actions';
+import {
+  applyProductsBulkActionWithState,
+} from './actions';
 
 type ProductsPageProps = {
   searchParams: Promise<{
@@ -40,6 +42,22 @@ export default async function AdminProductsPage({
   const query = params.q?.trim() ?? '';
   const status = getStatus(params.status);
 
+  const [
+    totalProducts,
+    activeProducts,
+    draftProducts,
+    archivedProducts,
+    totalVariants,
+    outOfStockVariants,
+  ] = await Promise.all([
+    prisma.product.count(),
+    prisma.product.count({ where: { status: ProductStatus.active } }),
+    prisma.product.count({ where: { status: ProductStatus.draft } }),
+    prisma.product.count({ where: { status: ProductStatus.archived } }),
+    prisma.productVariant.count(),
+    prisma.productVariant.count({ where: { stockQuantity: { lte: 0 } } }),
+  ]);
+
   const products = await prisma.product.findMany({
     include: {
       categories: {
@@ -50,7 +68,7 @@ export default async function AdminProductsPage({
       },
       variants: {
         orderBy: {
-          createdAt: 'asc',
+          sortOrder: 'asc',
         },
       },
       images: {
@@ -117,6 +135,33 @@ export default async function AdminProductsPage({
 
       <ProductsFilters query={query} status={status ?? ''} />
 
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Products</p>
+          <p className="text-lg font-semibold text-slate-900">{totalProducts}</p>
+        </div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          <p className="text-xs uppercase tracking-wide text-emerald-700">Active</p>
+          <p className="text-lg font-semibold">{activeProducts}</p>
+        </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p className="text-xs uppercase tracking-wide text-amber-700">Draft</p>
+          <p className="text-lg font-semibold">{draftProducts}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Archived</p>
+          <p className="text-lg font-semibold text-slate-900">{archivedProducts}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Variants</p>
+          <p className="text-lg font-semibold text-slate-900">{totalVariants}</p>
+        </div>
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+          <p className="text-xs uppercase tracking-wide text-rose-700">Out Of Stock Variants</p>
+          <p className="text-lg font-semibold">{outOfStockVariants}</p>
+        </div>
+      </div>
+
       <ProductsListTable
         products={products.map((product) => {
           const stock = product.variants.reduce(
@@ -154,9 +199,7 @@ export default async function AdminProductsPage({
               : null,
           };
         })}
-        removeProductAction={removeProduct}
-        removeProductsBulkAction={removeProductsBulk}
-        unarchiveProductAction={unarchiveProduct}
+        applyProductsBulkActionWithState={applyProductsBulkActionWithState}
       />
     </section>
   );

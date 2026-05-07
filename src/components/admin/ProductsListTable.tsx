@@ -2,7 +2,11 @@
 
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useActionState, useMemo, useState } from 'react';
+import {
+  INITIAL_PRODUCTS_BULK_ACTION_STATE,
+  type ProductsBulkActionState,
+} from '@/app/(admin)/admin/products/actions';
 
 type ProductListRow = {
   id: string;
@@ -21,19 +25,20 @@ type ProductListRow = {
 
 type ProductsListTableProps = {
   products: ProductListRow[];
-  removeProductAction: (formData: FormData) => void | Promise<void>;
-  removeProductsBulkAction: (formData: FormData) => void | Promise<void>;
-  unarchiveProductAction: (formData: FormData) => void | Promise<void>;
+  applyProductsBulkActionWithState: (
+    state: ProductsBulkActionState,
+    formData: FormData,
+  ) => Promise<ProductsBulkActionState>;
 };
 
 export default function ProductsListTable({
   products,
-  removeProductAction,
-  removeProductsBulkAction,
-  unarchiveProductAction,
+  applyProductsBulkActionWithState,
 }: ProductsListTableProps) {
   const router = useRouter();
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [bulkActionState, bulkActionFormAction, isBulkActionPending] =
+    useActionState(applyProductsBulkActionWithState, INITIAL_PRODUCTS_BULK_ACTION_STATE);
 
   const allSelected =
     products.length > 0 && selectedProductIds.length === products.length;
@@ -46,24 +51,62 @@ export default function ProductsListTable({
 
   return (
     <div className="overflow-x-auto">
-      <form action={removeProductsBulkAction} className="mb-3 flex justify-end">
+      <form action={bulkActionFormAction} className="mb-3 flex justify-end">
         {selectedProductIds.map((id) => (
           <input key={id} type="hidden" name="productIds" value={id} />
         ))}
-        <button
-          type="submit"
-          disabled={!hasSelection}
-          className="rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Remove selected ({selectedProductIds.length})
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            name="bulkAction"
+            defaultValue=""
+            disabled={!hasSelection || isBulkActionPending}
+            className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="" disabled>
+              Actions
+            </option>
+            <option value="set-active">Set status: Active</option>
+            <option value="set-draft">Set status: Draft</option>
+            <option value="set-archived">Set status: Archived</option>
+            <option value="archive">Archive</option>
+            <option value="unarchive">Unarchive (to draft)</option>
+          </select>
+          <button
+            type="submit"
+            disabled={!hasSelection || isBulkActionPending}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isBulkActionPending
+              ? 'Applying...'
+              : `Apply (${selectedProductIds.length})`}
+          </button>
+        </div>
       </form>
+      {bulkActionState.error ? (
+        <p className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {bulkActionState.error}
+        </p>
+      ) : null}
+      {bulkActionState.message ? (
+        <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          <p className="font-semibold text-slate-900">{bulkActionState.message}</p>
+          {bulkActionState.skipped.length > 0 ? (
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {bulkActionState.skipped.slice(0, 10).map((item) => (
+                <li key={item.id}>
+                  {item.name}: {item.reasons.join(', ')}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-3 py-2 align-middle">
-              <div className="flex items-center justify-center">
+              <div className="flex items-center justify-center gap-2">
                 <input
                   type="checkbox"
                   checked={allSelected}
@@ -75,6 +118,9 @@ export default function ProductsListTable({
                   aria-label="Select all products"
                   className="h-4 w-4 accent-blue-600"
                 />
+                <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  {selectedProductIds.length}/{products.length}
+                </span>
               </div>
             </th>
             <th className="px-3 py-2">Product</th>
@@ -83,7 +129,6 @@ export default function ProductsListTable({
             <th className="px-3 py-2">Variants</th>
             <th className="px-3 py-2 text-right">Stock</th>
             <th className="px-3 py-2 text-right">Price</th>
-            <th className="px-3 py-2 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -146,58 +191,11 @@ export default function ProductsListTable({
                 <td className="px-3 py-3 text-right text-slate-700">
                   {product.priceLabel}
                 </td>
-                <td className="px-3 py-3" onClick={(event) => event.stopPropagation()}>
-                  <div className="flex justify-end gap-2">
-                    {product.status === 'archived' ? (
-                      <form
-                        action={unarchiveProductAction}
-                        onSubmit={(event) => {
-                          if (
-                            !window.confirm(
-                              `Unarchive "${product.name}"?`,
-                            )
-                          ) {
-                            event.preventDefault();
-                          }
-                        }}
-                      >
-                        <input type="hidden" name="productId" value={product.id} />
-                        <button
-                          type="submit"
-                          className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                        >
-                          Unarchive
-                        </button>
-                      </form>
-                    ) : (
-                      <form
-                        action={removeProductAction}
-                        onSubmit={(event) => {
-                          if (
-                            !window.confirm(
-                              `Remove "${product.name}"? This may archive it if linked to orders.`,
-                            )
-                          ) {
-                            event.preventDefault();
-                          }
-                        }}
-                      >
-                        <input type="hidden" name="productId" value={product.id} />
-                        <button
-                          type="submit"
-                          className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-100"
-                        >
-                          Remove
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                </td>
               </tr>
             ))
           ) : (
             <tr>
-              <td className="px-3 py-6 text-center text-slate-500" colSpan={8}>
+              <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
                 No products match the current filters.
               </td>
             </tr>
