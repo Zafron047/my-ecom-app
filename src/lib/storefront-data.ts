@@ -44,7 +44,14 @@ async function getStorefrontProducts() {
           isActive: true,
         },
         orderBy: {
-          createdAt: 'asc',
+          sortOrder: 'asc',
+        },
+        include: {
+          variantImages: {
+            orderBy: {
+              sortOrder: 'asc',
+            },
+          },
         },
       },
       tags: {
@@ -53,6 +60,21 @@ async function getStorefrontProducts() {
             select: {
               name: true,
               slug: true,
+            },
+          },
+        },
+      },
+      bundleOffers: {
+        where: {
+          isActive: true,
+        },
+        orderBy: {
+          sortOrder: 'asc',
+        },
+        include: {
+          variants: {
+            select: {
+              variantId: true,
             },
           },
         },
@@ -116,19 +138,28 @@ function getPricing(product: ProductWithRelations) {
 function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProduct {
   const { price, salePrice } = getPricing(product);
   const hasSale = typeof salePrice === 'number' && salePrice < price;
+  const galleryImages = product.images.map((image) => image.storagePath);
+  const images = [...new Set([...galleryImages, getPrimaryImage(product)])].filter(Boolean);
 
   const variantRows = product.variants.map((variant) => {
     const basePrice = variant.price.toNumber();
     const compareAt = variant.compareAtPrice?.toNumber();
     const hasVariantSale = typeof compareAt === 'number' && compareAt > basePrice;
+    const variantImageList =
+      variant.variantImages.length > 0
+        ? variant.variantImages.map((item) => item.imagePath)
+        : variant.imagePath
+          ? [variant.imagePath]
+          : [];
 
     return {
       id: variant.id,
-      color: variant.color?.trim() || 'Standard',
-      size: variant.size?.trim() || 'Standard',
+      color: variant.color?.trim() || '',
+      size: variant.size?.trim() || '',
       price: hasVariantSale ? compareAt : basePrice,
       ...(hasVariantSale ? { salePrice: basePrice } : {}),
       image: variant.imagePath || getPrimaryImage(product),
+      ...(variantImageList.length > 0 ? { images: variantImageList } : {}),
     };
   });
 
@@ -139,10 +170,28 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
     price,
     ...(hasSale ? { salePrice } : {}),
     image: getPrimaryImage(product),
+    images: images.length > 0 ? images : [getPrimaryImage(product)],
     category: getCategoryName(product),
     tags: product.tags.flatMap((row) => [row.tag.slug, row.tag.name]),
+    hasActiveBundleOffer: product.hasActiveBundleOffer,
+    ...(product.bundleMinTotalQty
+      ? { bundleMinTotalQty: product.bundleMinTotalQty }
+      : {}),
+    ...(product.bundleDiscountPercent
+      ? { bundleDiscountPercent: product.bundleDiscountPercent.toNumber() }
+      : {}),
+    ...(product.bundleDisplayText ? { bundleDisplayText: product.bundleDisplayText } : {}),
     ...(hasSale ? { badge: 'Sale', superSale: true } : {}),
     variants: variantRows,
+    bundleOffers: product.bundleOffers.map((offer) => ({
+      id: offer.id,
+      title: offer.title?.trim() || 'Bundle Offer',
+      image: offer.imagePath || '',
+      minTotalQty: offer.minTotalQty,
+      discountPercent: offer.discountPercent.toNumber(),
+      variantIds: offer.variants.map((item) => item.variantId),
+      isActive: offer.isActive,
+    })),
   };
 }
 
@@ -304,7 +353,14 @@ export async function getStorefrontProductDetailById(productId: string) {
           isActive: true,
         },
         orderBy: {
-          createdAt: 'asc',
+          sortOrder: 'asc',
+        },
+        include: {
+          variantImages: {
+            orderBy: {
+              sortOrder: 'asc',
+            },
+          },
         },
       },
       tags: {
@@ -313,6 +369,21 @@ export async function getStorefrontProductDetailById(productId: string) {
             select: {
               name: true,
               slug: true,
+            },
+          },
+        },
+      },
+      bundleOffers: {
+        where: {
+          isActive: true,
+        },
+        orderBy: {
+          sortOrder: 'asc',
+        },
+        include: {
+          variants: {
+            select: {
+              variantId: true,
             },
           },
         },
@@ -349,10 +420,20 @@ export async function getStorefrontProductDetailById(productId: string) {
     name: specification.name,
     value: specification.value,
   }));
+  const bundleOffers = product.bundleOffers.map((offer) => ({
+    id: offer.id,
+    title: offer.title?.trim() || `Bundle ${offer.minTotalQty}+`,
+    image: offer.imagePath || '',
+    minTotalQty: offer.minTotalQty,
+    discountPercent: offer.discountPercent.toNumber(),
+    variantIds: offer.variants.map((item) => item.variantId),
+    isActive: offer.isActive,
+  }));
 
   return {
     ...catalogBase,
-    images: images.length > 0 ? images : [''],
+    imageVersion: product.updatedAt.getTime(),
+    images,
     category: getCategoryName(product),
     description,
     benefits:
@@ -370,6 +451,7 @@ export async function getStorefrontProductDetailById(productId: string) {
             { name: 'Category', value: getCategoryName(product) },
             { name: 'Availability', value: stock > 0 ? 'In Stock' : 'Out of Stock' },
           ],
+    bundleOffers,
     inStock: stock > 0,
     rating: 4.5,
     reviews: 124,

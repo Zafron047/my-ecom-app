@@ -5,10 +5,15 @@ export interface StorefrontCatalogProduct {
   price: number;
   salePrice?: number;
   image: string;
+  images: string[];
   category: string;
   tags: string[];
   badge?: string;
   superSale?: boolean;
+  hasActiveBundleOffer?: boolean;
+  bundleMinTotalQty?: number;
+  bundleDiscountPercent?: number;
+  bundleDisplayText?: string;
   variants: {
     id: string;
     color: string;
@@ -16,6 +21,16 @@ export interface StorefrontCatalogProduct {
     price: number;
     salePrice?: number;
     image: string;
+    images?: string[];
+  }[];
+  bundleOffers?: {
+    id: string;
+    title: string;
+    image: string;
+    minTotalQty: number;
+    discountPercent: number;
+    variantIds: string[];
+    isActive: boolean;
   }[];
 }
 
@@ -37,6 +52,7 @@ export interface StorefrontHomepageSection {
 export interface StorefrontProductDetail {
   id: string;
   name: string;
+  imageVersion: number;
   price: number;
   salePrice?: number;
   image: string;
@@ -48,6 +64,15 @@ export interface StorefrontProductDetail {
     name: string;
     value: string;
   }[];
+  bundleOffers: {
+    id: string;
+    title: string;
+    image: string;
+    minTotalQty: number;
+    discountPercent: number;
+    variantIds: string[];
+    isActive: boolean;
+  }[];
   inStock: boolean;
   rating: number;
   reviews: number;
@@ -58,5 +83,6 @@ export interface StorefrontProductDetail {
     price: number;
     salePrice?: number;
     image: string;
+    images?: string[];
   }[];
 }

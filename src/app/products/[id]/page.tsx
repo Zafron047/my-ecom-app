@@ -29,6 +29,8 @@ export default function ProductDetail() {
   const [zoomFallbackImageSet, setZoomFallbackImageSet] = useState<Record<number, boolean>>(
     {},
   );
+  const formatVariantLabel = (color?: string, size?: string) =>
+    [color?.trim(), size?.trim()].filter(Boolean).join(' / ');
 
   useEffect(() => {
     if (!productId) return;
@@ -88,6 +90,18 @@ export default function ProductDetail() {
     () => product?.variants?.[selectedVariantIndex],
     [product, selectedVariantIndex],
   );
+  const bestActiveBundleOffer = useMemo(
+    () =>
+      [...(product?.bundleOffers ?? [])]
+        .filter((offer) => offer.isActive)
+        .sort((a, b) => {
+          if (b.discountPercent !== a.discountPercent) {
+            return b.discountPercent - a.discountPercent;
+          }
+          return b.minTotalQty - a.minTotalQty;
+        })[0],
+    [product?.bundleOffers],
+  );
   const productCartItems = useMemo(
     () => cartItems.filter((item) => item.detailId === product?.id),
     [cartItems, product?.id],
@@ -101,7 +115,10 @@ export default function ProductDetail() {
   );
   const activeVariantQuantity = activeVariantCartItem?.quantity ?? 0;
   const activePrice = activeVariant?.price ?? product?.price ?? 0;
-  const activeSalePrice = activeVariant?.salePrice ?? product?.salePrice;
+  const activeSalePrice =
+    activeVariant
+      ? activeVariant.salePrice
+      : product?.salePrice;
   const discount = useMemo(() => {
     if (!activeSalePrice || activePrice <= activeSalePrice) return 0;
     return Math.round(((activePrice - activeSalePrice) / activePrice) * 100);
@@ -119,20 +136,36 @@ export default function ProductDetail() {
     );
   }
 
-  const safeSelectedImage = product.images[selectedImage] ?? product.image;
+  const normalizedImages = product.images.filter((image) =>
+    Boolean(image && image.trim()),
+  );
+  const fallbackPrimaryImage = product.image?.trim() ? product.image : '';
+  const safeSelectedImage =
+    normalizedImages[selectedImage] ?? fallbackPrimaryImage;
+  const appendImageVersion = (imageUrl: string) => {
+    if (!imageUrl) return imageUrl;
+    try {
+      const parsed = new URL(imageUrl);
+      parsed.searchParams.set('v', String(product.imageVersion));
+      return parsed.toString();
+    } catch {
+      const joiner = imageUrl.includes('?') ? '&' : '?';
+      return `${imageUrl}${joiner}v=${product.imageVersion}`;
+    }
+  };
   const resolvedSelectedImage = fallbackImageSet[selectedImage]
-    ? safeSelectedImage
-    : toVariantImageUrl(safeSelectedImage, 'detail');
+    ? appendImageVersion(safeSelectedImage)
+    : appendImageVersion(toVariantImageUrl(safeSelectedImage, 'detail'));
   const zoomSelectedImage = zoomFallbackImageSet[selectedImage]
-    ? safeSelectedImage
-    : toVariantImageUrl(safeSelectedImage, 'zoom');
+    ? appendImageVersion(safeSelectedImage)
+    : appendImageVersion(toVariantImageUrl(safeSelectedImage, 'zoom'));
   const DETAIL_BOX_SIZE = 584;
   const LENS_SIZE = 140;
   const ZOOM_SCALE = 2.2;
   const toOriginalFromVariantUrl = (imageUrl: string) =>
-    imageUrl.replace(/-(thumb|detail|zoom)\.webp$/i, (match) =>
-      match.includes('.webp') ? '.webp' : match,
-    );
+    imageUrl
+      .replace(/\/(thumb|detail|zoom)\//i, '/original/')
+      .replace(/-(thumb|detail|zoom)\.webp$/i, '.webp');
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -216,7 +249,7 @@ export default function ProductDetail() {
             </div>
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
-            {product.images.map((image, index) => (
+            {normalizedImages.map((image, index) => (
               <button
                 key={`${image}-${index}`}
                 onClick={() => setSelectedImage(index)}
@@ -228,7 +261,11 @@ export default function ProductDetail() {
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={fallbackImageSet[index] ? image : toVariantImageUrl(image, 'detail')}
+                  src={
+                    fallbackImageSet[index]
+                      ? appendImageVersion(image)
+                      : appendImageVersion(toVariantImageUrl(image, 'thumb'))
+                  }
                   alt={`View ${index + 1}`}
                   className="w-full h-full object-cover"
                   onError={() =>
@@ -327,7 +364,7 @@ export default function ProductDetail() {
                         : 'border-slate-300 bg-white text-slate-700 hover:border-blue-300'
                     }`}
                   >
-                    {variant.color} / {variant.size}
+                    {formatVariantLabel(variant.color, variant.size)}
                   </button>
                 ))}
               </div>
@@ -362,8 +399,14 @@ export default function ProductDetail() {
                             image: activeVariant?.image || product.image,
                             variantId: activeVariant?.id,
                             variantLabel: activeVariant
-                              ? `${activeVariant.color} / ${activeVariant.size}`
+                              ? formatVariantLabel(activeVariant.color, activeVariant.size) ||
+                                undefined
                               : undefined,
+                            bundleOffers: product.bundleOffers,
+                            hasActiveBundleOffer: Boolean(bestActiveBundleOffer),
+                            bundleMinTotalQty: bestActiveBundleOffer?.minTotalQty,
+                            bundleDiscountPercent: bestActiveBundleOffer?.discountPercent,
+                            bundleDisplayText: bestActiveBundleOffer?.title?.trim() || undefined,
                           },
                           1,
                         );
@@ -399,8 +442,14 @@ export default function ProductDetail() {
                     image: activeVariant?.image || product.image,
                     variantId: activeVariant?.id,
                     variantLabel: activeVariant
-                      ? `${activeVariant.color} / ${activeVariant.size}`
+                      ? formatVariantLabel(activeVariant.color, activeVariant.size) ||
+                        undefined
                       : undefined,
+                    bundleOffers: product.bundleOffers,
+                    hasActiveBundleOffer: Boolean(bestActiveBundleOffer),
+                    bundleMinTotalQty: bestActiveBundleOffer?.minTotalQty,
+                    bundleDiscountPercent: bestActiveBundleOffer?.discountPercent,
+                    bundleDisplayText: bestActiveBundleOffer?.title?.trim() || undefined,
                   },
                   1,
                 )
@@ -411,7 +460,58 @@ export default function ProductDetail() {
             </button>
           </div>
 
-          <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">Specifications</h3>
+            <div className="space-y-2">
+              {product.specs.map((spec, index) => (
+                <div
+                  key={`${spec.name}-${index}`}
+                  className="grid grid-cols-[minmax(120px,0.9fr)_minmax(0,1.1fr)] gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+                >
+                  <p className="text-sm font-semibold text-slate-700">{spec.name}</p>
+                  <p className="text-sm text-slate-900">{spec.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {product.bundleOffers.length > 0 && (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+              <h3 className="mb-4 text-lg font-semibold text-amber-900">Bundle Offers</h3>
+              <div className="space-y-3">
+                {product.bundleOffers.map((offer) => (
+                  <div
+                    key={offer.id}
+                    className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2"
+                  >
+                    <div className="h-16 w-16 overflow-hidden rounded-md border border-amber-100 bg-amber-50">
+                      {offer.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={offer.image}
+                          alt={offer.title}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="grid h-full w-full place-items-center text-[10px] font-semibold text-amber-700">
+                          Bundle
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{offer.title}</p>
+                      <p className="text-xs text-slate-700">
+                        Buy at least {offer.minTotalQty} eligible pcs and get{' '}
+                        {offer.discountPercent}% off
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
             <h3 className="mb-4 text-lg font-semibold text-gray-900">Key Features</h3>
             <ul className="space-y-2.5">
               {product.benefits.map((benefit, index) => (
@@ -431,12 +531,18 @@ export default function ProductDetail() {
           {relatedProducts.map((relatedProduct) => (
             <Link key={relatedProduct.id} href={`/products/${relatedProduct.id}`} className="group cursor-pointer">
               <div className="relative overflow-hidden bg-gray-100 aspect-square rounded-lg mb-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={relatedProduct.image}
-                  alt={relatedProduct.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                />
+                {relatedProduct.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={relatedProduct.image}
+                    alt={relatedProduct.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-xs font-semibold text-slate-500">
+                    No image
+                  </div>
+                )}
               </div>
               <h3 className="text-sm font-medium text-gray-900 line-clamp-2 mb-2">
                 {relatedProduct.name}

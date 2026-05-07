@@ -12,6 +12,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import SearchableDropdown from '@/components/SearchableDropdown';
 import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 
+const MOBILE_PATTERN = /^(?:\+8801[3-9]\d{8}|01[3-9]\d{8})$/;
+
 export default function Header() {
   type CheckoutField =
     | 'firstName'
@@ -26,13 +28,11 @@ export default function Header() {
 
   const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState(() =>
-    typeof document !== 'undefined' && document.cookie.includes('customer_auth=1'),
-  );
+  const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchableProducts, setSearchableProducts] = useState<
-    { id: string; name: string; image: string }[]
+    { id: string; name: string; image: string; variantCount: number }[]
   >([]);
   const {
     cartItems,
@@ -41,10 +41,13 @@ export default function Header() {
     itemCount,
     selectedItemCount,
     selectedCartItems,
+    isPricingAuthoritative,
+    subtotalBeforeDiscount,
     subtotal,
+    linePricingById,
     closeCart,
     toggleCart,
-    toggleItemSelection,
+    setItemSelection,
     updateQuantity,
     removeFromCart,
   } = useCart();
@@ -81,6 +84,8 @@ export default function Header() {
   const [locationAreas, setLocationAreas] = useState<string[]>([]);
   const desktopSearchRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchRef = useRef<HTMLDivElement | null>(null);
+  const lastAutofillPhoneRef = useRef<string>('');
+  const [isCustomerLookupLoading, setIsCustomerLookupLoading] = useState(false);
   const firstNameHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -113,16 +118,14 @@ export default function Header() {
   }
 
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-  const mobilePattern = /^(?:\+8801[3-9]\d{8}|01[3-9]\d{8})$/;
-
   const isEmailValid =
     checkoutForm.email.trim() === '' || emailPattern.test(checkoutForm.email);
-  const isCustomerMobileValid = mobilePattern.test(
+  const isCustomerMobileValid = MOBILE_PATTERN.test(
     checkoutForm.customerMobile.trim(),
   );
   const isReceiverMobileValid =
     checkoutForm.receiverMobile.trim() === '' ||
-    mobilePattern.test(checkoutForm.receiverMobile.trim());
+    MOBILE_PATTERN.test(checkoutForm.receiverMobile.trim());
   const isReceiverDifferentFromCustomer =
     checkoutForm.receiverMobile.trim() === '' ||
     checkoutForm.receiverMobile.trim() !== checkoutForm.customerMobile.trim();
@@ -142,6 +145,8 @@ export default function Header() {
     isCustomerMobileValid &&
     isReceiverMobileValid &&
     isReceiverDifferentFromCustomer;
+  const canCheckoutWithAuthoritativePricing =
+    isPricingAuthoritative && selectedItemCount > 0;
 
   const isFirstNameInvalid =
     touchedFields.firstName && checkoutForm.firstName.trim() === '';
@@ -186,6 +191,150 @@ export default function Header() {
         .slice(0, 5)
     : [];
 
+  const groupedCartItems = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        productId: string;
+        productName: string;
+        productImage: string;
+        lines: typeof cartItems;
+        allSelected: boolean;
+        subtotalBeforeDiscount: number;
+        subtotalAfterDiscount: number;
+        discount: number;
+        bundleDiscountPercent: number | null;
+        bundleOffersText: string[];
+        appliedBundleDiscounts: { title: string; amount: number }[];
+      }
+    >();
+
+    for (const item of cartItems) {
+      const productId = item.detailId ?? item.id;
+      const group = groups.get(productId) ?? {
+        productId,
+        productName: item.name,
+        productImage: item.image,
+        lines: [],
+        allSelected: true,
+        subtotalBeforeDiscount: 0,
+        subtotalAfterDiscount: 0,
+        discount: 0,
+        bundleDiscountPercent: null,
+        bundleOffersText: [],
+        appliedBundleDiscounts: [],
+      };
+
+      group.lines.push(item);
+      const fallbackActiveOffers = (item.bundleOffers ?? []).filter((offer) => offer.isActive);
+      for (const offer of fallbackActiveOffers) {
+        const offerText = offer.title?.trim()
+          ? offer.title.trim()
+          : `Buy Min ${offer.minTotalQty} get ${offer.discountPercent}% OFF!!!`;
+        if (!group.bundleOffersText.includes(offerText)) {
+          group.bundleOffersText.push(offerText);
+        }
+      }
+      if (item.selected) {
+        const linePricing = linePricingById[item.id];
+        const lineSubtotal =
+          linePricing?.lineSubtotal ?? (item.salePrice ?? item.price) * item.quantity;
+        const lineTotal = linePricing?.lineTotal ?? lineSubtotal;
+        const lineDiscount = linePricing?.lineDiscount ?? 0;
+        group.subtotalBeforeDiscount += lineSubtotal;
+        group.subtotalAfterDiscount += lineTotal;
+        group.discount += lineDiscount;
+        if (typeof linePricing?.bundleDiscountPercent === 'number') {
+          group.bundleDiscountPercent = Math.max(
+            group.bundleDiscountPercent ?? 0,
+            linePricing.bundleDiscountPercent,
+          );
+        }
+        if (linePricing?.bundleTitle && !group.bundleOffersText.includes(linePricing.bundleTitle)) {
+          group.bundleOffersText.push(linePricing.bundleTitle);
+        }
+        if (linePricing?.bundleTitle && lineDiscount > 0) {
+          const existing = group.appliedBundleDiscounts.find(
+            (entry) => entry.title === linePricing.bundleTitle,
+          );
+          if (existing) {
+            existing.amount += lineDiscount;
+          } else {
+            group.appliedBundleDiscounts.push({
+              title: linePricing.bundleTitle,
+              amount: lineDiscount,
+            });
+          }
+        }
+      } else {
+        group.allSelected = false;
+      }
+
+      groups.set(productId, group);
+    }
+
+    return [...groups.values()];
+  }, [cartItems, linePricingById]);
+
+  useEffect(() => {
+    setIsCustomerLoggedIn(document.cookie.includes('customer_auth=1'));
+  }, []);
+
+  useEffect(() => {
+    const rawPhone = checkoutForm.customerMobile.trim();
+    const normalizedPhone = rawPhone.startsWith('+880')
+      ? `0${rawPhone.slice(4)}`
+      : rawPhone;
+
+    if (!MOBILE_PATTERN.test(rawPhone) || !normalizedPhone) return;
+    if (lastAutofillPhoneRef.current === normalizedPhone) return;
+
+    const timer = setTimeout(async () => {
+      setIsCustomerLookupLoading(true);
+      try {
+        const query = new URLSearchParams({ phone: normalizedPhone });
+        const response = await fetch(`/api/customers/by-phone?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          customer: {
+            firstName: string;
+            lastName: string | null;
+            email: string | null;
+            phone: string;
+            division: string | null;
+            district: string | null;
+            thana: string | null;
+            address: string | null;
+          } | null;
+        };
+        if (!payload.customer) {
+          lastAutofillPhoneRef.current = normalizedPhone;
+          return;
+        }
+        setCheckoutForm((current) => ({
+          ...current,
+          customerMobile: current.customerMobile,
+          firstName: payload.customer?.firstName ?? current.firstName,
+          lastName: payload.customer?.lastName ?? current.lastName,
+          email: payload.customer?.email ?? current.email,
+          division: payload.customer?.division ?? current.division,
+          district: payload.customer?.district ?? current.district,
+          thana: payload.customer?.thana ?? current.thana,
+          address: payload.customer?.address ?? current.address,
+        }));
+        lastAutofillPhoneRef.current = normalizedPhone;
+      } catch {
+        // silent fail: checkout still works manually.
+      } finally {
+        setIsCustomerLookupLoading(false);
+      }
+    }, 320);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [checkoutForm.customerMobile]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -194,14 +343,24 @@ export default function Header() {
         const response = await fetch('/api/storefront/catalog');
         if (!response.ok) return;
         const payload = (await response.json()) as {
-          products: StorefrontCatalogProduct[];
+          products: Array<
+            StorefrontCatalogProduct & {
+              variantCount?: number;
+            }
+          >;
         };
         if (!isMounted) return;
         setSearchableProducts(
-          (payload.products ?? []).map(({ id, name, image }) => ({
-            id,
-            name,
-            image,
+          (payload.products ?? []).map((product) => ({
+            id: product.id,
+            name: product.name,
+            image: product.image,
+            variantCount:
+              typeof product.variantCount === 'number'
+                ? product.variantCount
+                : Array.isArray(product.variants)
+                  ? product.variants.length
+                  : 0,
           })),
         );
       } catch {
@@ -395,7 +554,7 @@ export default function Header() {
   }
 
   function handleProceedToCheckout() {
-    if (selectedItemCount === 0) return;
+    if (!canCheckoutWithAuthoritativePricing) return;
     setIsCheckoutView(true);
   }
 
@@ -484,6 +643,10 @@ export default function Header() {
   }
 
   async function handlePlaceOrder() {
+    if (!canCheckoutWithAuthoritativePricing) {
+      setPlaceOrderError('Pricing is unavailable. Please wait for server sync and try again.');
+      return;
+    }
     if (!isCheckoutFormValid) {
       setPlaceOrderError('Please complete all required fields correctly.');
       return;
@@ -681,15 +844,25 @@ export default function Header() {
                       >
                         <div className="flex min-w-0 items-center gap-3">
                           <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-slate-100">
-                            <img
-                              src={product.image}
-                              alt={product.name}
-                              className="h-full w-full object-cover"
-                            />
+                            {product.image ? (
+                              <img
+                                src={product.image}
+                                alt={product.name}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="h-full w-full bg-slate-100" />
+                            )}
                           </div>
-                          <span className="line-clamp-2 text-xs font-medium text-slate-700">
-                            {product.name}
-                          </span>
+                          <div className="min-w-0">
+                            <span className="line-clamp-2 text-xs font-medium text-slate-700">
+                              {product.name}
+                            </span>
+                            <p className="mt-0.5 text-[0.62rem] font-medium text-slate-400">
+                              {product.variantCount}{' '}
+                              {product.variantCount === 1 ? 'variant' : 'variants'}
+                            </p>
+                          </div>
                         </div>
                         <span className="shrink-0 text-[0.65rem] uppercase tracking-[0.14em] text-slate-400">
                           View
@@ -740,11 +913,15 @@ export default function Header() {
                       >
                         <div className="flex items-center gap-2.5">
                           <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                            <img
-                              src={cartNotice.image}
-                              alt={cartNotice.name}
-                              className="h-full w-full object-cover"
-                            />
+                            {cartNotice.image ? (
+                              <img
+                                src={cartNotice.image}
+                                alt={cartNotice.name}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="h-full w-full bg-slate-100" />
+                            )}
                           </div>
                           <div className="min-w-0">
                             <p className="line-clamp-1 text-xs font-semibold text-slate-800">
@@ -922,6 +1099,47 @@ export default function Header() {
             <>
               <div className="px-3 pb-6">
                 <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div>
+                      <motion.input
+                      type="tel"
+                      name="customerMobile"
+                      placeholder="Customer mobile *"
+                      value={checkoutForm.customerMobile}
+                      onChange={handleCheckoutInputChange}
+                      onBlur={() => handleCheckoutFieldBlur('customerMobile')}
+                      animate={
+                        isFieldFilled(checkoutForm.customerMobile)
+                          ? { scale: 1.01, y: -1 }
+                          : { scale: 1, y: 0 }
+                      }
+                      transition={fieldSpringTransition}
+                      className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
+                        isCustomerMobileInvalid
+                          ? 'rounded-b-none border-rose-300 bg-rose-50/40 shadow-[0_0_0_2px_rgba(244,63,94,0.16)]'
+                          : isFieldFilled(checkoutForm.customerMobile)
+                            ? completedFieldGlow
+                            : 'border-slate-200'
+                      }`}
+                    />
+                    <AnimatePresence initial={false}>
+                      {isCustomerMobileInvalid && (
+                        <motion.span
+                          initial={{ opacity: 0, y: -4, height: 0 }}
+                          animate={{ opacity: 1, y: 0, height: 'auto' }}
+                          exit={{ opacity: 0, y: -4, height: 0 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          className="mt-1 inline-flex w-fit max-w-full overflow-hidden rounded-md border border-amber-300 bg-amber-50 px-3 py-px text-[10px] font-medium leading-3.5 text-amber-800"
+                        >
+                          Use 01XXXXXXXXX or +8801XXXXXXXXX format.
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                    {isCustomerLookupLoading && (
+                      <p className="mt-1 text-[10px] font-medium text-slate-500">
+                        Checking existing customer...
+                      </p>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <motion.input
@@ -1038,42 +1256,6 @@ export default function Header() {
                           className="mt-1 inline-flex w-fit max-w-full overflow-hidden rounded-md border border-amber-300 bg-amber-50 px-3 py-px text-[10px] font-medium leading-3.5 text-amber-800"
                         >
                           Enter a valid email address.
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                  <div>
-                      <motion.input
-                      type="tel"
-                      name="customerMobile"
-                      placeholder="Customer mobile *"
-                      value={checkoutForm.customerMobile}
-                      onChange={handleCheckoutInputChange}
-                      onBlur={() => handleCheckoutFieldBlur('customerMobile')}
-                      animate={
-                        isFieldFilled(checkoutForm.customerMobile)
-                          ? { scale: 1.01, y: -1 }
-                          : { scale: 1, y: 0 }
-                      }
-                      transition={fieldSpringTransition}
-                      className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
-                        isCustomerMobileInvalid
-                          ? 'rounded-b-none border-rose-300 bg-rose-50/40 shadow-[0_0_0_2px_rgba(244,63,94,0.16)]'
-                          : isFieldFilled(checkoutForm.customerMobile)
-                            ? completedFieldGlow
-                            : 'border-slate-200'
-                      }`}
-                    />
-                    <AnimatePresence initial={false}>
-                      {isCustomerMobileInvalid && (
-                        <motion.span
-                          initial={{ opacity: 0, y: -4, height: 0 }}
-                          animate={{ opacity: 1, y: 0, height: 'auto' }}
-                          exit={{ opacity: 0, y: -4, height: 0 }}
-                          transition={{ duration: 0.2, ease: 'easeOut' }}
-                          className="mt-1 inline-flex w-fit max-w-full overflow-hidden rounded-md border border-amber-300 bg-amber-50 px-3 py-px text-[10px] font-medium leading-3.5 text-amber-800"
-                        >
-                          Use 01XXXXXXXXX or +8801XXXXXXXXX format.
                         </motion.span>
                       )}
                     </AnimatePresence>
@@ -1251,7 +1433,7 @@ export default function Header() {
               <div className="border-t border-slate-200 px-6 pt-4 pb-6">
                 <div className="mb-4 space-y-2 text-sm">
                   <div className="flex items-center justify-between text-slate-600">
-                    <span>Cart Subtotal</span>
+                    <span>Items Total</span>
                     <span className="font-medium text-slate-900">
                       ৳{subtotal.toFixed(2)}
                     </span>
@@ -1269,12 +1451,17 @@ export default function Header() {
                     </span>
                   </div>
                 </div>
+                {!isPricingAuthoritative && selectedItemCount > 0 && (
+                  <p className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    Pricing unavailable. Reconnecting to server. Please wait before placing order.
+                  </p>
+                )}
                   <button
                     type="button"
                     onClick={handlePlaceOrder}
-                    disabled={!isCheckoutFormValid || isPlacingOrder}
+                    disabled={!isCheckoutFormValid || isPlacingOrder || !canCheckoutWithAuthoritativePricing}
                     className={`flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] !text-white transition ${
-                      isCheckoutFormValid && !isPlacingOrder
+                      isCheckoutFormValid && !isPlacingOrder && canCheckoutWithAuthoritativePricing
                         ? 'bg-[#2d5db3] hover:bg-[#244a8f]'
                         : 'cursor-not-allowed bg-slate-300'
                     }`}
@@ -1293,84 +1480,131 @@ export default function Header() {
               <div className="px-3 pb-6">
                 {cartItems.length > 0 ? (
                   <div className="flex flex-col gap-3">
-                    {cartItems.map((item) => (
-                      <div key={item.id} className="flex items-center gap-3">
+                    {groupedCartItems.map((group) => (
+                      <div key={group.productId} className="flex items-start gap-3">
                         <div className="flex shrink-0 items-center self-stretch">
                           <div className="flex h-full items-center">
                             <input
                               type="checkbox"
-                              checked={item.selected}
-                              onChange={() => toggleItemSelection(item.id)}
-                              aria-label={`Select ${item.name} for checkout`}
+                              checked={group.allSelected}
+                              onChange={(event) => {
+                                group.lines.forEach((line) => {
+                                  setItemSelection(line.id, event.target.checked);
+                                });
+                              }}
+                              aria-label={`Select ${group.productName} for checkout`}
                               className="h-4 w-4 rounded border-slate-300 text-[#2d5db3] focus:ring-[#2d5db3]"
                             />
                           </div>
                         </div>
                         <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                          <div className="flex gap-3">
+                          <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-3">
                             <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-slate-100">
-                              <img
-                                src={item.image}
-                                alt={item.name}
-                                className="h-full w-full object-cover"
-                              />
+                              {group.productImage ? (
+                                <img
+                                  src={group.productImage}
+                                  alt={group.productName}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="h-full w-full bg-slate-100" />
+                              )}
                             </div>
                             <div className="min-w-0 flex-1">
                               <Link
-                                href={`/products/${item.detailId ?? item.id}`}
+                                href={`/products/${group.productId}`}
                                 onClick={handleCloseCart}
                                 className="line-clamp-2 text-sm font-medium text-slate-800 transition hover:text-blue-600"
                               >
-                                {item.name}
+                                {group.productName}
                               </Link>
-                              {item.variantLabel && (
-                                <p className="mt-1 text-xs text-slate-500">
-                                  {item.variantLabel}
+                              {group.bundleOffersText.map((offerText) => (
+                                <p key={offerText} className="mt-1 text-xs font-semibold text-emerald-700">
+                                  {offerText}
                                 </p>
-                              )}
-                              <p className="mt-2 text-sm font-semibold text-slate-900">
-                                ৳{(item.salePrice ?? item.price).toFixed(2)}
-                              </p>
-                              {item.salePrice && (
-                                <p className="text-xs text-slate-400 line-through">
-                                  ৳{item.price.toFixed(2)}
-                                </p>
-                              )}
-                              <div className="mt-3 flex items-center justify-between gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => removeFromCart(item.id)}
-                                  className="shrink-0 text-xs font-medium uppercase tracking-[0.12em] text-rose-500 transition hover:text-rose-600"
-                                >
-                                  Remove
-                                </button>
-                                <div className="flex shrink-0 items-center rounded-full border border-slate-200">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateQuantity(item.id, item.quantity - 1)
-                                    }
-                                    className="px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50"
-                                    aria-label={`Decrease quantity for ${item.name}`}
-                                  >
-                                    -
-                                  </button>
-                                  <span className="min-w-8 text-center text-sm font-medium text-slate-800">
-                                    {item.quantity}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateQuantity(item.id, item.quantity + 1)
-                                    }
-                                    className="px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50"
-                                    aria-label={`Increase quantity for ${item.name}`}
-                                  >
-                                    +
-                                  </button>
-                                </div>
-                              </div>
+                              ))}
                             </div>
+                          </div>
+                          <div className="col-span-2 mt-2 w-full space-y-2">
+                            {group.lines.map((item) => {
+                              const unitBasePrice = item.salePrice ?? item.price;
+                              return (
+                                <div
+                                  key={item.id}
+                                  className="w-full rounded-lg border border-slate-100 bg-slate-50 p-2"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-xs text-slate-600">
+                                      {item.variantLabel || 'Variant'}
+                                    </p>
+                                    <p className="text-xs font-semibold text-slate-900">
+                                      ৳{unitBasePrice.toFixed(2)} x {item.quantity}
+                                    </p>
+                                  </div>
+                                  <div className="mt-2 flex items-center justify-between gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => removeFromCart(item.id)}
+                                      className="shrink-0 text-[11px] font-medium uppercase tracking-[0.12em] text-rose-500 transition hover:text-rose-600"
+                                    >
+                                      Remove
+                                    </button>
+                                    <div className="flex shrink-0 items-center rounded-full border border-slate-200 bg-white">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateQuantity(item.id, item.quantity - 1)
+                                        }
+                                        className="px-3 py-1 text-sm text-slate-600 transition hover:bg-slate-50"
+                                        aria-label={`Decrease quantity for ${item.name}`}
+                                      >
+                                        -
+                                      </button>
+                                      <span className="min-w-8 text-center text-sm font-medium text-slate-800">
+                                        {item.quantity}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateQuantity(item.id, item.quantity + 1)
+                                        }
+                                        className="px-3 py-1 text-sm text-slate-600 transition hover:bg-slate-50"
+                                        aria-label={`Increase quantity for ${item.name}`}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="col-span-2 mt-3 w-full space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-slate-600">
+                              <span>Product subtotal</span>
+                              <span>৳{group.subtotalBeforeDiscount.toFixed(2)}</span>
+                            </div>
+                            {group.discount > 0 && (
+                              <>
+                                {group.appliedBundleDiscounts.map((entry) => (
+                                  <div
+                                    key={entry.title}
+                                    className="flex items-center justify-between text-emerald-700/90"
+                                  >
+                                    <span className="line-clamp-1 text-[11px]">{entry.title}</span>
+                                    <span className="text-[11px]">-৳{entry.amount.toFixed(2)}</span>
+                                  </div>
+                                ))}
+                                <div className="flex items-center justify-between text-emerald-700">
+                                  <span>Bundle discount</span>
+                                  <span>-৳{group.discount.toFixed(2)}</span>
+                                </div>
+                                <div className="flex items-center justify-between font-semibold text-slate-800">
+                                  <span>After discount</span>
+                                  <span>৳{group.subtotalAfterDiscount.toFixed(2)}</span>
+                                </div>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1397,7 +1631,7 @@ export default function Header() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-600">
-                    <span>Subtotal</span>
+                    <span>Items Total</span>
                     <span className="font-medium text-slate-900">
                       ৳{subtotal.toFixed(2)}
                     </span>
@@ -1427,17 +1661,22 @@ export default function Header() {
                 </div>
                 <div className="mb-4 flex items-center justify-between">
                   <span className="text-sm font-semibold text-slate-900">
-                    Subtotal
+                    Cart Subtotal
                   </span>
                   <span className="text-lg font-bold text-blue-600">
                     ৳{subtotal.toFixed(2)}
                   </span>
                 </div>
+                {!isPricingAuthoritative && selectedItemCount > 0 && (
+                  <p className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    Pricing unavailable. Reconnecting to server. Checkout is temporarily disabled.
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={handleProceedToCheckout}
                   className={`flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] !text-white transition ${
-                    selectedItemCount > 0
+                    canCheckoutWithAuthoritativePricing
                       ? 'bg-[#2d5db3] hover:bg-[#244a8f] hover:!text-white'
                       : 'pointer-events-none bg-slate-300 !text-white'
                   }`}
@@ -1452,3 +1691,13 @@ export default function Header() {
     </>
   );
 }
+
+
+
+
+
+
+
+
+
+

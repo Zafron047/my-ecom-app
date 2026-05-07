@@ -7,6 +7,7 @@ export function toVariantImageUrl(
   if (!imageUrl) return imageUrl;
 
   const suffixPattern = /-(thumb|detail|zoom)\.webp$/i;
+  const folderPattern = /\/(original|thumb|detail|zoom)\//i;
 
   try {
     const parsed = new URL(imageUrl);
@@ -14,7 +15,11 @@ export function toVariantImageUrl(
     const lowerPathname = pathname.toLowerCase();
     let nextPathname = pathname;
 
-    if (suffixPattern.test(pathname)) {
+    if (folderPattern.test(pathname)) {
+      nextPathname = pathname
+        .replace(folderPattern, `/${size}/`)
+        .replace(/\.[^./]+$/i, '.webp');
+    } else if (suffixPattern.test(pathname)) {
       nextPathname = pathname.replace(suffixPattern, `-${size}.webp`);
     } else if (lowerPathname.endsWith('.webp')) {
       // For already-webp sources without a known suffix, keep original path.
@@ -33,6 +38,11 @@ export function toVariantImageUrl(
     parsed.pathname = nextPathname;
     return parsed.toString();
   } catch {
+    if (folderPattern.test(imageUrl)) {
+      return imageUrl
+        .replace(folderPattern, `/${size}/`)
+        .replace(/\.[^./]+$/i, '.webp');
+    }
     if (suffixPattern.test(imageUrl)) {
       return imageUrl.replace(suffixPattern, `-${size}.webp`);
     }
