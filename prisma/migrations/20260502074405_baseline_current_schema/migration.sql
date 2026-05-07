@@ -1,4 +1,10 @@
 -- CreateEnum
+CREATE TYPE "AdminRole" AS ENUM ('admin', 'manager', 'support');
+
+-- CreateEnum
+CREATE TYPE "AuditAction" AS ENUM ('create', 'update', 'delete', 'login', 'logout', 'status_change');
+
+-- CreateEnum
 CREATE TYPE "CustomerType" AS ENUM ('retail', 'reseller');
 
 -- CreateEnum
@@ -22,6 +28,59 @@ CREATE TYPE "OrderTag" AS ENUM ('PREPAID_ORDER', 'BULK_ORDER', 'DISCOUNTED_ORDER
 -- CreateEnum
 CREATE TYPE "CouponType" AS ENUM ('PERCENTAGE', 'FIXED');
 
+-- CreateEnum
+CREATE TYPE "HomepageSectionVariant" AS ENUM ('default', 'sale');
+
+-- CreateEnum
+CREATE TYPE "HomepageSectionLayout" AS ENUM ('grid', 'carousel');
+
+-- CreateEnum
+CREATE TYPE "HomepageSectionSourceType" AS ENUM ('latest', 'super_sale', 'category', 'tag');
+
+-- CreateTable
+CREATE TABLE "AdminUser" (
+    "id" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "passwordHash" TEXT NOT NULL,
+    "role" "AdminRole" NOT NULL DEFAULT 'support',
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "AdminUser_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AdminSession" (
+    "id" TEXT NOT NULL,
+    "adminUserId" TEXT NOT NULL,
+    "sessionTokenHash" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "revokedAt" TIMESTAMP(3),
+    "lastSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "AdminSession_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AuditLog" (
+    "id" TEXT NOT NULL,
+    "action" "AuditAction" NOT NULL,
+    "entityType" TEXT NOT NULL,
+    "entityId" TEXT NOT NULL,
+    "message" TEXT,
+    "metadata" JSONB,
+    "actorAdminId" TEXT,
+    "ipAddress" TEXT,
+    "userAgent" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateTable
 CREATE TABLE "Customer" (
     "id" TEXT NOT NULL,
@@ -29,6 +88,11 @@ CREATE TABLE "Customer" (
     "lastName" TEXT,
     "email" TEXT,
     "phone" TEXT NOT NULL,
+    "division" TEXT,
+    "district" TEXT,
+    "thana" TEXT,
+    "address" TEXT,
+    "passwordHash" TEXT,
     "customerType" "CustomerType" NOT NULL DEFAULT 'retail',
     "isBlocked" BOOLEAN NOT NULL DEFAULT false,
     "identifierTag" "CustomerIdentifierTag" NOT NULL DEFAULT 'NEW',
@@ -55,6 +119,48 @@ CREATE TABLE "Product" (
 );
 
 -- CreateTable
+CREATE TABLE "HomepageSection" (
+    "id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "eyebrow" TEXT,
+    "variant" "HomepageSectionVariant" NOT NULL DEFAULT 'default',
+    "layout" "HomepageSectionLayout" NOT NULL DEFAULT 'grid',
+    "sourceType" "HomepageSectionSourceType" NOT NULL DEFAULT 'latest',
+    "sourceValue" TEXT,
+    "productLimit" INTEGER NOT NULL DEFAULT 6,
+    "displayOrder" INTEGER NOT NULL DEFAULT 1,
+    "ctaLabel" TEXT,
+    "ctaHref" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "HomepageSection_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "HomepageSectionProduct" (
+    "homepageSectionId" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "assignedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "HomepageSectionProduct_pkey" PRIMARY KEY ("homepageSectionId","productId")
+);
+
+-- CreateTable
+CREATE TABLE "ProductSpecification" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProductSpecification_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "ProductVariant" (
     "id" TEXT NOT NULL,
     "productId" TEXT NOT NULL,
@@ -65,12 +171,26 @@ CREATE TABLE "ProductVariant" (
     "compareAtPrice" DECIMAL(12,2),
     "costPrice" DECIMAL(12,2),
     "stockQuantity" INTEGER NOT NULL DEFAULT 0,
+    "reorderLevel" INTEGER NOT NULL DEFAULT 10,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "imagePath" TEXT,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "ProductVariant_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ProductVariantImage" (
+    "id" TEXT NOT NULL,
+    "variantId" TEXT NOT NULL,
+    "imagePath" TEXT NOT NULL,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProductVariantImage_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -79,6 +199,7 @@ CREATE TABLE "Category" (
     "name" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
     "description" TEXT,
+    "imagePath" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -199,6 +320,66 @@ CREATE TABLE "OrderProduct" (
     CONSTRAINT "OrderProduct_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "DeliveryDivision" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "DeliveryDivision_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DeliveryDistrict" (
+    "id" TEXT NOT NULL,
+    "redxId" INTEGER NOT NULL,
+    "divisionId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "DeliveryDistrict_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DeliveryArea" (
+    "id" TEXT NOT NULL,
+    "redxId" INTEGER NOT NULL,
+    "districtId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "postCode" INTEGER,
+    "redxZoneId" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "DeliveryArea_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AdminUser_email_key" ON "AdminUser"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AdminSession_sessionTokenHash_key" ON "AdminSession"("sessionTokenHash");
+
+-- CreateIndex
+CREATE INDEX "AdminSession_adminUserId_idx" ON "AdminSession"("adminUserId");
+
+-- CreateIndex
+CREATE INDEX "AdminSession_expiresAt_idx" ON "AdminSession"("expiresAt");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_entityType_entityId_createdAt_idx" ON "AuditLog"("entityType", "entityId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_action_createdAt_idx" ON "AuditLog"("action", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_actorAdminId_createdAt_idx" ON "AuditLog"("actorAdminId", "createdAt");
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Customer_email_key" ON "Customer"("email");
 
@@ -221,10 +402,22 @@ CREATE INDEX "Product_status_createdAt_idx" ON "Product"("status", "createdAt");
 CREATE INDEX "Product_name_idx" ON "Product"("name");
 
 -- CreateIndex
+CREATE INDEX "HomepageSection_isActive_displayOrder_idx" ON "HomepageSection"("isActive", "displayOrder");
+
+-- CreateIndex
+CREATE INDEX "HomepageSectionProduct_productId_idx" ON "HomepageSectionProduct"("productId");
+
+-- CreateIndex
+CREATE INDEX "ProductSpecification_productId_sortOrder_idx" ON "ProductSpecification"("productId", "sortOrder");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "ProductVariant_sku_key" ON "ProductVariant"("sku");
 
 -- CreateIndex
 CREATE INDEX "ProductVariant_productId_isActive_idx" ON "ProductVariant"("productId", "isActive");
+
+-- CreateIndex
+CREATE INDEX "ProductVariant_productId_sortOrder_idx" ON "ProductVariant"("productId", "sortOrder");
 
 -- CreateIndex
 CREATE INDEX "ProductVariant_color_idx" ON "ProductVariant"("color");
@@ -234,6 +427,12 @@ CREATE INDEX "ProductVariant_size_idx" ON "ProductVariant"("size");
 
 -- CreateIndex
 CREATE INDEX "ProductVariant_stockQuantity_idx" ON "ProductVariant"("stockQuantity");
+
+-- CreateIndex
+CREATE INDEX "ProductVariant_reorderLevel_idx" ON "ProductVariant"("reorderLevel");
+
+-- CreateIndex
+CREATE INDEX "ProductVariantImage_variantId_sortOrder_idx" ON "ProductVariantImage"("variantId", "sortOrder");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Category_slug_key" ON "Category"("slug");
@@ -289,8 +488,53 @@ CREATE INDEX "OrderProduct_productId_idx" ON "OrderProduct"("productId");
 -- CreateIndex
 CREATE INDEX "OrderProduct_variantId_idx" ON "OrderProduct"("variantId");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "DeliveryDivision_name_key" ON "DeliveryDivision"("name");
+
+-- CreateIndex
+CREATE INDEX "DeliveryDivision_isActive_name_idx" ON "DeliveryDivision"("isActive", "name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DeliveryDistrict_redxId_key" ON "DeliveryDistrict"("redxId");
+
+-- CreateIndex
+CREATE INDEX "DeliveryDistrict_divisionId_isActive_name_idx" ON "DeliveryDistrict"("divisionId", "isActive", "name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DeliveryDistrict_divisionId_name_key" ON "DeliveryDistrict"("divisionId", "name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DeliveryArea_redxId_key" ON "DeliveryArea"("redxId");
+
+-- CreateIndex
+CREATE INDEX "DeliveryArea_districtId_isActive_name_idx" ON "DeliveryArea"("districtId", "isActive", "name");
+
+-- CreateIndex
+CREATE INDEX "DeliveryArea_postCode_idx" ON "DeliveryArea"("postCode");
+
+-- CreateIndex
+CREATE INDEX "DeliveryArea_redxZoneId_idx" ON "DeliveryArea"("redxZoneId");
+
+-- AddForeignKey
+ALTER TABLE "AdminSession" ADD CONSTRAINT "AdminSession_adminUserId_fkey" FOREIGN KEY ("adminUserId") REFERENCES "AdminUser"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_actorAdminId_fkey" FOREIGN KEY ("actorAdminId") REFERENCES "AdminUser"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "HomepageSectionProduct" ADD CONSTRAINT "HomepageSectionProduct_homepageSectionId_fkey" FOREIGN KEY ("homepageSectionId") REFERENCES "HomepageSection"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "HomepageSectionProduct" ADD CONSTRAINT "HomepageSectionProduct_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductSpecification" ADD CONSTRAINT "ProductSpecification_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
 -- AddForeignKey
 ALTER TABLE "ProductVariant" ADD CONSTRAINT "ProductVariant_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ProductVariantImage" ADD CONSTRAINT "ProductVariantImage_variantId_fkey" FOREIGN KEY ("variantId") REFERENCES "ProductVariant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ProductCategory" ADD CONSTRAINT "ProductCategory_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -321,3 +565,9 @@ ALTER TABLE "OrderProduct" ADD CONSTRAINT "OrderProduct_productId_fkey" FOREIGN 
 
 -- AddForeignKey
 ALTER TABLE "OrderProduct" ADD CONSTRAINT "OrderProduct_variantId_fkey" FOREIGN KEY ("variantId") REFERENCES "ProductVariant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DeliveryDistrict" ADD CONSTRAINT "DeliveryDistrict_divisionId_fkey" FOREIGN KEY ("divisionId") REFERENCES "DeliveryDivision"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DeliveryArea" ADD CONSTRAINT "DeliveryArea_districtId_fkey" FOREIGN KEY ("districtId") REFERENCES "DeliveryDistrict"("id") ON DELETE CASCADE ON UPDATE CASCADE;
