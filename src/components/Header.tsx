@@ -2,18 +2,17 @@
 
 import { useCart } from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
+import { getGroupedAreaOptions } from '@/lib/location-presenter';
+import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { catalogProducts } from '@/data/products';
+import SearchableDropdown from '@/components/SearchableDropdown';
+import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 
-const searchableProducts = catalogProducts.map(({ id, name, image }) => ({
-  id,
-  name,
-  image,
-}));
+const MOBILE_PATTERN = /^(?:\+8801[3-9]\d{8}|01[3-9]\d{8})$/;
 
 export default function Header() {
   type CheckoutField =
@@ -29,8 +28,12 @@ export default function Header() {
 
   const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchableProducts, setSearchableProducts] = useState<
+    { id: string; name: string; image: string; variantCount: number }[]
+  >([]);
   const {
     cartItems,
     isCartOpen,
@@ -38,15 +41,19 @@ export default function Header() {
     itemCount,
     selectedItemCount,
     selectedCartItems,
+    isPricingAuthoritative,
     subtotal,
+    linePricingById,
     closeCart,
     toggleCart,
-    toggleItemSelection,
+    setItemSelection,
     updateQuantity,
     removeFromCart,
   } = useCart();
   const [isCheckoutView, setIsCheckoutView] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'bkash' | 'cod' | ''>('');
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [placeOrderError, setPlaceOrderError] = useState('');
   const [showFirstNameSplitHint, setShowFirstNameSplitHint] = useState(false);
   const [showLastNameOnlyHint, setShowLastNameOnlyHint] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Record<CheckoutField, boolean>>({
@@ -71,8 +78,13 @@ export default function Header() {
     thana: '',
     address: '',
   });
+  const [locationDivisions, setLocationDivisions] = useState<string[]>([]);
+  const [locationDistricts, setLocationDistricts] = useState<string[]>([]);
+  const [locationAreas, setLocationAreas] = useState<string[]>([]);
   const desktopSearchRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchRef = useRef<HTMLDivElement | null>(null);
+  const lastAutofillPhoneRef = useRef<string>('');
+  const [isCustomerLookupLoading, setIsCustomerLookupLoading] = useState(false);
   const firstNameHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -80,121 +92,13 @@ export default function Header() {
     null,
   );
 
-  const divisions = [
-    'Dhaka',
-    'Chittagong',
-    'Rajshahi',
-    'Khulna',
-    'Barisal',
-    'Sylhet',
-    'Rangpur',
-    'Mymensingh',
-  ];
-
-  const districts: Record<string, string[]> = {
-    Dhaka: [
-      'Dhaka',
-      'Gazipur',
-      'Narayanganj',
-      'Manikganj',
-      'Munshiganj',
-      'Narsingdi',
-      'Tangail',
-      'Kishoreganj',
-      'Netrokona',
-      'Sherpur',
-      'Mymensingh',
-      'Jamalpur',
-    ],
-    Chittagong: [
-      'Chittagong',
-      "Cox's Bazar",
-      'Rangamati',
-      'Bandarban',
-      'Khagrachhari',
-      'Feni',
-      'Lakshmipur',
-      'Noakhali',
-      'Brahmanbaria',
-      'Comilla',
-    ],
-    Rajshahi: [
-      'Rajshahi',
-      'Natore',
-      'Naogaon',
-      'Chapainawabganj',
-      'Pabna',
-      'Sirajganj',
-      'Bogra',
-      'Joypurhat',
-    ],
-    Khulna: [
-      'Khulna',
-      'Bagerhat',
-      'Chuadanga',
-      'Jessore',
-      'Jhenaidah',
-      'Kushtia',
-      'Magura',
-      'Meherpur',
-      'Narail',
-      'Satkhira',
-    ],
-    Barisal: [
-      'Barisal',
-      'Barguna',
-      'Bhola',
-      'Jhalokati',
-      'Patuakhali',
-      'Pirojpur',
-    ],
-    Sylhet: ['Sylhet', 'Habiganj', 'Moulvibazar', 'Sunamganj'],
-    Rangpur: [
-      'Rangpur',
-      'Dinajpur',
-      'Gaibandha',
-      'Kurigram',
-      'Lalmonirhat',
-      'Nilphamari',
-      'Panchagarh',
-      'Thakurgaon',
-    ],
-    Mymensingh: ['Mymensingh', 'Jamalpur', 'Netrokona', 'Sherpur'],
-  };
-
-  const thanas: Record<string, string[]> = {
-    Dhaka: [
-      'Dhanmondi',
-      'Gulshan',
-      'Banani',
-      'Uttara',
-      'Mirpur',
-      'Mohammadpur',
-      'Tejgaon',
-      'Ramna',
-      'Motijheel',
-      'Sabujbagh',
-    ],
-    Gazipur: ['Gazipur Sadar', 'Kaliakair', 'Kapasia', 'Sreepur', 'Kaliganj'],
-    Narayanganj: [
-      'Narayanganj Sadar',
-      'Araihazar',
-      'Bandar',
-      'Rupganj',
-      'Sonargaon',
-    ],
-    default: ['Sadar', 'Municipality'],
-  };
-
   const shippingCharge = useMemo(() => {
-    if (!checkoutForm.division) return 0;
-    if (checkoutForm.division === 'Dhaka') {
-      if (!checkoutForm.district) return 0;
-      if (checkoutForm.district === 'Dhaka') return 80;
-      return 120;
-    }
-    return 150;
-  }, [checkoutForm.district, checkoutForm.division]);
+    return getShippingCharge({
+      division: checkoutForm.division,
+      district: checkoutForm.district,
+      area: checkoutForm.thana,
+    });
+  }, [checkoutForm.district, checkoutForm.division, checkoutForm.thana]);
 
   const checkoutTotal = subtotal + shippingCharge;
   const completedFieldGlow =
@@ -213,16 +117,14 @@ export default function Header() {
   }
 
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-  const mobilePattern = /^(?:\+8801[3-9]\d{8}|01[3-9]\d{8})$/;
-
   const isEmailValid =
     checkoutForm.email.trim() === '' || emailPattern.test(checkoutForm.email);
-  const isCustomerMobileValid = mobilePattern.test(
+  const isCustomerMobileValid = MOBILE_PATTERN.test(
     checkoutForm.customerMobile.trim(),
   );
   const isReceiverMobileValid =
     checkoutForm.receiverMobile.trim() === '' ||
-    mobilePattern.test(checkoutForm.receiverMobile.trim());
+    MOBILE_PATTERN.test(checkoutForm.receiverMobile.trim());
   const isReceiverDifferentFromCustomer =
     checkoutForm.receiverMobile.trim() === '' ||
     checkoutForm.receiverMobile.trim() !== checkoutForm.customerMobile.trim();
@@ -242,6 +144,8 @@ export default function Header() {
     isCustomerMobileValid &&
     isReceiverMobileValid &&
     isReceiverDifferentFromCustomer;
+  const canCheckoutWithAuthoritativePricing =
+    isPricingAuthoritative && selectedItemCount > 0;
 
   const isFirstNameInvalid =
     touchedFields.firstName && checkoutForm.firstName.trim() === '';
@@ -260,13 +164,20 @@ export default function Header() {
   const isThanaInvalid = touchedFields.thana && checkoutForm.thana.trim() === '';
   const isAddressInvalid =
     touchedFields.address && checkoutForm.address.trim() === '';
+  const groupedAreaOptions = getGroupedAreaOptions(
+    checkoutForm.division,
+    checkoutForm.district,
+    locationAreas,
+  );
 
   const navLinks = [
     { href: '/', label: 'Home' },
     { href: '/products', label: 'Products' },
     { href: '#', label: 'Categories' },
     { href: '/checkout', label: 'Cart' },
-    { href: '/login', label: 'Login' },
+    ...(isCustomerLoggedIn
+      ? [{ href: '#', label: 'Logout' }]
+      : [{ href: '/login', label: 'Login' }]),
     { href: '#', label: 'Support' },
   ];
 
@@ -278,6 +189,282 @@ export default function Header() {
         )
         .slice(0, 5)
     : [];
+
+  const groupedCartItems = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        productId: string;
+        productName: string;
+        productImage: string;
+        lines: typeof cartItems;
+        allSelected: boolean;
+        subtotalBeforeDiscount: number;
+        subtotalAfterDiscount: number;
+        discount: number;
+        bundleDiscountPercent: number | null;
+        bundleOffersText: string[];
+        appliedBundleDiscounts: { title: string; amount: number }[];
+      }
+    >();
+
+    for (const item of cartItems) {
+      const productId = item.detailId ?? item.id;
+      const group = groups.get(productId) ?? {
+        productId,
+        productName: item.name,
+        productImage: item.image,
+        lines: [],
+        allSelected: true,
+        subtotalBeforeDiscount: 0,
+        subtotalAfterDiscount: 0,
+        discount: 0,
+        bundleDiscountPercent: null,
+        bundleOffersText: [],
+        appliedBundleDiscounts: [],
+      };
+
+      group.lines.push(item);
+      const fallbackActiveOffers = (item.bundleOffers ?? []).filter((offer) => offer.isActive);
+      for (const offer of fallbackActiveOffers) {
+        const offerText = offer.title?.trim()
+          ? offer.title.trim()
+          : `Buy Min ${offer.minTotalQty} get ${offer.discountPercent}% OFF!!!`;
+        if (!group.bundleOffersText.includes(offerText)) {
+          group.bundleOffersText.push(offerText);
+        }
+      }
+      if (item.selected) {
+        const linePricing = linePricingById[item.id];
+        const lineSubtotal =
+          linePricing?.lineSubtotal ?? (item.salePrice ?? item.price) * item.quantity;
+        const lineTotal = linePricing?.lineTotal ?? lineSubtotal;
+        const lineDiscount = linePricing?.lineDiscount ?? 0;
+        group.subtotalBeforeDiscount += lineSubtotal;
+        group.subtotalAfterDiscount += lineTotal;
+        group.discount += lineDiscount;
+        if (typeof linePricing?.bundleDiscountPercent === 'number') {
+          group.bundleDiscountPercent = Math.max(
+            group.bundleDiscountPercent ?? 0,
+            linePricing.bundleDiscountPercent,
+          );
+        }
+        if (linePricing?.bundleTitle && !group.bundleOffersText.includes(linePricing.bundleTitle)) {
+          group.bundleOffersText.push(linePricing.bundleTitle);
+        }
+        if (linePricing?.bundleTitle && lineDiscount > 0) {
+          const existing = group.appliedBundleDiscounts.find(
+            (entry) => entry.title === linePricing.bundleTitle,
+          );
+          if (existing) {
+            existing.amount += lineDiscount;
+          } else {
+            group.appliedBundleDiscounts.push({
+              title: linePricing.bundleTitle,
+              amount: lineDiscount,
+            });
+          }
+        }
+      } else {
+        group.allSelected = false;
+      }
+
+      groups.set(productId, group);
+    }
+
+    return [...groups.values()];
+  }, [cartItems, linePricingById]);
+
+  useEffect(() => {
+    setIsCustomerLoggedIn(document.cookie.includes('customer_auth=1'));
+  }, []);
+
+  useEffect(() => {
+    const rawPhone = checkoutForm.customerMobile.trim();
+    const normalizedPhone = rawPhone.startsWith('+880')
+      ? `0${rawPhone.slice(4)}`
+      : rawPhone;
+
+    if (!MOBILE_PATTERN.test(rawPhone) || !normalizedPhone) return;
+    if (lastAutofillPhoneRef.current === normalizedPhone) return;
+
+    const timer = setTimeout(async () => {
+      setIsCustomerLookupLoading(true);
+      try {
+        const query = new URLSearchParams({ phone: normalizedPhone });
+        const response = await fetch(`/api/customers/by-phone?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          customer: {
+            firstName: string;
+            lastName: string | null;
+            email: string | null;
+            phone: string;
+            division: string | null;
+            district: string | null;
+            thana: string | null;
+            address: string | null;
+          } | null;
+        };
+        if (!payload.customer) {
+          lastAutofillPhoneRef.current = normalizedPhone;
+          return;
+        }
+        setCheckoutForm((current) => ({
+          ...current,
+          customerMobile: current.customerMobile,
+          firstName: payload.customer?.firstName ?? current.firstName,
+          lastName: payload.customer?.lastName ?? current.lastName,
+          email: payload.customer?.email ?? current.email,
+          division: payload.customer?.division ?? current.division,
+          district: payload.customer?.district ?? current.district,
+          thana: payload.customer?.thana ?? current.thana,
+          address: payload.customer?.address ?? current.address,
+        }));
+        lastAutofillPhoneRef.current = normalizedPhone;
+      } catch {
+        // silent fail: checkout still works manually.
+      } finally {
+        setIsCustomerLookupLoading(false);
+      }
+    }, 320);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [checkoutForm.customerMobile]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSearchProducts() {
+      try {
+        const response = await fetch('/api/storefront/catalog');
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          products: Array<
+            StorefrontCatalogProduct & {
+              variantCount?: number;
+            }
+          >;
+        };
+        if (!isMounted) return;
+        setSearchableProducts(
+          (payload.products ?? []).map((product) => ({
+            id: product.id,
+            name: product.name,
+            image: product.image,
+            variantCount:
+              typeof product.variantCount === 'number'
+                ? product.variantCount
+                : Array.isArray(product.variants)
+                  ? product.variants.length
+                  : 0,
+          })),
+        );
+      } catch {
+        // Keep search suggestions empty when loading fails.
+      }
+    }
+
+    void loadSearchProducts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDivisions() {
+      try {
+        const response = await fetch('/api/delivery-locations');
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items: string[] };
+        if (!isMounted) return;
+        setLocationDivisions(payload.items ?? []);
+      } catch {
+        if (!isMounted) return;
+        setLocationDivisions([]);
+      }
+    }
+
+    void loadDivisions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!checkoutForm.division) {
+      setLocationDistricts([]);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    async function loadDistricts() {
+      try {
+        const query = new URLSearchParams({
+          type: 'districts',
+          division: checkoutForm.division,
+        });
+        const response = await fetch(`/api/delivery-locations?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items: string[] };
+        if (!isMounted) return;
+        setLocationDistricts(payload.items ?? []);
+      } catch {
+        if (!isMounted) return;
+        setLocationDistricts([]);
+      }
+    }
+
+    void loadDistricts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [checkoutForm.division]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!checkoutForm.division || !checkoutForm.district) {
+      setLocationAreas([]);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    async function loadAreas() {
+      try {
+        const query = new URLSearchParams({
+          type: 'areas',
+          division: checkoutForm.division,
+          district: checkoutForm.district,
+        });
+        const response = await fetch(`/api/delivery-locations?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items: string[] };
+        if (!isMounted) return;
+        setLocationAreas(payload.items ?? []);
+      } catch {
+        if (!isMounted) return;
+        setLocationAreas([]);
+      }
+    }
+
+    void loadAreas();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [checkoutForm.district, checkoutForm.division]);
 
   useEffect(() => {
     function handleOutsideClick(event: MouseEvent) {
@@ -366,7 +553,7 @@ export default function Header() {
   }
 
   function handleProceedToCheckout() {
-    if (selectedItemCount === 0) return;
+    if (!canCheckoutWithAuthoritativePricing) return;
     setIsCheckoutView(true);
   }
 
@@ -400,6 +587,18 @@ export default function Header() {
     setTouchedFields((current) => ({
       ...current,
       [field]: true,
+    }));
+  }
+
+  function handleCheckoutLocationSelect(
+    field: 'division' | 'district' | 'thana',
+    value: string,
+  ) {
+    setCheckoutForm((current) => ({
+      ...current,
+      [field]: value,
+      ...(field === 'division' && { district: '', thana: '' }),
+      ...(field === 'district' && { thana: '' }),
     }));
   }
 
@@ -439,16 +638,22 @@ export default function Header() {
       thana: false,
       address: false,
     });
+    setPlaceOrderError('');
   }
 
-  function handlePlaceOrder() {
-    if (!isCheckoutFormValid) {
+  async function handlePlaceOrder() {
+    if (!canCheckoutWithAuthoritativePricing) {
+      setPlaceOrderError('Pricing is unavailable. Please wait for server sync and try again.');
       return;
     }
+    if (!isCheckoutFormValid) {
+      setPlaceOrderError('Please complete all required fields correctly.');
+      return;
+    }
+    if (isPlacingOrder) return;
+    setPlaceOrderError('');
 
-    const orderId = 'ORD-' + Date.now();
-    const orderData = {
-      id: orderId,
+    const requestBody = {
       customer: {
         firstName: checkoutForm.firstName.trim(),
         lastName: checkoutForm.lastName.trim(),
@@ -471,13 +676,62 @@ export default function Header() {
         shipping: shippingCharge,
         total: checkoutTotal,
       },
-      orderDate: new Date().toISOString(),
     };
 
-    localStorage.setItem(`order_${orderId}`, JSON.stringify(orderData));
-    localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, orderId);
-    handleCloseCart();
-    router.push(`/order-confirmation?orderId=${orderId}`);
+    setIsPlacingOrder(true);
+    try {
+      const response = await fetch('/api/checkout/place-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        setPlaceOrderError(
+          errorPayload?.error || 'Could not place order. Please try again.',
+        );
+        return;
+      }
+
+      const payload = (await response.json()) as { orderId: string };
+      if (!payload.orderId) {
+        setPlaceOrderError('Could not place order. Please try again.');
+        return;
+      }
+
+      const orderData = {
+        id: payload.orderId,
+        ...requestBody,
+        orderDate: new Date().toISOString(),
+      };
+
+      localStorage.setItem(`order_${payload.orderId}`, JSON.stringify(orderData));
+      localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, payload.orderId);
+      handleCloseCart();
+      router.push(`/order-confirmation?orderId=${payload.orderId}`);
+    } catch {
+      setPlaceOrderError(
+        'Network issue while placing order. Please check your internet and retry.',
+      );
+    } finally {
+      setIsPlacingOrder(false);
+    }
+  }
+
+  async function handleCustomerLogout() {
+    try {
+      const response = await fetch('/api/logout', { method: 'POST' });
+      if (!response.ok) return;
+      setIsCustomerLoggedIn(false);
+      setIsMenuOpen(false);
+      router.push('/');
+      router.refresh();
+    } catch {
+      // Keep current session state if network/request fails.
+    }
   }
 
   return (
@@ -532,7 +786,8 @@ export default function Header() {
                     fill
                     sizes="(max-width: 639px) 51px, 64px"
                     className="object-contain p-0.5"
-                    priority
+                    loading="eager"
+                    fetchPriority="high"
                   />
                 </div>
               </Link>
@@ -588,15 +843,25 @@ export default function Header() {
                       >
                         <div className="flex min-w-0 items-center gap-3">
                           <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-slate-100">
-                            <img
-                              src={product.image}
-                              alt={product.name}
-                              className="h-full w-full object-cover"
-                            />
+                            {product.image ? (
+                              <img
+                                src={product.image}
+                                alt={product.name}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="h-full w-full bg-slate-100" />
+                            )}
                           </div>
-                          <span className="line-clamp-2 text-xs font-medium text-slate-700">
-                            {product.name}
-                          </span>
+                          <div className="min-w-0">
+                            <span className="line-clamp-2 text-xs font-medium text-slate-700">
+                              {product.name}
+                            </span>
+                            <p className="mt-0.5 text-[0.62rem] font-medium text-slate-400">
+                              {product.variantCount}{' '}
+                              {product.variantCount === 1 ? 'variant' : 'variants'}
+                            </p>
+                          </div>
                         </div>
                         <span className="shrink-0 text-[0.65rem] uppercase tracking-[0.14em] text-slate-400">
                           View
@@ -647,11 +912,15 @@ export default function Header() {
                       >
                         <div className="flex items-center gap-2.5">
                           <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                            <img
-                              src={cartNotice.image}
-                              alt={cartNotice.name}
-                              className="h-full w-full object-cover"
-                            />
+                            {cartNotice.image ? (
+                              <img
+                                src={cartNotice.image}
+                                alt={cartNotice.name}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="h-full w-full bg-slate-100" />
+                            )}
                           </div>
                           <div className="min-w-0">
                             <p className="line-clamp-1 text-xs font-semibold text-slate-800">
@@ -743,6 +1012,11 @@ export default function Header() {
                     handleCartToggle();
                     return;
                   }
+                  if (link.label === 'Logout') {
+                    event.preventDefault();
+                    void handleCustomerLogout();
+                    return;
+                  }
 
                   setIsMenuOpen(false);
                 }}
@@ -824,6 +1098,47 @@ export default function Header() {
             <>
               <div className="px-3 pb-6">
                 <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div>
+                      <motion.input
+                      type="tel"
+                      name="customerMobile"
+                      placeholder="Customer mobile *"
+                      value={checkoutForm.customerMobile}
+                      onChange={handleCheckoutInputChange}
+                      onBlur={() => handleCheckoutFieldBlur('customerMobile')}
+                      animate={
+                        isFieldFilled(checkoutForm.customerMobile)
+                          ? { scale: 1.01, y: -1 }
+                          : { scale: 1, y: 0 }
+                      }
+                      transition={fieldSpringTransition}
+                      className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
+                        isCustomerMobileInvalid
+                          ? 'rounded-b-none border-rose-300 bg-rose-50/40 shadow-[0_0_0_2px_rgba(244,63,94,0.16)]'
+                          : isFieldFilled(checkoutForm.customerMobile)
+                            ? completedFieldGlow
+                            : 'border-slate-200'
+                      }`}
+                    />
+                    <AnimatePresence initial={false}>
+                      {isCustomerMobileInvalid && (
+                        <motion.span
+                          initial={{ opacity: 0, y: -4, height: 0 }}
+                          animate={{ opacity: 1, y: 0, height: 'auto' }}
+                          exit={{ opacity: 0, y: -4, height: 0 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          className="mt-1 inline-flex w-fit max-w-full overflow-hidden rounded-md border border-amber-300 bg-amber-50 px-3 py-px text-[10px] font-medium leading-3.5 text-amber-800"
+                        >
+                          Use 01XXXXXXXXX or +8801XXXXXXXXX format.
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                    {isCustomerLookupLoading && (
+                      <p className="mt-1 text-[10px] font-medium text-slate-500">
+                        Checking existing customer...
+                      </p>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <motion.input
@@ -947,42 +1262,6 @@ export default function Header() {
                   <div>
                       <motion.input
                       type="tel"
-                      name="customerMobile"
-                      placeholder="Customer mobile *"
-                      value={checkoutForm.customerMobile}
-                      onChange={handleCheckoutInputChange}
-                      onBlur={() => handleCheckoutFieldBlur('customerMobile')}
-                      animate={
-                        isFieldFilled(checkoutForm.customerMobile)
-                          ? { scale: 1.01, y: -1 }
-                          : { scale: 1, y: 0 }
-                      }
-                      transition={fieldSpringTransition}
-                      className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
-                        isCustomerMobileInvalid
-                          ? 'rounded-b-none border-rose-300 bg-rose-50/40 shadow-[0_0_0_2px_rgba(244,63,94,0.16)]'
-                          : isFieldFilled(checkoutForm.customerMobile)
-                            ? completedFieldGlow
-                            : 'border-slate-200'
-                      }`}
-                    />
-                    <AnimatePresence initial={false}>
-                      {isCustomerMobileInvalid && (
-                        <motion.span
-                          initial={{ opacity: 0, y: -4, height: 0 }}
-                          animate={{ opacity: 1, y: 0, height: 'auto' }}
-                          exit={{ opacity: 0, y: -4, height: 0 }}
-                          transition={{ duration: 0.2, ease: 'easeOut' }}
-                          className="mt-1 inline-flex w-fit max-w-full overflow-hidden rounded-md border border-amber-300 bg-amber-50 px-3 py-px text-[10px] font-medium leading-3.5 text-amber-800"
-                        >
-                          Use 01XXXXXXXXX or +8801XXXXXXXXX format.
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                  <div>
-                      <motion.input
-                      type="tel"
                       name="receiverMobile"
                       placeholder="Receiver mobile (optional)"
                       value={checkoutForm.receiverMobile}
@@ -1019,91 +1298,84 @@ export default function Header() {
                     </AnimatePresence>
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <motion.select
-                      name="division"
-                      value={checkoutForm.division}
-                      onChange={handleCheckoutInputChange}
-                      onBlur={() => handleCheckoutFieldBlur('division')}
+                    <motion.div
                       animate={
                         isFieldFilled(checkoutForm.division)
                           ? { scale: 1.01, y: -1 }
                           : { scale: 1, y: 0 }
                       }
                       transition={fieldSpringTransition}
-                      className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 ${
-                        isDivisionInvalid
-                          ? invalidFieldGlow
-                          : isFieldFilled(checkoutForm.division)
-                            ? completedFieldGlow
-                            : 'border-slate-200'
-                      }`}
                     >
-                      <option value="">Select division *</option>
-                      {divisions.map((division) => (
-                        <option key={division} value={division}>
-                          {division}
-                        </option>
-                      ))}
-                    </motion.select>
-                    <motion.select
-                      name="district"
-                      value={checkoutForm.district}
-                      onChange={handleCheckoutInputChange}
-                      onBlur={() => handleCheckoutFieldBlur('district')}
-                      disabled={!checkoutForm.division}
+                      <SearchableDropdown
+                        value={checkoutForm.division}
+                        options={locationDivisions}
+                        placeholder="Select division *"
+                        onSelect={(value) =>
+                          handleCheckoutLocationSelect('division', value)
+                        }
+                        onBlur={() => handleCheckoutFieldBlur('division')}
+                        className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 ${
+                          isDivisionInvalid
+                            ? invalidFieldGlow
+                            : isFieldFilled(checkoutForm.division)
+                              ? completedFieldGlow
+                              : 'border-slate-200'
+                        }`}
+                      />
+                    </motion.div>
+                    <motion.div
                       animate={
                         isFieldFilled(checkoutForm.district)
                           ? { scale: 1.01, y: -1 }
                           : { scale: 1, y: 0 }
                       }
                       transition={fieldSpringTransition}
-                      className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 disabled:bg-slate-50 ${
-                        isDistrictInvalid
-                          ? invalidFieldGlow
-                          : isFieldFilled(checkoutForm.district)
-                            ? completedFieldGlow
-                            : 'border-slate-200'
-                      }`}
                     >
-                      <option value="">Select district *</option>
-                      {checkoutForm.division &&
-                        districts[checkoutForm.division]?.map((district) => (
-                          <option key={district} value={district}>
-                            {district}
-                          </option>
-                        ))}
-                    </motion.select>
+                      <SearchableDropdown
+                        value={checkoutForm.district}
+                        options={locationDistricts}
+                        placeholder="Select district *"
+                        disabled={!checkoutForm.division}
+                        onSelect={(value) =>
+                          handleCheckoutLocationSelect('district', value)
+                        }
+                        onBlur={() => handleCheckoutFieldBlur('district')}
+                        className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 disabled:bg-slate-50 ${
+                          isDistrictInvalid
+                            ? invalidFieldGlow
+                            : isFieldFilled(checkoutForm.district)
+                              ? completedFieldGlow
+                              : 'border-slate-200'
+                        }`}
+                      />
+                    </motion.div>
                   </div>
-                  <motion.select
-                    name="thana"
-                    value={checkoutForm.thana}
-                    onChange={handleCheckoutInputChange}
-                    onBlur={() => handleCheckoutFieldBlur('thana')}
-                    disabled={!checkoutForm.district}
+                  <motion.div
                     animate={
                       isFieldFilled(checkoutForm.thana)
                         ? { scale: 1.01, y: -1 }
                         : { scale: 1, y: 0 }
                     }
                     transition={fieldSpringTransition}
-                    className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 disabled:bg-slate-50 ${
-                      isThanaInvalid
-                        ? invalidFieldGlow
-                        : isFieldFilled(checkoutForm.thana)
-                          ? completedFieldGlow
-                          : 'border-slate-200'
-                    }`}
                   >
-                    <option value="">Select thana/upazila *</option>
-                    {checkoutForm.district &&
-                      (thanas[checkoutForm.district] || thanas.default)?.map(
-                        (thana) => (
-                          <option key={thana} value={thana}>
-                            {thana}
-                          </option>
-                        ),
-                      )}
-                  </motion.select>
+                    <SearchableDropdown
+                      value={checkoutForm.thana}
+                      options={groupedAreaOptions}
+                      placeholder="Select thana/upazila *"
+                      disabled={!checkoutForm.district}
+                      onSelect={(value) =>
+                        handleCheckoutLocationSelect('thana', value)
+                      }
+                      onBlur={() => handleCheckoutFieldBlur('thana')}
+                      className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 disabled:bg-slate-50 ${
+                        isThanaInvalid
+                          ? invalidFieldGlow
+                          : isFieldFilled(checkoutForm.thana)
+                            ? completedFieldGlow
+                            : 'border-slate-200'
+                      }`}
+                    />
+                  </motion.div>
                   <motion.textarea
                     name="address"
                     value={checkoutForm.address}
@@ -1133,22 +1405,22 @@ export default function Header() {
                       <button
                         type="button"
                         onClick={() => setPaymentMethod('bkash')}
-                        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-all duration-200 transform-gpu ${
-                          paymentMethod === 'bkash'
-                            ? 'scale-[1.03] border-2 border-pink-400 bg-pink-50 text-pink-700 shadow-[0_6px_16px_rgba(236,72,153,0.22)]'
-                            : 'border-pink-200 bg-pink-50/70 text-pink-700 hover:bg-pink-100/70'
-                        }`}
+                          className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold transition-all duration-200 transform-gpu ${
+                            paymentMethod === 'bkash'
+                              ? 'scale-[1.03] border-pink-400 bg-pink-50 text-pink-700 shadow-[0_6px_16px_rgba(236,72,153,0.22)]'
+                              : 'border-pink-200 bg-pink-50/70 text-pink-700 hover:bg-pink-100/70'
+                          }`}
                       >
                         bKash
                       </button>
                       <button
                         type="button"
                         onClick={() => setPaymentMethod('cod')}
-                        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-all duration-200 transform-gpu ${
-                          paymentMethod === 'cod'
-                            ? 'scale-[1.03] border-2 border-blue-400 bg-blue-50 text-slate-700 shadow-[0_6px_16px_rgba(59,130,246,0.22)]'
-                            : 'border-blue-200 bg-blue-50/70 text-slate-700 hover:bg-blue-100/70'
-                        }`}
+                          className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold transition-all duration-200 transform-gpu ${
+                            paymentMethod === 'cod'
+                              ? 'scale-[1.03] border-blue-400 bg-blue-50 text-slate-700 shadow-[0_6px_16px_rgba(59,130,246,0.22)]'
+                              : 'border-blue-200 bg-blue-50/70 text-slate-700 hover:bg-blue-100/70'
+                          }`}
                       >
                         Cash on Delivery
                       </button>
@@ -1160,7 +1432,7 @@ export default function Header() {
               <div className="border-t border-slate-200 px-6 pt-4 pb-6">
                 <div className="mb-4 space-y-2 text-sm">
                   <div className="flex items-center justify-between text-slate-600">
-                    <span>Cart Subtotal</span>
+                    <span>Items Total</span>
                     <span className="font-medium text-slate-900">
                       ৳{subtotal.toFixed(2)}
                     </span>
@@ -1178,18 +1450,28 @@ export default function Header() {
                     </span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handlePlaceOrder}
-                  disabled={!isCheckoutFormValid}
-                  className={`flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] !text-white transition ${
-                    isCheckoutFormValid
-                      ? 'bg-[#2d5db3] hover:bg-[#244a8f]'
-                      : 'cursor-not-allowed bg-slate-300'
-                  }`}
+                {!isPricingAuthoritative && selectedItemCount > 0 && (
+                  <p className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    Pricing unavailable. Reconnecting to server. Please wait before placing order.
+                  </p>
+                )}
+                  <button
+                    type="button"
+                    onClick={handlePlaceOrder}
+                    disabled={!isCheckoutFormValid || isPlacingOrder || !canCheckoutWithAuthoritativePricing}
+                    className={`flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] !text-white transition ${
+                      isCheckoutFormValid && !isPlacingOrder && canCheckoutWithAuthoritativePricing
+                        ? 'bg-[#2d5db3] hover:bg-[#244a8f]'
+                        : 'cursor-not-allowed bg-slate-300'
+                    }`}
                 >
-                  Place Order
+                  {isPlacingOrder ? 'Placing...' : 'Place Order'}
                 </button>
+                {placeOrderError && (
+                  <p className="mt-2 text-xs font-medium text-rose-600">
+                    {placeOrderError}
+                  </p>
+                )}
               </div>
             </>
           ) : (
@@ -1197,79 +1479,131 @@ export default function Header() {
               <div className="px-3 pb-6">
                 {cartItems.length > 0 ? (
                   <div className="flex flex-col gap-3">
-                    {cartItems.map((item) => (
-                      <div key={item.id} className="flex items-center gap-3">
+                    {groupedCartItems.map((group) => (
+                      <div key={group.productId} className="flex items-start gap-3">
                         <div className="flex shrink-0 items-center self-stretch">
                           <div className="flex h-full items-center">
                             <input
                               type="checkbox"
-                              checked={item.selected}
-                              onChange={() => toggleItemSelection(item.id)}
-                              aria-label={`Select ${item.name} for checkout`}
+                              checked={group.allSelected}
+                              onChange={(event) => {
+                                group.lines.forEach((line) => {
+                                  setItemSelection(line.id, event.target.checked);
+                                });
+                              }}
+                              aria-label={`Select ${group.productName} for checkout`}
                               className="h-4 w-4 rounded border-slate-300 text-[#2d5db3] focus:ring-[#2d5db3]"
                             />
                           </div>
                         </div>
                         <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                          <div className="flex gap-3">
+                          <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-3">
                             <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-slate-100">
-                              <img
-                                src={item.image}
-                                alt={item.name}
-                                className="h-full w-full object-cover"
-                              />
+                              {group.productImage ? (
+                                <img
+                                  src={group.productImage}
+                                  alt={group.productName}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="h-full w-full bg-slate-100" />
+                              )}
                             </div>
                             <div className="min-w-0 flex-1">
                               <Link
-                                href={`/products/${item.detailId ?? item.id}`}
+                                href={`/products/${group.productId}`}
                                 onClick={handleCloseCart}
                                 className="line-clamp-2 text-sm font-medium text-slate-800 transition hover:text-blue-600"
                               >
-                                {item.name}
+                                {group.productName}
                               </Link>
-                              <p className="mt-2 text-sm font-semibold text-slate-900">
-                                ৳{(item.salePrice ?? item.price).toFixed(2)}
-                              </p>
-                              {item.salePrice && (
-                                <p className="text-xs text-slate-400 line-through">
-                                  ৳{item.price.toFixed(2)}
+                              {group.bundleOffersText.map((offerText) => (
+                                <p key={offerText} className="mt-1 text-xs font-semibold text-emerald-700">
+                                  {offerText}
                                 </p>
-                              )}
-                              <div className="mt-3 flex items-center justify-between gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => removeFromCart(item.id)}
-                                  className="shrink-0 text-xs font-medium uppercase tracking-[0.12em] text-rose-500 transition hover:text-rose-600"
-                                >
-                                  Remove
-                                </button>
-                                <div className="flex shrink-0 items-center rounded-full border border-slate-200">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateQuantity(item.id, item.quantity - 1)
-                                    }
-                                    className="px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50"
-                                    aria-label={`Decrease quantity for ${item.name}`}
-                                  >
-                                    -
-                                  </button>
-                                  <span className="min-w-8 text-center text-sm font-medium text-slate-800">
-                                    {item.quantity}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateQuantity(item.id, item.quantity + 1)
-                                    }
-                                    className="px-3 py-1.5 text-sm text-slate-600 transition hover:bg-slate-50"
-                                    aria-label={`Increase quantity for ${item.name}`}
-                                  >
-                                    +
-                                  </button>
-                                </div>
-                              </div>
+                              ))}
                             </div>
+                          </div>
+                          <div className="col-span-2 mt-2 w-full space-y-2">
+                            {group.lines.map((item) => {
+                              const unitBasePrice = item.salePrice ?? item.price;
+                              return (
+                                <div
+                                  key={item.id}
+                                  className="w-full rounded-lg border border-slate-100 bg-slate-50 p-2"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-xs text-slate-600">
+                                      {item.variantLabel || 'Variant'}
+                                    </p>
+                                    <p className="text-xs font-semibold text-slate-900">
+                                      ৳{unitBasePrice.toFixed(2)} x {item.quantity}
+                                    </p>
+                                  </div>
+                                  <div className="mt-2 flex items-center justify-between gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => removeFromCart(item.id)}
+                                      className="shrink-0 text-[11px] font-medium uppercase tracking-[0.12em] text-rose-500 transition hover:text-rose-600"
+                                    >
+                                      Remove
+                                    </button>
+                                    <div className="flex shrink-0 items-center rounded-full border border-slate-200 bg-white">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateQuantity(item.id, item.quantity - 1)
+                                        }
+                                        className="px-3 py-1 text-sm text-slate-600 transition hover:bg-slate-50"
+                                        aria-label={`Decrease quantity for ${item.name}`}
+                                      >
+                                        -
+                                      </button>
+                                      <span className="min-w-8 text-center text-sm font-medium text-slate-800">
+                                        {item.quantity}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateQuantity(item.id, item.quantity + 1)
+                                        }
+                                        className="px-3 py-1 text-sm text-slate-600 transition hover:bg-slate-50"
+                                        aria-label={`Increase quantity for ${item.name}`}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="col-span-2 mt-3 w-full space-y-1 text-xs">
+                            <div className="flex items-center justify-between text-slate-600">
+                              <span>Product subtotal</span>
+                              <span>৳{group.subtotalBeforeDiscount.toFixed(2)}</span>
+                            </div>
+                            {group.discount > 0 && (
+                              <>
+                                {group.appliedBundleDiscounts.map((entry) => (
+                                  <div
+                                    key={entry.title}
+                                    className="flex items-center justify-between text-emerald-700/90"
+                                  >
+                                    <span className="line-clamp-1 text-[11px]">{entry.title}</span>
+                                    <span className="text-[11px]">-৳{entry.amount.toFixed(2)}</span>
+                                  </div>
+                                ))}
+                                <div className="flex items-center justify-between text-emerald-700">
+                                  <span>Bundle discount</span>
+                                  <span>-৳{group.discount.toFixed(2)}</span>
+                                </div>
+                                <div className="flex items-center justify-between font-semibold text-slate-800">
+                                  <span>After discount</span>
+                                  <span>৳{group.subtotalAfterDiscount.toFixed(2)}</span>
+                                </div>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1296,7 +1630,7 @@ export default function Header() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-600">
-                    <span>Subtotal</span>
+                    <span>Items Total</span>
                     <span className="font-medium text-slate-900">
                       ৳{subtotal.toFixed(2)}
                     </span>
@@ -1326,17 +1660,22 @@ export default function Header() {
                 </div>
                 <div className="mb-4 flex items-center justify-between">
                   <span className="text-sm font-semibold text-slate-900">
-                    Subtotal
+                    Cart Subtotal
                   </span>
                   <span className="text-lg font-bold text-blue-600">
                     ৳{subtotal.toFixed(2)}
                   </span>
                 </div>
+                {!isPricingAuthoritative && selectedItemCount > 0 && (
+                  <p className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    Pricing unavailable. Reconnecting to server. Checkout is temporarily disabled.
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={handleProceedToCheckout}
                   className={`flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] !text-white transition ${
-                    selectedItemCount > 0
+                    canCheckoutWithAuthoritativePricing
                       ? 'bg-[#2d5db3] hover:bg-[#244a8f] hover:!text-white'
                       : 'pointer-events-none bg-slate-300 !text-white'
                   }`}
@@ -1351,3 +1690,13 @@ export default function Header() {
     </>
   );
 }
+
+
+
+
+
+
+
+
+
+

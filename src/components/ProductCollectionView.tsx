@@ -1,14 +1,14 @@
 'use client';
 
 import ProductCard from '@/components/ProductCard';
-import type { CatalogProduct } from '@/data/products';
+import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 import Link from 'next/link';
 import { useState } from 'react';
 
 interface ProductCollectionViewProps {
   title: string;
   description: string;
-  products: CatalogProduct[];
+  products: StorefrontCatalogProduct[];
   categories: string[];
 }
 

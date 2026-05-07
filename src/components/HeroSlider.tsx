@@ -126,6 +126,7 @@ export default function HeroSlider() {
 
       {/* Navigation Arrows */}
       <button
+        suppressHydrationWarning
         onClick={prevSlide}
         className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-full flex items-center justify-center text-white transition-all duration-300 hover:scale-110 z-10"
         aria-label="Previous slide"
@@ -146,6 +147,7 @@ export default function HeroSlider() {
       </button>
 
       <button
+        suppressHydrationWarning
         onClick={nextSlide}
         className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-full flex items-center justify-center text-white transition-all duration-300 hover:scale-110 z-10"
         aria-label="Next slide"
@@ -169,6 +171,7 @@ export default function HeroSlider() {
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 z-10">
         {slides.map((_, index) => (
           <button
+            suppressHydrationWarning
             key={index}
             onClick={() => goToSlide(index)}
             className={`w-3 h-3 rounded-full transition-all duration-300 ${

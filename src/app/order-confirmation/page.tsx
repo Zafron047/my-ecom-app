@@ -7,7 +7,7 @@ import {
   shouldClearSelectedItems,
 } from '@/lib/checkoutPendingOrder.mjs';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 interface OrderData {
   id: string;
@@ -45,7 +45,7 @@ function OrderConfirmationContent() {
   const { clearSelectedItems } = useCart();
   const hasLoadedRef = useRef(false);
   const orderId = searchParams.get('orderId');
-  const orderData = useMemo<OrderData | null>(() => {
+  const localOrderData = useMemo<OrderData | null>(() => {
     if (!orderId || typeof window === 'undefined') return null;
 
     const storedOrder = localStorage.getItem(`order_${orderId}`);
@@ -57,6 +57,44 @@ function OrderConfirmationContent() {
       return null;
     }
   }, [orderId]);
+  const [orderData, setOrderData] = useState<OrderData | null>(localOrderData);
+  const [isLoadingOrder, setIsLoadingOrder] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadOrder() {
+      if (!orderId) {
+        if (!isMounted) return;
+        setIsLoadingOrder(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
+        if (response.ok) {
+          const payload = (await response.json()) as OrderData;
+          if (!isMounted) return;
+          setOrderData(payload);
+          localStorage.setItem(`order_${orderId}`, JSON.stringify(payload));
+          setIsLoadingOrder(false);
+          return;
+        }
+      } catch {
+        // Fall through to local fallback.
+      }
+
+      if (!isMounted) return;
+      setOrderData(localOrderData);
+      setIsLoadingOrder(false);
+    }
+
+    void loadOrder();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [localOrderData, orderId]);
 
   useEffect(() => {
     if (hasLoadedRef.current || !orderData || !orderId) return;
@@ -71,7 +109,7 @@ function OrderConfirmationContent() {
     hasLoadedRef.current = true; // Prevent re-execution
   }, [clearSelectedItems, orderData, orderId]);
 
-  if (!orderData) {
+  if (isLoadingOrder || !orderData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -112,18 +150,18 @@ function OrderConfirmationContent() {
         </div>
 
         {/* Order Details */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Order Details
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
+        <div className="grid grid-cols-1 gap-6 mb-6 md:grid-cols-2">
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+              Order Details
+            </h2>
+            <div className="space-y-3">
               <p className="text-sm text-gray-600">
                 <strong>Order ID:</strong> {orderData.id}
               </p>
               <p className="text-sm text-gray-600">
                 <strong>Date:</strong>{' '}
-                {new Date(orderData.orderDate).toLocaleDateString()}
+                {new Date(orderData.orderDate).toLocaleDateString('en-US')}
               </p>
               <p className="text-sm text-gray-600">
                 <strong>Payment Method:</strong>{' '}
@@ -131,8 +169,6 @@ function OrderConfirmationContent() {
                   ? 'bKash'
                   : 'Cash on Delivery'}
               </p>
-            </div>
-            <div>
               <p className="text-sm text-gray-600">
                 <strong>Name:</strong> {orderData.customer.firstName}{' '}
                 {orderData.customer.lastName}
@@ -144,27 +180,25 @@ function OrderConfirmationContent() {
               <p className="text-sm text-gray-600">
                 <strong>Mobile:</strong> {orderData.customer.customerMobile}
               </p>
-              {orderData.customer.receiverMobile && (
-                <p className="text-sm text-gray-600">
-                  <strong>Receiver Mobile:</strong>{' '}
-                  {orderData.customer.receiverMobile}
-                </p>
-              )}
+              <p className="text-sm text-gray-600">
+                <strong>Receiver Mobile:</strong>{' '}
+                {orderData.customer.receiverMobile || 'Not provided'}
+              </p>
             </div>
           </div>
-        </div>
 
-        {/* Shipping Address */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Shipping Address
-          </h2>
-          <div className="text-sm text-gray-600">
-            <p>{orderData.shipping.address}</p>
-            <p>
-              {orderData.shipping.thana}, {orderData.shipping.district}
-            </p>
-            <p>{orderData.shipping.division}, Bangladesh</p>
+          {/* Shipping Address */}
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+              Shipping Address
+            </h2>
+            <div className="text-sm text-gray-600 space-y-1">
+              <p>{orderData.shipping.address}</p>
+              <p>
+                {orderData.shipping.thana}, {orderData.shipping.district}
+              </p>
+              <p>{orderData.shipping.division}, Bangladesh</p>
+            </div>
           </div>
         </div>
 
@@ -174,9 +208,9 @@ function OrderConfirmationContent() {
             Items
           </h2>
           <div className="space-y-4">
-            {orderData.items.map((item) => (
+            {orderData.items.map((item, index) => (
               <div
-                key={item.id}
+                key={`${item.id}-${item.variantId ?? 'na'}-${index}`}
                 className="flex items-center gap-4 py-4 border-b border-gray-100 last:border-b-0"
               >
                 <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden">
@@ -188,6 +222,9 @@ function OrderConfirmationContent() {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-medium text-gray-900">{item.name}</h3>
+                  <p className="text-sm text-gray-600">
+                    Variant: {item.variantLabel?.trim() || 'Standard'}
+                  </p>
                   <p className="text-sm text-gray-600">
                     Quantity: {item.quantity}
                   </p>

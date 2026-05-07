@@ -2,14 +2,19 @@
 
 import { useCart } from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
+import { getGroupedAreaOptions } from '@/lib/location-presenter';
+import { getShippingCharge } from '@/lib/shipping-charge';
+import SearchableDropdown from '@/components/SearchableDropdown';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 export default function Checkout() {
   const router = useRouter();
   const { selectedCartItems, subtotal } = useCart();
   const [paymentMethod, setPaymentMethod] = useState<'bkash' | 'cod' | ''>('');
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [placeOrderError, setPlaceOrderError] = useState('');
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -24,21 +29,26 @@ export default function Checkout() {
     expiryDate: '',
     cvv: '',
   });
+  const [locationDivisions, setLocationDivisions] = useState<string[]>([]);
+  const [locationDistricts, setLocationDistricts] = useState<string[]>([]);
+  const [locationAreas, setLocationAreas] = useState<string[]>([]);
 
   const shippingCharge = useMemo(() => {
-    if (!formData.division) return 0;
-
-    if (formData.division === 'Dhaka') {
-      if (!formData.district) return 0;
-      return formData.district === 'Dhaka' ? 80 : 120;
-    }
-
-    return 150;
-  }, [formData.district, formData.division]);
+    return getShippingCharge({
+      division: formData.division,
+      district: formData.district,
+      area: formData.thana,
+    });
+  }, [formData.district, formData.division, formData.thana]);
 
   const orderTotal = subtotal + shippingCharge;
+  const groupedAreaOptions = getGroupedAreaOptions(
+    formData.division,
+    formData.district,
+    locationAreas,
+  );
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     // Basic validation
     if (
       !formData.firstName ||
@@ -49,19 +59,19 @@ export default function Checkout() {
       !formData.thana ||
       !formData.address
     ) {
+      setPlaceOrderError('Please complete all required fields.');
       return;
     }
 
-    if (!paymentMethod) {
+    if (!paymentMethod || isPlacingOrder) {
+      if (!paymentMethod) {
+        setPlaceOrderError('Please select a payment method.');
+      }
       return;
     }
+    setPlaceOrderError('');
 
-    // Generate order ID
-    const orderId = 'ORD-' + Date.now();
-
-    // Create order object
-    const orderData = {
-      id: orderId,
+    const requestBody = {
       customer: {
         firstName: formData.firstName,
         lastName: formData.lastName,
@@ -77,11 +87,6 @@ export default function Checkout() {
       },
       payment: {
         method: paymentMethod,
-        ...(paymentMethod === 'bkash' && {
-          cardNumber: formData.cardNumber,
-          expiryDate: formData.expiryDate,
-          cvv: formData.cvv,
-        }),
       },
       items: selectedCartItems,
       totals: {
@@ -89,126 +94,140 @@ export default function Checkout() {
         shipping: shippingCharge,
         total: orderTotal,
       },
-      orderDate: new Date().toISOString(),
     };
 
-    // Store order data (in a real app, this would be sent to a server)
-    localStorage.setItem(`order_${orderId}`, JSON.stringify(orderData));
-    localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, orderId);
+    setIsPlacingOrder(true);
+    try {
+      const response = await fetch('/api/checkout/place-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        setPlaceOrderError(
+          errorPayload?.error || 'Could not place order. Please try again.',
+        );
+        return;
+      }
 
-    // Navigate to order confirmation page
-    router.push(`/order-confirmation?orderId=${orderId}`);
+      const payload = (await response.json()) as { orderId: string };
+      if (!payload.orderId) {
+        setPlaceOrderError('Could not place order. Please try again.');
+        return;
+      }
+
+      const orderData = {
+        id: payload.orderId,
+        ...requestBody,
+        orderDate: new Date().toISOString(),
+      };
+
+      localStorage.setItem(`order_${payload.orderId}`, JSON.stringify(orderData));
+      localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, payload.orderId);
+      router.push(`/order-confirmation?orderId=${payload.orderId}`);
+    } catch {
+      setPlaceOrderError(
+        'Network issue while placing order. Please check your internet and retry.',
+      );
+    } finally {
+      setIsPlacingOrder(false);
+    }
   };
 
-  // Bangladesh Administrative Divisions Data
-  const divisions = [
-    'Dhaka',
-    'Chittagong',
-    'Rajshahi',
-    'Khulna',
-    'Barisal',
-    'Sylhet',
-    'Rangpur',
-    'Mymensingh',
-  ];
+  useEffect(() => {
+    let isMounted = true;
 
-  const districts: Record<string, string[]> = {
-    Dhaka: [
-      'Dhaka',
-      'Gazipur',
-      'Narayanganj',
-      'Manikganj',
-      'Munshiganj',
-      'Narsingdi',
-      'Tangail',
-      'Kishoreganj',
-      'Netrokona',
-      'Sherpur',
-      'Mymensingh',
-      'Jamalpur',
-    ],
-    Chittagong: [
-      'Chittagong',
-      "Cox's Bazar",
-      'Rangamati',
-      'Bandarban',
-      'Khagrachhari',
-      'Feni',
-      'Lakshmipur',
-      'Noakhali',
-      'Brahmanbaria',
-      'Comilla',
-    ],
-    Rajshahi: [
-      'Rajshahi',
-      'Natore',
-      'Naogaon',
-      'Chapainawabganj',
-      'Pabna',
-      'Sirajganj',
-      'Bogra',
-      'Joypurhat',
-    ],
-    Khulna: [
-      'Khulna',
-      'Bagerhat',
-      'Chuadanga',
-      'Jessore',
-      'Jhenaidah',
-      'Kushtia',
-      'Magura',
-      'Meherpur',
-      'Narail',
-      'Satkhira',
-    ],
-    Barisal: [
-      'Barisal',
-      'Barguna',
-      'Bhola',
-      'Jhalokati',
-      'Patuakhali',
-      'Pirojpur',
-    ],
-    Sylhet: ['Sylhet', 'Habiganj', 'Moulvibazar', 'Sunamganj'],
-    Rangpur: [
-      'Rangpur',
-      'Dinajpur',
-      'Gaibandha',
-      'Kurigram',
-      'Lalmonirhat',
-      'Nilphamari',
-      'Panchagarh',
-      'Thakurgaon',
-    ],
-    Mymensingh: ['Mymensingh', 'Jamalpur', 'Netrokona', 'Sherpur'],
-  };
+    async function loadDivisions() {
+      try {
+        const response = await fetch('/api/delivery-locations');
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items: string[] };
+        if (!isMounted) return;
+        setLocationDivisions(payload.items ?? []);
+      } catch {
+        if (!isMounted) return;
+        setLocationDivisions([]);
+      }
+    }
 
-  const thanas: Record<string, string[]> = {
-    // Dhaka Division - Dhaka District
-    Dhaka: [
-      'Dhanmondi',
-      'Gulshan',
-      'Banani',
-      'Uttara',
-      'Mirpur',
-      'Mohammadpur',
-      'Tejgaon',
-      'Ramna',
-      'Motijheel',
-      'Sabujbagh',
-    ],
-    // Add more thanas for other districts as needed
-    Gazipur: ['Gazipur Sadar', 'Kaliakair', 'Kapasia', 'Sreepur', 'Kaliganj'],
-    Narayanganj: [
-      'Narayanganj Sadar',
-      'Araihazar',
-      'Bandar',
-      'Rupganj',
-      'Sonargaon',
-    ],
-    // Default fallback
-    default: ['Sadar', 'Municipality'],
-  };
+    void loadDivisions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!formData.division) {
+      setLocationDistricts([]);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    async function loadDistricts() {
+      try {
+        const query = new URLSearchParams({
+          type: 'districts',
+          division: formData.division,
+        });
+        const response = await fetch(`/api/delivery-locations?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items: string[] };
+        if (!isMounted) return;
+        setLocationDistricts(payload.items ?? []);
+      } catch {
+        if (!isMounted) return;
+        setLocationDistricts([]);
+      }
+    }
+
+    void loadDistricts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [formData.division]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!formData.division || !formData.district) {
+      setLocationAreas([]);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    async function loadAreas() {
+      try {
+        const query = new URLSearchParams({
+          type: 'areas',
+          division: formData.division,
+          district: formData.district,
+        });
+        const response = await fetch(`/api/delivery-locations?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as { items: string[] };
+        if (!isMounted) return;
+        setLocationAreas(payload.items ?? []);
+      } catch {
+        if (!isMounted) return;
+        setLocationAreas([]);
+      }
+    }
+
+    void loadAreas();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [formData.district, formData.division]);
 
   const handleInputChange = (
     e: React.ChangeEvent<
@@ -224,6 +243,18 @@ export default function Checkout() {
       ...(name === 'district' && { thana: '' }),
     }));
   };
+
+  function handleLocationSelect(
+    field: 'division' | 'district' | 'thana',
+    value: string,
+  ) {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+      ...(field === 'division' && { district: '', thana: '' }),
+      ...(field === 'district' && { thana: '' }),
+    }));
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -389,21 +420,13 @@ export default function Checkout() {
                 >
                   Division *
                 </label>
-                <select
-                  id="division"
-                  name="division"
+                <SearchableDropdown
                   value={formData.division}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 appearance-none bg-white"
-                  required
-                >
-                  <option value="">Select Division</option>
-                  {divisions.map((division) => (
-                    <option key={division} value={division}>
-                      {division}
-                    </option>
-                  ))}
-                </select>
+                  options={locationDivisions}
+                  placeholder="Select Division"
+                  onSelect={(value) => handleLocationSelect('division', value)}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+                />
               </div>
               <div>
                 <label
@@ -412,23 +435,14 @@ export default function Checkout() {
                 >
                   District *
                 </label>
-                <select
-                  id="district"
-                  name="district"
+                <SearchableDropdown
                   value={formData.district}
-                  onChange={handleInputChange}
+                  options={locationDistricts}
+                  placeholder="Select District"
                   disabled={!formData.division}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 appearance-none bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
-                  required
-                >
-                  <option value="">Select District</option>
-                  {formData.division &&
-                    districts[formData.division]?.map((district) => (
-                      <option key={district} value={district}>
-                        {district}
-                      </option>
-                    ))}
-                </select>
+                  onSelect={(value) => handleLocationSelect('district', value)}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
+                />
               </div>
               <div>
                 <label
@@ -437,25 +451,14 @@ export default function Checkout() {
                 >
                   Thana / Upazila *
                 </label>
-                <select
-                  id="thana"
-                  name="thana"
+                <SearchableDropdown
                   value={formData.thana}
-                  onChange={handleInputChange}
+                  options={groupedAreaOptions}
+                  placeholder="Select Thana"
                   disabled={!formData.district}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 appearance-none bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
-                  required
-                >
-                  <option value="">Select Thana</option>
-                  {formData.district &&
-                    (thanas[formData.district] || thanas['default'])?.map(
-                      (thana) => (
-                        <option key={thana} value={thana}>
-                          {thana}
-                        </option>
-                      ),
-                    )}
-                </select>
+                  onSelect={(value) => handleLocationSelect('thana', value)}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
+                />
               </div>
             </div>
             <div>
@@ -520,10 +523,10 @@ export default function Checkout() {
             {/* Bkash */}
             <div
               onClick={() => setPaymentMethod('bkash')}
-              className={`relative flex items-center gap-4 p-4 rounded-2xl border transition-all cursor-pointer
+              className={`relative flex items-center gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer
     ${
       paymentMethod === 'bkash'
-        ? 'scale-[1.02] border-2 border-pink-500 bg-pink-50 ring-2 ring-pink-100 shadow-[0_8px_18px_rgba(236,72,153,0.2)]'
+        ? 'scale-[1.02] border-pink-500 bg-pink-50 ring-2 ring-pink-100 shadow-[0_8px_18px_rgba(236,72,153,0.2)]'
         : 'border-pink-200 bg-pink-50/70 hover:bg-pink-100/70 hover:shadow-md'
     }`}
             >
@@ -561,10 +564,10 @@ export default function Checkout() {
             {/* COD */}
             <div
               onClick={() => setPaymentMethod('cod')}
-              className={`relative flex items-center gap-4 p-4 rounded-2xl border transition-all cursor-pointer
+              className={`relative flex items-center gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer
     ${
       paymentMethod === 'cod'
-        ? 'scale-[1.02] border-2 border-blue-500 bg-blue-50 ring-2 ring-blue-100 shadow-[0_8px_18px_rgba(59,130,246,0.2)]'
+        ? 'scale-[1.02] border-blue-500 bg-blue-50 ring-2 ring-blue-100 shadow-[0_8px_18px_rgba(59,130,246,0.2)]'
         : 'border-blue-200 bg-blue-50/70 hover:bg-blue-100/70 hover:shadow-md'
     }`}
             >
@@ -604,19 +607,24 @@ export default function Checkout() {
 
           {/* Place Order Button */}
           <div className="pt-8">
-            <button
-              type="button"
-              onClick={handlePlaceOrder}
-              disabled={!paymentMethod}
-              className={`w-full font-semibold py-4 rounded-xl transition-all text-lg ${
-                paymentMethod
-                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
-                  : 'cursor-not-allowed bg-gray-200 text-gray-500'
-              }`}
-            >
-              Place Order
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={handlePlaceOrder}
+                disabled={!paymentMethod || isPlacingOrder}
+                className={`w-full font-semibold py-4 rounded-xl transition-all text-lg ${
+                  paymentMethod && !isPlacingOrder
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
+                    : 'cursor-not-allowed bg-gray-200 text-gray-500'
+                }`}
+              >
+                {isPlacingOrder ? 'Placing...' : 'Place Order'}
+              </button>
+              {placeOrderError && (
+                <p className="mt-2 text-sm font-medium text-rose-600">
+                  {placeOrderError}
+                </p>
+              )}
+            </div>
         </form>
       </div>
     </div>

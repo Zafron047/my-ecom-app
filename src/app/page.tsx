@@ -1,79 +1,115 @@
 'use client';
 
-import ProductCard from '@/components/ProductCard';
+import HomeProductListSection from '@/components/HomeProductListSection';
 import HeroSlider from '@/components/HeroSlider';
-import { catalogProducts } from '@/data/products';
+import type {
+  StorefrontCatalogProduct,
+  StorefrontHomepageSection,
+} from '@/lib/storefront-types';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 export default function Home() {
+  const [catalogProducts, setCatalogProducts] = useState<StorefrontCatalogProduct[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
+  const [homepageSections, setHomepageSections] = useState<
+    StorefrontHomepageSection[]
+  >([]);
+  const [categoryThumbnails, setCategoryThumbnails] = useState<
+    Record<string, string>
+  >({});
   const [failedCategoryImages, setFailedCategoryImages] = useState<
     Record<string, boolean>
   >({});
   const [visibleProductCount, setVisibleProductCount] = useState(18);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  // Sample products data
-  const featuredProducts = catalogProducts.slice(0, 6);
-  const allProducts = useMemo(
+  const allProducts = catalogProducts;
+
+  const computedHomepageSections = useMemo(
     () =>
-      Array.from({ length: 200 }, (_, index) => {
-        const product = catalogProducts[index % catalogProducts.length];
+      homepageSections.map((section) => {
+        const sourceValue = section.sourceValue?.trim().toLowerCase();
+        const latestThreshold = new Date();
+        latestThreshold.setDate(latestThreshold.getDate() - 45);
+        const baseProducts =
+          section.productIds && section.productIds.length > 0
+            ? section.productIds
+                .map((id) => catalogProducts.find((product) => product.id === id))
+                .filter((product): product is StorefrontCatalogProduct => Boolean(product))
+            : section.sourceType === 'super_sale'
+              ? catalogProducts.filter((product) => product.superSale)
+              : section.sourceType === 'category'
+                ? catalogProducts.filter(
+                    (product) =>
+                      product.category.trim().toLowerCase() === sourceValue,
+                  )
+                : section.sourceType === 'tag'
+                  ? catalogProducts.filter((product) =>
+                      product.tags.some(
+                        (tag) => tag.trim().toLowerCase() === sourceValue,
+                      ),
+                    )
+                  : section.sourceType === 'latest'
+                    ? catalogProducts.filter((product) => {
+                        const createdAt = new Date(product.createdAt);
+                        return (
+                          !Number.isNaN(createdAt.getTime()) && createdAt >= latestThreshold
+                        );
+                      })
+                    : catalogProducts;
 
         return {
-          ...product,
-          id: `more-to-love-${index + 1}`,
-          detailId: product.id,
+          ...section,
+          products: baseProducts.slice(0, Math.max(1, section.productLimit)),
         };
       }),
-    [],
+    [catalogProducts, homepageSections],
   );
-  const superSaleProducts = catalogProducts
-    .filter((product) => product.superSale)
-    .slice(0, 5);
 
-  const categories = [
-    {
-      name: 'Gadgets',
-      image:
-        'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Home Finds',
-      image:
-        'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Car Accessories',
-      image:
-        'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Office Setup',
-      image:
-        'https://images.unsplash.com/photo-1496171367470-9ed9a91ea931?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Kitchen Picks',
-      image:
-        'https://images.unsplash.com/photo-1577937927133-66ef06acdf18?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Beauty Tools',
-      image:
-        'https://images.unsplash.com/photo-1522337660859-02fbefca4702?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Pet Essentials',
-      image:
-        'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=400&h=400&fit=crop',
-    },
-    {
-      name: 'Travel Gear',
-      image:
-        'https://images.unsplash.com/photo-1527631746610-bca00a040d60?w=400&h=400&fit=crop',
-    },
-  ];
+  const categories = useMemo(
+    () =>
+      catalogCategories
+        .filter((categoryName) => categoryName !== 'All')
+        .map((categoryName) => ({
+          name: categoryName,
+          image:
+            categoryThumbnails[categoryName] ||
+            catalogProducts.find((product) => product.category === categoryName)?.image ||
+            '',
+        })),
+    [catalogCategories, catalogProducts, categoryThumbnails],
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCatalog() {
+      try {
+        const response = await fetch('/api/storefront/catalog');
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          categories: string[];
+          categoryThumbnails?: Record<string, string>;
+          homepageSections?: StorefrontHomepageSection[];
+          products: StorefrontCatalogProduct[];
+        };
+        if (!isMounted) return;
+        setCatalogProducts(payload.products ?? []);
+        setCatalogCategories(payload.categories ?? []);
+        setCategoryThumbnails(payload.categoryThumbnails ?? {});
+        setHomepageSections(payload.homepageSections ?? []);
+      } catch {
+        // Keep empty state when request fails.
+      }
+    }
+
+    void loadCatalog();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -86,9 +122,7 @@ export default function Home() {
 
         if (!entry?.isIntersecting) return;
 
-        setVisibleProductCount((current) =>
-          Math.min(current + 18, allProducts.length),
-        );
+        setVisibleProductCount((current) => Math.min(current + 18, allProducts.length));
       },
       {
         rootMargin: '0px 0px 420px 0px',
@@ -105,63 +139,29 @@ export default function Home() {
       {/* Hero Slider */}
       <HeroSlider />
 
-      {/* Featured Products */}
-      <section
-        id="featured"
-        className="bg-gradient-to-b from-slate-100 to-white pt-10 pb-16"
-      >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-7">
-            <div className="mb-3 flex items-center gap-3">
-              <span className="h-px w-10 bg-gradient-to-r from-orange-300 via-amber-400 to-orange-500" />
-              <span className="bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 bg-clip-text text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-transparent">
-                Fresh Picks
-              </span>
-            </div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-              Featured Products
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5 lg:gap-6">
-            {featuredProducts.map((product) => (
-              <div key={product.id} className="mx-auto w-full max-w-[230px]">
-                <ProductCard product={product} />
-              </div>
-            ))}
-          </div>
+      {computedHomepageSections.map((section, index) => (
+        <div key={section.id} id={index === 0 ? 'featured' : undefined}>
+          <HomeProductListSection
+            title={section.title}
+            products={section.products}
+            variant={section.variant}
+            layout={section.layout}
+            sectionClassName={
+              section.variant === 'sale'
+                ? 'bg-gradient-to-r from-rose-50 via-white to-amber-50 py-16'
+                : index === 0
+                  ? 'bg-gradient-to-b from-slate-100 to-white pt-10 pb-16'
+                  : 'bg-gradient-to-b from-slate-100 to-white py-16'
+            }
+            eyebrow={section.eyebrow}
+            cta={
+              section.ctaLabel && section.ctaHref
+                ? { href: section.ctaHref, label: section.ctaLabel }
+                : undefined
+            }
+          />
         </div>
-      </section>
-
-      {/* Super Sale */}
-      <section className="bg-gradient-to-r from-rose-50 via-white to-amber-50 py-16">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-7 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-rose-500">
-                Limited-Time Offers
-              </p>
-              <h2 className="mt-3 text-2xl font-semibold text-gray-900">
-                Super Sale
-              </h2>
-            </div>
-            <Link
-              href="/collections/super-sale"
-              className="inline-flex w-fit items-center rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50"
-            >
-              Shop all deals
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5 lg:gap-6">
-            {superSaleProducts.map((product) => (
-              <div key={product.id} className="mx-auto w-full max-w-[230px]">
-                <ProductCard product={product} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      ))}
 
       {/* Categories Section */}
       <section className="bg-gradient-to-b from-slate-100 to-white py-16">
@@ -226,13 +226,11 @@ export default function Home() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5 lg:gap-6">
-            {allProducts.slice(0, visibleProductCount).map((product) => (
-              <div key={product.id} className="mx-auto w-full max-w-[230px]">
-                <ProductCard product={product} />
-              </div>
-            ))}
-          </div>
+          <HomeProductListSection
+            title="More to love"
+            products={allProducts.slice(0, visibleProductCount)}
+            sectionClassName="py-0"
+          />
 
           {visibleProductCount < allProducts.length && (
             <div ref={loadMoreRef} className="mt-8 flex justify-center py-6">

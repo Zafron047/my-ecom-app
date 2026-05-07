@@ -1,12 +1,13 @@
 import ProductCollectionView from '@/components/ProductCollectionView';
-import { catalogCategories, catalogProducts } from '@/data/products';
+import { getStorefrontCatalog } from '@/lib/storefront-data';
+import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 import { notFound } from 'next/navigation';
 
 const collectionConfig = {
   'super-sale': {
     title: 'Super Sale',
     description: 'Browse our best markdowns and limited-time deal picks.',
-    filter: (product: (typeof catalogProducts)[number]) => product.superSale,
+    filter: (product: StorefrontCatalogProduct) => product.superSale,
   },
 } as const;
 
@@ -17,6 +18,7 @@ export default async function CollectionPage({
 }) {
   const { slug } = await params;
   const collection = collectionConfig[slug as keyof typeof collectionConfig];
+  const catalog = await getStorefrontCatalog();
 
   if (!collection) {
     notFound();
@@ -26,8 +28,8 @@ export default async function CollectionPage({
     <ProductCollectionView
       title={collection.title}
       description={collection.description}
-      products={catalogProducts.filter(collection.filter)}
-      categories={catalogCategories}
+      products={catalog.products.filter(collection.filter)}
+      categories={catalog.categories}
     />
   );
 }

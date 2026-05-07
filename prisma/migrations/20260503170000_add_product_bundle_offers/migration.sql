@@ -1,0 +1,4 @@
+ALTER TABLE "Product" ADD COLUMN "bundleQty1" INTEGER;
+ALTER TABLE "Product" ADD COLUMN "bundlePrice1" DECIMAL(12,2);
+ALTER TABLE "Product" ADD COLUMN "bundleQty2" INTEGER;
+ALTER TABLE "Product" ADD COLUMN "bundlePrice2" DECIMAL(12,2);
