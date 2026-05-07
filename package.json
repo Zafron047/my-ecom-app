@@ -8,26 +8,33 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node tests/checkout-pending-order.test.mjs",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed:admin": "node prisma/seed-admin.mjs",
     "prisma:seed:catalog": "node prisma/seed-catalog.mjs",
     "prisma:seed:delivery-areas": "node prisma/seed-delivery-areas.mjs",
     "prisma:import:frontend-images": "node prisma/import-frontend-images.mjs",
-    "images:backfill:variants": "node scripts/backfill-product-image-variants.mjs"
+    "images:backfill:variants": "node scripts/backfill-product-image-variants.mjs",
+    "ops:backup:catalog": "node scripts/ops/catalog-backup.mjs",
+    "ops:backup:dbjson": "node scripts/ops/db-json-backup.mjs",
+    "ops:monitor:usage": "node scripts/ops/usage-snapshot.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.6.0",
+    "@reduxjs/toolkit": "^2.11.2",
     "framer-motion": "^12.38.0",
     "next": "16.2.2",
     "pg": "^8.20.0",
     "prisma": "^7.6.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "react-redux": "^9.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -35,6 +42,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.2",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.21.0",
+    "typescript": "^5",
+    "vitest": "^4.1.5"
   }
 }

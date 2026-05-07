@@ -53,3 +53,12 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# local ops/debug artifacts
+/backups/
+/.tmp-admin-products.html
+/.tmp-catalog.json
+/.tmp-product-detail.json
+/header-desktop.png
+/header-mobile.png
+/invoice_ref_page1.png
