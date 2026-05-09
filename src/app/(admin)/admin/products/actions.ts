@@ -13,7 +13,7 @@ const PRODUCT_NAME_WORD_LIMIT = 6;
 const SHORT_DESCRIPTION_WORD_LIMIT = 40;
 const PRODUCT_STORAGE_FOLDER = 'products';
 const MAX_PRODUCT_IMAGE_FILES = 12;
-const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 4 * 1024 * 1024;
 const ALLOWED_PRODUCT_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -581,10 +581,30 @@ function ensureProductReadyForActiveStatus(
   }
 }
 
+type IncomingImageFile = {
+  clientId: string;
+  file: File;
+};
+
+type IncomingUploadedImage = {
+  clientId: string;
+  fileName: string;
+  objectKey: string;
+};
+
 function getImageFiles(formData: FormData) {
   const clientIds = getIndexedStringList(formData, 'productImageClientIds');
+  const uploadedClientIds = getIndexedStringList(
+    formData,
+    'uploadedProductImageClientIds',
+  );
+  const uploadedObjectKeys = getIndexedStringList(
+    formData,
+    'uploadedProductImageObjectKeys',
+  );
+  const uploadedNames = getIndexedStringList(formData, 'uploadedProductImageNames');
 
-  const files = formData
+  const files: IncomingImageFile[] = formData
     .getAll('productImages')
     .map((value, index) => ({
       clientId: clientIds[index] ?? '',
@@ -596,7 +616,15 @@ function getImageFiles(formData: FormData) {
         value.file.size > 0,
     );
 
-  if (files.length > MAX_PRODUCT_IMAGE_FILES) {
+  const uploadedImages: IncomingUploadedImage[] = uploadedObjectKeys
+    .map((objectKey, index) => ({
+      clientId: uploadedClientIds[index] ?? '',
+      fileName: uploadedNames[index] ?? 'image',
+      objectKey: objectKey.trim(),
+    }))
+    .filter((item) => item.objectKey.length > 0);
+
+  if (files.length + uploadedImages.length > MAX_PRODUCT_IMAGE_FILES) {
     throw new Error(
       `You can upload up to ${MAX_PRODUCT_IMAGE_FILES} images per save.`,
     );
@@ -615,7 +643,10 @@ function getImageFiles(formData: FormData) {
     }
   }
 
-  return files;
+  return {
+    files,
+    uploadedImages,
+  };
 }
 
 function getFileExtension(file: File) {
@@ -814,6 +845,34 @@ async function uploadOptimizedImageVariantsFromBuffer(
   }
 }
 
+function getContentTypeFromExtension(extension: string) {
+  const ext = extension.toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.avif') return 'image/avif';
+  return 'image/jpeg';
+}
+
+async function downloadStorageObject(objectKey: string) {
+  const { bucket, serviceRoleKey, supabaseUrl } = getSupabaseStorageConfig();
+  const response = await fetch(
+    `${supabaseUrl}/storage/v1/object/${bucket}/${encodeStorageObjectKey(objectKey)}`,
+    {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      method: 'GET',
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to read uploaded image: ${await response.text()}`);
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
 async function deleteStorageObjects(objectKeys: string[]) {
   if (objectKeys.length === 0) return;
 
@@ -903,12 +962,11 @@ async function saveProductImages(
   _imageNameBase: string,
   serialByClientId = getImageSerialByClientId(formData),
 ) {
-  const files = getImageFiles(formData);
-  if (files.length === 0) return [];
+  const { files, uploadedImages } = getImageFiles(formData);
+  if (files.length === 0 && uploadedImages.length === 0) return [];
 
   const reservedObjectKeys = new Set<string>();
-
-  return Promise.all(
+  const savedFromFiles = await Promise.all(
     files.map(async ({ clientId, file }, index) => {
       const extension = getFileExtension(file);
       const serialNumber = serialByClientId.get(clientId) ?? index + 1;
@@ -928,6 +986,39 @@ async function saveProductImages(
       };
     }),
   );
+
+  const savedFromUploaded = await Promise.all(
+    uploadedImages.map(async ({ clientId, fileName, objectKey }, index) => {
+      const serialNumber =
+        serialByClientId.get(clientId) ?? savedFromFiles.length + index + 1;
+      const extension = path.extname(objectKey) || '.jpg';
+      const sourceBuffer = await downloadStorageObject(objectKey);
+      const uniqueSuffix = `-${crypto.randomUUID().slice(0, 8)}`;
+      const finalObjectKey = getOriginalObjectKey(
+        productStorageFolder,
+        serialNumber,
+        extension,
+        uniqueSuffix,
+      );
+
+      await uploadStorageBuffer(
+        finalObjectKey,
+        sourceBuffer,
+        getContentTypeFromExtension(extension),
+      );
+      await uploadOptimizedImageVariantsFromBuffer(finalObjectKey, sourceBuffer);
+      await deleteStorageObjects([objectKey]);
+
+      return {
+        clientId,
+        storagePath: getPublicStorageUrl(finalObjectKey),
+        altText: fileName.replace(/\.[^.]+$/, '') || null,
+        sortOrder: serialNumber - 1,
+      };
+    }),
+  );
+
+  return [...savedFromFiles, ...savedFromUploaded];
 }
 
 function getVariantImagePaths(
@@ -1486,30 +1577,60 @@ export async function updateProduct(formData: FormData) {
       }
 
       if (newImages.length > 0) {
-        await tx.productImage.createMany({
-          data: normalizedImageOrder.flatMap((orderItem) => {
-            if (!orderItem.startsWith('new:')) return [];
-            const image = newImageByClientId.get(orderItem.slice(4));
-            const normalizedIndex = orderIndexByKey.get(orderItem);
-            if (!image) return [];
-            if (typeof normalizedIndex !== 'number') return [];
+        const existingStoragePaths = new Set(
+          (
+            await tx.productImage.findMany({
+              where: { productId },
+              select: { storagePath: true },
+            })
+          ).map((image) => image.storagePath),
+        );
+        const pendingStoragePaths = new Set<string>();
+        const imagesToCreate = normalizedImageOrder.flatMap((orderItem) => {
+          if (!orderItem.startsWith('new:')) return [];
+          const image = newImageByClientId.get(orderItem.slice(4));
+          const normalizedIndex = orderIndexByKey.get(orderItem);
+          if (!image) return [];
+          if (typeof normalizedIndex !== 'number') return [];
+          if (existingStoragePaths.has(image.storagePath)) return [];
+          if (pendingStoragePaths.has(image.storagePath)) return [];
+          pendingStoragePaths.add(image.storagePath);
 
-            return [
-              {
-                productId,
-                storagePath: image.storagePath,
-                altText: image.altText,
-                isPrimary: normalizedIndex === 0,
-                sortOrder: normalizedIndex,
-              },
-            ];
-          }),
+          return [
+            {
+              productId,
+              storagePath: image.storagePath,
+              altText: image.altText,
+              isPrimary: normalizedIndex === 0,
+              sortOrder: normalizedIndex,
+            },
+          ];
         });
+
+        if (imagesToCreate.length > 0) {
+          await tx.productImage.createMany({
+            data: imagesToCreate,
+          });
+        }
       }
     }
 
     if (shouldSaveVariants) {
       for (const variantId of variantIdsToRemove) {
+        const orderReferenceCount = await tx.orderProduct.count({
+          where: { variantId },
+        });
+
+        if (orderReferenceCount === 0) {
+          await tx.productBundleOfferVariant.deleteMany({
+            where: { variantId },
+          });
+          await tx.productVariant.delete({
+            where: { id: variantId },
+          });
+          continue;
+        }
+
         await tx.productVariant.update({
           where: { id: variantId },
           data: { isActive: false },

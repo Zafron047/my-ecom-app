@@ -3,6 +3,31 @@ import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import { createProduct } from '../actions';
 
+async function safeCreateProduct(formData: FormData) {
+  'use server';
+
+  try {
+    await createProduct(formData);
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'digest' in error &&
+      typeof (error as { digest?: unknown }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) {
+      throw error;
+    }
+
+    return {
+      error:
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to save product. Please try again.',
+    };
+  }
+}
+
 export default async function NewProductPage() {
   await requireAdminPermission('/admin/products/new', 'products.write');
   await requireAdminRole('/admin/products/new', ['admin']);
@@ -36,7 +61,7 @@ export default async function NewProductPage() {
 
   return (
     <ProductForm
-      action={createProduct}
+      action={safeCreateProduct}
       categories={categories}
       brands={brands}
       submitLabel="Create Product"

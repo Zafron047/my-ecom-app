@@ -2,7 +2,8 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { ProductStatus } from '@prisma/client';
 
@@ -84,7 +85,9 @@ type ProductFormValue = {
 };
 
 type ProductFormProps = {
-  action: (formData: FormData) => Promise<void> | void;
+  action:
+    | ((formData: FormData) => Promise<void> | void)
+    | ((formData: FormData) => Promise<{ error?: string } | void>);
   categories: CategoryOption[];
   brands: BrandOption[];
   product?: ProductFormValue;
@@ -98,12 +101,13 @@ type ActivationRequirementsState = {
 };
 
 type VariantVisibility = 'all' | 'active' | 'inactive';
+type SubmitIntent = 'productMedia' | 'variants' | 'bundleOffers' | 'full' | '';
 
 const statuses: ProductStatus[] = ['draft', 'active', 'archived'];
 const PRODUCT_NAME_WORD_LIMIT = 6;
 const SHORT_DESCRIPTION_WORD_LIMIT = 40;
 const MAX_PRODUCT_IMAGE_FILES = 10;
-const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 4 * 1024 * 1024;
 const ALLOWED_PRODUCT_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -126,6 +130,12 @@ type MediaOption = {
   label: string;
   previewUrl: string;
   value: string;
+};
+
+type UploadedImagePayload = {
+  clientId: string;
+  name: string;
+  objectKey: string;
 };
 
 const emptyVariant = (): VariantFormRow => ({
@@ -250,6 +260,27 @@ function getImageOrderKey(item: ProductImageItem) {
   return item.type === 'existing'
     ? `existing:${item.id}`
     : `new:${item.clientId}`;
+}
+
+function buildVariantSnapshot(
+  rows: VariantFormRow[],
+  removedVariantIds: string[],
+) {
+  return JSON.stringify({
+    removedVariantIds: [...removedVariantIds].sort(),
+    rows: rows.map((row) => ({
+      color: row.color,
+      compareAtPrice: row.compareAtPrice,
+      costPrice: row.costPrice,
+      id: row.id,
+      imageSelection: row.imageSelection,
+      isActive: row.isActive,
+      price: row.price,
+      reorderLevel: row.reorderLevel,
+      size: row.size,
+      stockQuantity: row.stockQuantity,
+    })),
+  });
 }
 
 function formatDescriptionAsBullets(value: string) {
@@ -545,6 +576,7 @@ export default function ProductForm({
   product,
   submitLabel,
 }: ProductFormProps) {
+  const router = useRouter();
   const initialProduct = useMemo(() => getInitialProduct(product), [product]);
   const initialVariantRows = useMemo(
     () =>
@@ -577,7 +609,7 @@ export default function ProductForm({
   );
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
   const [variantVisibility, setVariantVisibility] =
-    useState<VariantVisibility>('all');
+    useState<VariantVisibility>('active');
   const [bundleOffers, setBundleOffers] = useState<BundleOfferFormRow[]>(
     initialProduct.bundleOffers.length > 0
       ? initialProduct.bundleOffers
@@ -599,9 +631,13 @@ export default function ProductForm({
     })),
   );
   const imageItemsRef = useRef<ProductImageItem[]>(imageItems);
+  const rowsRef = useRef<VariantFormRow[]>(rows);
+  const removedVariantIdsRef = useRef<string[]>(removedVariantIds);
   const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
   const [draggedImageKey, setDraggedImageKey] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmittingProduct, setIsSubmittingProduct] = useState(false);
+  const [activeSubmitIntent, setActiveSubmitIntent] = useState<SubmitIntent>('');
   const [activationRequirements, setActivationRequirements] =
     useState<ActivationRequirementsState>({
       categories: false,
@@ -867,47 +903,29 @@ export default function ProductForm({
       }),
     [initialProduct],
   );
-  const hasProductChanges = currentProductSnapshot !== initialProductSnapshot;
+  const [savedProductSnapshot, setSavedProductSnapshot] = useState(
+    initialProductSnapshot,
+  );
+  useEffect(() => {
+    setSavedProductSnapshot(initialProductSnapshot);
+  }, [initialProductSnapshot]);
+  const hasProductChanges = currentProductSnapshot !== savedProductSnapshot;
 
   const currentVariantSnapshot = useMemo(
-    () =>
-      JSON.stringify({
-        removedVariantIds: [...removedVariantIds].sort(),
-        rows: rows.map((row) => ({
-          color: row.color,
-          compareAtPrice: row.compareAtPrice,
-          costPrice: row.costPrice,
-          id: row.id,
-          imageSelection: row.imageSelection,
-          isActive: row.isActive,
-          price: row.price,
-          reorderLevel: row.reorderLevel,
-          size: row.size,
-          stockQuantity: row.stockQuantity,
-        })),
-      }),
+    () => buildVariantSnapshot(rows, removedVariantIds),
     [removedVariantIds, rows],
   );
   const initialVariantSnapshot = useMemo(
-    () =>
-      JSON.stringify({
-        removedVariantIds: [],
-        rows: initialVariantRows.map((row) => ({
-          color: row.color,
-          compareAtPrice: row.compareAtPrice,
-          costPrice: row.costPrice,
-          id: row.id,
-          imageSelection: row.imageSelection,
-          isActive: row.isActive,
-          price: row.price,
-          reorderLevel: row.reorderLevel,
-          size: row.size,
-          stockQuantity: row.stockQuantity,
-        })),
-      }),
+    () => buildVariantSnapshot(initialVariantRows, []),
     [initialVariantRows],
   );
-  const hasVariantChanges = currentVariantSnapshot !== initialVariantSnapshot;
+  const [savedVariantSnapshot, setSavedVariantSnapshot] = useState(
+    initialVariantSnapshot,
+  );
+  useEffect(() => {
+    setSavedVariantSnapshot(initialVariantSnapshot);
+  }, [initialVariantSnapshot]);
+  const hasVariantChanges = currentVariantSnapshot !== savedVariantSnapshot;
   const currentBundleSnapshot = useMemo(
     () =>
       JSON.stringify({
@@ -956,10 +974,18 @@ export default function ProductForm({
     activeEditorSection === null || activeEditorSection === 'product';
   const isVariantEditorEnabled = isVariantSectionEnabled;
   const isBundleEditorEnabled = isBundleSectionEnabled;
+  const isVariantError =
+    Boolean(submitError) && /variant/i.test(submitError ?? '');
 
   useEffect(() => {
     imageItemsRef.current = imageItems;
   }, [imageItems]);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+  useEffect(() => {
+    removedVariantIdsRef.current = removedVariantIds;
+  }, [removedVariantIds]);
 
   useEffect(
     () => () => {
@@ -1110,6 +1136,58 @@ export default function ProductForm({
       syncFileInputWithImageItems(nextImageItems);
       return nextImageItems;
     });
+  }
+
+  async function uploadNewImagesToStorage(newItems: NewImageItem[]) {
+    const uploaded: UploadedImagePayload[] = [];
+
+    for (const item of newItems) {
+      const extension = getFileExtension(item.file.name);
+      const signResponse = await fetch('/api/admin/product-images/sign-upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contentType: item.file.type || 'application/octet-stream',
+          extension,
+        }),
+      });
+
+      if (!signResponse.ok) {
+        throw new Error('Failed to prepare image upload.');
+      }
+
+      const signPayload = (await signResponse.json()) as {
+        objectKey?: string;
+        uploadUrl?: string;
+      };
+
+      if (!signPayload.objectKey || !signPayload.uploadUrl) {
+        throw new Error('Invalid upload configuration from server.');
+      }
+
+      const uploadResponse = await fetch(signPayload.uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': item.file.type || 'application/octet-stream',
+          'x-upsert': 'false',
+        },
+        body: item.file,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload selected image.');
+      }
+
+      uploaded.push({
+        clientId: item.clientId,
+        name: item.file.name,
+        objectKey: signPayload.objectKey,
+      });
+    }
+
+    return uploaded;
   }
 
   function updateBundleOffer(index: number, patch: Partial<BundleOfferFormRow>) {
@@ -1393,9 +1471,35 @@ export default function ProductForm({
     };
   }
 
+  function getVariantDuplicateError() {
+    const seen = new Map<string, number>();
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (!row.isActive) {
+        continue;
+      }
+      const color = row.color.trim().toLowerCase();
+      const size = row.size.trim().toLowerCase();
+      if (!color || !size) {
+        continue;
+      }
+      const key = `${color}__${size}`;
+
+      const existing = seen.get(key);
+      if (typeof existing === 'number') {
+        return `Variant ${index + 1} duplicates Variant ${existing + 1} (same color + size). Update one before saving variants.`;
+      }
+      seen.set(key, index);
+    }
+
+    return null;
+  }
+
   async function handleSubmit(formData: FormData) {
+    if (isSubmittingProduct) return;
     setSubmitError(null);
-    const submitIntent = String(formData.get('submitIntent') ?? '').trim();
+    const submitIntent = String(formData.get('submitIntent') ?? '').trim() as SubmitIntent;
     const shouldValidateActivation =
       submitIntent !== 'variants' && submitIntent !== 'bundleOffers';
     const intendedStatus = String(formData.get('status') ?? selectedStatus)
@@ -1423,8 +1527,49 @@ export default function ProductForm({
       );
       return;
     }
+
+    if (submitIntent === 'variants' || submitIntent === 'full') {
+      const duplicateVariantError = getVariantDuplicateError();
+      if (duplicateVariantError) {
+        setSubmitError(duplicateVariantError);
+        return;
+      }
+    }
+
+    setIsSubmittingProduct(true);
+    setActiveSubmitIntent(submitIntent);
     try {
-      await action(formData);
+      const newImageItems = imageItems.filter(
+        (item): item is NewImageItem => item.type === 'new',
+      );
+      if (newImageItems.length > 0) {
+        const uploadedImages = await uploadNewImagesToStorage(newImageItems);
+        formData.delete('productImages');
+        formData.delete('productImageClientIds');
+        for (const image of uploadedImages) {
+          formData.append('uploadedProductImageClientIds', image.clientId);
+          formData.append('uploadedProductImageObjectKeys', image.objectKey);
+          formData.append('uploadedProductImageNames', image.name);
+        }
+      }
+
+      const result = await action(formData);
+      if (
+        result &&
+        typeof result === 'object' &&
+        'error' in result &&
+        typeof result.error === 'string' &&
+        result.error.trim().length > 0
+      ) {
+        setSubmitError(result.error);
+      } else if (submitIntent === 'variants') {
+        setSavedVariantSnapshot(
+          buildVariantSnapshot(rowsRef.current, removedVariantIdsRef.current),
+        );
+      } else if (submitIntent === 'productMedia' || submitIntent === 'full') {
+        setSavedProductSnapshot(currentProductSnapshot);
+        router.refresh();
+      }
     } catch (error) {
       if (
         error &&
@@ -1433,6 +1578,13 @@ export default function ProductForm({
         typeof (error as { digest?: unknown }).digest === 'string' &&
         (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
       ) {
+        if (submitIntent === 'variants') {
+          setSavedVariantSnapshot(
+            buildVariantSnapshot(rowsRef.current, removedVariantIdsRef.current),
+          );
+        } else if (submitIntent === 'productMedia' || submitIntent === 'full') {
+          setSavedProductSnapshot(currentProductSnapshot);
+        }
         throw error;
       }
       const message =
@@ -1440,11 +1592,28 @@ export default function ProductForm({
           ? error.message
           : 'Failed to save product. Please try again.';
       setSubmitError(message);
+    } finally {
+      setIsSubmittingProduct(false);
+      setActiveSubmitIntent('');
     }
   }
 
+  function handleFormSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nativeEvent = event.nativeEvent as SubmitEvent;
+    const submitter = nativeEvent.submitter as
+      | HTMLButtonElement
+      | HTMLInputElement
+      | null;
+    const formData = new FormData(event.currentTarget);
+    if (submitter?.name) {
+      formData.set(submitter.name, submitter.value);
+    }
+    void handleSubmit(formData);
+  }
+
   return (
-    <form action={handleSubmit} className="space-y-6 pb-2">
+    <form onSubmit={handleFormSubmit} className="space-y-6 pb-2">
       {initialProduct.id && (
         <input type="hidden" name="productId" value={initialProduct.id} />
       )}
@@ -1787,6 +1956,9 @@ export default function ProductForm({
           >
             Media
           </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Upload JPG/PNG/WEBP/AVIF. Keep each image under 4MB.
+          </p>
           {activationRequirements.media ? (
             <p className="mt-1 text-xs font-semibold text-red-700">
               At least one product image is required to set status to active.
@@ -1992,23 +2164,33 @@ export default function ProductForm({
                 name="submitIntent"
                 value={isEditing ? 'productMedia' : 'full'}
                 disabled={
-                  !isProductEditorEnabled || (isEditing ? !hasProductChanges : !hasChanges)
+                  isSubmittingProduct ||
+                  !isProductEditorEnabled ||
+                  (isEditing ? !hasProductChanges : !hasChanges)
                 }
                 className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${
-                  !isProductEditorEnabled || (isEditing ? !hasProductChanges : !hasChanges)
+                  isSubmittingProduct ||
+                  !isProductEditorEnabled ||
+                  (isEditing ? !hasProductChanges : !hasChanges)
                     ? 'cursor-not-allowed bg-slate-300'
                     : 'bg-blue-700 hover:bg-blue-600'
                 }`}
               >
-                {isEditing ? 'Save Product' : submitLabel}
+                {isSubmittingProduct
+                  ? 'Saving...'
+                  : isEditing
+                    ? 'Save Product'
+                    : submitLabel}
               </button>
               {isEditing ? (
                 <button
                   type="button"
-                  disabled={!isProductEditorEnabled || !hasProductChanges}
+                  disabled={
+                    isSubmittingProduct || !isProductEditorEnabled || !hasProductChanges
+                  }
                   onClick={resetProductSection}
                   className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                    !isProductEditorEnabled || !hasProductChanges
+                    isSubmittingProduct || !isProductEditorEnabled || !hasProductChanges
                       ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
                       : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
                   }`}
@@ -2024,6 +2206,16 @@ export default function ProductForm({
                 </Link>
               )}
             </div>
+            {isSubmittingProduct ? (
+              <p className="mt-2 text-xs font-medium text-slate-600">
+                Save in progress... please wait.
+              </p>
+            ) : null}
+            {submitError && !isVariantError ? (
+              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                {submitError}
+              </p>
+            ) : null}
           </div>
           </fieldset>
         </div>
@@ -2376,22 +2568,28 @@ export default function ProductForm({
                   type="submit"
                   name="submitIntent"
                   value="variants"
-                  disabled={!isVariantEditorEnabled || !hasVariantChanges}
+                  disabled={
+                    isSubmittingProduct || !isVariantEditorEnabled || !hasVariantChanges
+                  }
                   className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${
-                    isVariantEditorEnabled && hasVariantChanges
+                    !isSubmittingProduct && isVariantEditorEnabled && hasVariantChanges
                       ? 'bg-slate-900 hover:bg-slate-800'
                       : 'cursor-not-allowed bg-slate-300'
                   }`}
                 >
-                  Save Variants
+                  {isSubmittingProduct && activeSubmitIntent === 'variants'
+                    ? 'Saving...'
+                    : 'Save Variants'}
                 </button>
                 {isEditing ? (
                   <button
                     type="button"
-                    disabled={!isVariantEditorEnabled || !hasVariantChanges}
+                    disabled={
+                      isSubmittingProduct || !isVariantEditorEnabled || !hasVariantChanges
+                    }
                     onClick={resetVariantSection}
                     className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                      !isVariantEditorEnabled || !hasVariantChanges
+                      isSubmittingProduct || !isVariantEditorEnabled || !hasVariantChanges
                         ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
                         : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
                     }`}
@@ -2407,6 +2605,14 @@ export default function ProductForm({
                   </Link>
                 )}
               </div>
+              {isSubmittingProduct && activeSubmitIntent === 'variants' ? (
+                <p className="text-xs font-medium text-slate-600">
+                  Variant save in progress... please wait.
+                </p>
+              ) : null}
+              {submitError && isVariantError ? (
+                <p className="text-xs font-semibold text-red-700">{submitError}</p>
+              ) : null}
             </div>
           )}
         </div>
@@ -2634,9 +2840,11 @@ export default function ProductForm({
                   type="submit"
                   name="submitIntent"
                   value="bundleOffers"
-                  disabled={!isBundleEditorEnabled || !hasBundleChanges}
+                  disabled={
+                    isSubmittingProduct || !isBundleEditorEnabled || !hasBundleChanges
+                  }
                   className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${
-                    isBundleEditorEnabled && hasBundleChanges
+                    !isSubmittingProduct && isBundleEditorEnabled && hasBundleChanges
                       ? 'bg-amber-700 hover:bg-amber-600'
                       : 'cursor-not-allowed bg-slate-300'
                   }`}
@@ -2645,10 +2853,12 @@ export default function ProductForm({
                 </button>
                 <button
                   type="button"
-                  disabled={!isBundleEditorEnabled || !hasBundleChanges}
+                  disabled={
+                    isSubmittingProduct || !isBundleEditorEnabled || !hasBundleChanges
+                  }
                   onClick={resetBundleSection}
                   className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                    !isBundleEditorEnabled || !hasBundleChanges
+                    isSubmittingProduct || !isBundleEditorEnabled || !hasBundleChanges
                       ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
                       : 'border-amber-300 bg-white text-amber-800 hover:bg-amber-100'
                   }`}
@@ -2660,12 +2870,6 @@ export default function ProductForm({
           )}
         </div>
       </section>
-
-      {submitError && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-          {submitError}
-        </p>
-      )}
 
     </form>
   );

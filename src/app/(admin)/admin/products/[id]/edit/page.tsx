@@ -20,6 +20,31 @@ function normalizeImagePathForMatch(path: string | null) {
   return withoutQuery.replace(/-(thumb|detail|zoom)(\.[a-z0-9]+)$/i, '$2');
 }
 
+async function safeUpdateProduct(formData: FormData) {
+  'use server';
+
+  try {
+    await updateProduct(formData);
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'digest' in error &&
+      typeof (error as { digest?: unknown }).digest === 'string' &&
+      (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+    ) {
+      throw error;
+    }
+
+    return {
+      error:
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to save product. Please try again.',
+    };
+  }
+}
+
 export default async function EditProductPage({ params }: EditProductPageProps) {
   const { id } = await params;
   await requireAdminPermission(`/admin/products/${id}/edit`, 'products.write');
@@ -132,7 +157,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
 
   return (
     <ProductForm
-      action={updateProduct}
+      action={safeUpdateProduct}
       categories={categories}
       brands={brands}
       product={{
