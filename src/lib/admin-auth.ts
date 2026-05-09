@@ -21,6 +21,37 @@ export function normalizeAdminEmail(value: unknown): string | null {
   return email;
 }
 
+export function normalizeAdminPhone(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+
+  const compact = value.trim().replace(/[\s().-]/g, '');
+  if (!compact) return null;
+
+  let phone = compact;
+  if (phone.startsWith('+880')) {
+    phone = `0${phone.slice(4)}`;
+  } else if (phone.startsWith('00880')) {
+    phone = `0${phone.slice(5)}`;
+  } else if (phone.startsWith('880')) {
+    phone = `0${phone.slice(3)}`;
+  }
+
+  return /^01\d{9}$/.test(phone) ? phone : null;
+}
+
+export function normalizeAdminLoginIdentifier(value: unknown):
+  | { kind: 'email'; value: string }
+  | { kind: 'phone'; value: string }
+  | null {
+  const email = normalizeAdminEmail(value);
+  if (email) return { kind: 'email', value: email };
+
+  const phone = normalizeAdminPhone(value);
+  if (phone) return { kind: 'phone', value: phone };
+
+  return null;
+}
+
 export function createSessionExpiry(rememberMe: boolean): Date {
   const now = Date.now();
   const millis = rememberMe

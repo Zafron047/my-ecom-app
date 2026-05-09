@@ -97,6 +97,7 @@ enum HomepageSectionSourceType {
 model AdminUser {
   id                         String                    @id @default(cuid())
   email                      String                    @unique
+  phone                      String?                   @unique
   name                       String
   passwordHash               String
   role                       AdminRole                 @default(support)

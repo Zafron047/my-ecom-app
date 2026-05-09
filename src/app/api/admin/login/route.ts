@@ -5,7 +5,7 @@ import {
   createSessionExpiry,
   createSessionToken,
   hashSessionToken,
-  normalizeAdminEmail,
+  normalizeAdminLoginIdentifier,
   sanitizeNextPath,
 } from '@/lib/admin-auth';
 import { logAdminAudit } from '@/lib/admin-audit';
@@ -14,6 +14,7 @@ import { prisma } from '@/lib/prisma';
 
 type LoginBody = {
   email?: string;
+  identifier?: string;
   nextPath?: string;
   password?: string;
   rememberMe?: boolean;
@@ -21,7 +22,7 @@ type LoginBody = {
 
 function createInvalidCredentialsResponse() {
   return NextResponse.json(
-    { error: 'Invalid email or password.' },
+    { error: 'Invalid email/mobile or password.' },
     { status: 401 },
   );
 }
@@ -33,27 +34,34 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid request payload.' }, { status: 400 });
   }
-  const email = normalizeAdminEmail(body.email);
+  const login = normalizeAdminLoginIdentifier(body.identifier ?? body.email);
   const password = typeof body.password === 'string' ? body.password : '';
 
-  if (!email || !password) {
+  if (!login || !password) {
     return NextResponse.json(
-      { error: 'Email and password are required.' },
+      { error: 'Email/mobile and password are required.' },
       { status: 400 },
     );
   }
 
-  const adminUser = await prisma.adminUser.findUnique({
-    where: { email },
+  const adminUser = await prisma.adminUser.findFirst({
+    where:
+      login.kind === 'email'
+        ? { email: login.value }
+        : { phone: login.value },
   });
 
   if (!adminUser || !adminUser.isActive) {
     await logAdminAudit({
       action: 'login',
-      entityId: email,
+      entityId: login.value,
       entityType: 'admin_auth',
       message: 'Admin login failed.',
-      metadata: { email, reason: 'invalid_credentials_or_inactive' },
+      metadata: {
+        loginIdentifier: login.value,
+        loginType: login.kind,
+        reason: 'invalid_credentials_or_inactive',
+      },
       request,
     });
     return createInvalidCredentialsResponse();
@@ -66,7 +74,12 @@ export async function POST(request: Request) {
       entityId: adminUser.id,
       entityType: 'admin_auth',
       message: 'Admin login failed.',
-      metadata: { email, reason: 'invalid_password' },
+      metadata: {
+        email: adminUser.email,
+        loginIdentifier: login.value,
+        loginType: login.kind,
+        reason: 'invalid_password',
+      },
       request,
     });
     return createInvalidCredentialsResponse();
@@ -95,7 +108,12 @@ export async function POST(request: Request) {
     entityId: adminUser.id,
     entityType: 'admin_auth',
     message: 'Admin login succeeded.',
-    metadata: { email, rememberMe },
+    metadata: {
+      email: adminUser.email,
+      loginIdentifier: login.value,
+      loginType: login.kind,
+      rememberMe,
+    },
     request,
   });
 

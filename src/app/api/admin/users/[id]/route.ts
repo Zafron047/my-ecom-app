@@ -62,6 +62,7 @@ export async function PATCH(
       mustResetPassword: true,
       passwordUpdatedAt: true,
       email: true,
+      phone: true,
       name: true,
       createdAt: true,
       sessions: {
@@ -126,6 +127,7 @@ export async function PATCH(
         id: true,
         name: true,
         email: true,
+        phone: true,
         role: true,
         isActive: true,
         mustResetPassword: true,
@@ -195,6 +197,7 @@ export async function PATCH(
       id: updated.id,
       name: updated.name,
       email: updated.email,
+      phone: updated.phone,
       role: updated.role,
       isActive: updated.isActive,
       mustResetPassword: updated.mustResetPassword,

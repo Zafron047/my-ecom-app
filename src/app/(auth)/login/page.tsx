@@ -35,7 +35,7 @@ function LoginContent() {
       const endpoint = isAdminLogin ? '/api/admin/login' : '/api/login';
       const payload = isAdminLogin
         ? {
-            email: formData.identifier,
+            identifier: formData.identifier,
             password: formData.password,
             rememberMe,
             nextPath,

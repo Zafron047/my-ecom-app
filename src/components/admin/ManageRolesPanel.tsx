@@ -12,6 +12,7 @@ type ManageRolesUser = {
   mustResetPassword: boolean;
   name: string;
   passwordUpdatedAt: string | null;
+  phone: string | null;
   role: AdminRole;
 };
 
@@ -73,6 +74,7 @@ export default function ManageRolesPanel({
   const [createForm, setCreateForm] = useState({
     email: '',
     name: '',
+    phone: '',
     role: 'support' as AdminRole,
   });
   const [isCreating, setIsCreating] = useState(false);
@@ -159,7 +161,7 @@ export default function ManageRolesPanel({
         ...prev,
         [createdUser.id]: createdUser.role,
       }));
-      setCreateForm({ email: '', name: '', role: 'support' });
+      setCreateForm({ email: '', name: '', phone: '', role: 'support' });
       setResetLink({
         email: createdUser.email,
         resetExpiresAt: data.resetExpiresAt,
@@ -366,7 +368,7 @@ export default function ManageRolesPanel({
 
         <form
           onSubmit={handleCreateUser}
-          className="mt-5 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_160px_auto]"
+          className="mt-5 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_160px_auto]"
         >
           <div>
             <label
@@ -407,6 +409,25 @@ export default function ManageRolesPanel({
 
           <div>
             <label
+              htmlFor="adminPhone"
+              className="mb-1 block text-xs font-semibold uppercase text-slate-500"
+            >
+              Mobile
+            </label>
+            <input
+              id="adminPhone"
+              type="tel"
+              value={createForm.phone}
+              onChange={(event) =>
+                setCreateForm((prev) => ({ ...prev, phone: event.target.value }))
+              }
+              placeholder="017XXXXXXXX"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+            />
+          </div>
+
+          <div>
+            <label
               htmlFor="adminRole"
               className="mb-1 block text-xs font-semibold uppercase text-slate-500"
             >
@@ -431,7 +452,7 @@ export default function ManageRolesPanel({
             </select>
           </div>
 
-          <div className="flex items-end">
+          <div className="flex items-end md:col-span-2 xl:col-span-1">
             <button
               type="submit"
               disabled={isCreating}
@@ -472,6 +493,9 @@ export default function ManageRolesPanel({
                       )}
                     </p>
                     <p className="text-xs text-slate-500">{user.email}</p>
+                    {user.phone && (
+                      <p className="text-xs text-slate-500">{user.phone}</p>
+                    )}
                   </td>
 
                   <td className="px-3 py-3">

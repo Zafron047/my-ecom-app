@@ -19,8 +19,26 @@ function hashPassword(password) {
   return `scrypt:${salt}:${hash}`;
 }
 
+function normalizePhone(value) {
+  const compact = value.trim().replace(/[\s().-]/g, '');
+  if (!compact) return null;
+
+  let phone = compact;
+  if (phone.startsWith('+880')) {
+    phone = `0${phone.slice(4)}`;
+  } else if (phone.startsWith('00880')) {
+    phone = `0${phone.slice(5)}`;
+  } else if (phone.startsWith('880')) {
+    phone = `0${phone.slice(3)}`;
+  }
+
+  return /^01\d{9}$/.test(phone) ? phone : null;
+}
+
 async function main() {
   const email = (process.env.ADMIN_SEED_EMAIL ?? '').trim().toLowerCase();
+  const phoneInput = (process.env.ADMIN_SEED_PHONE ?? '').trim();
+  const phone = phoneInput ? normalizePhone(phoneInput) : null;
   const password = process.env.ADMIN_SEED_PASSWORD ?? '';
   const name = (process.env.ADMIN_SEED_NAME ?? 'Admin User').trim();
   const role = (process.env.ADMIN_SEED_ROLE ?? 'admin').trim().toLowerCase();
@@ -29,6 +47,10 @@ async function main() {
     throw new Error(
       'Missing ADMIN_SEED_EMAIL or ADMIN_SEED_PASSWORD in environment.',
     );
+  }
+
+  if (phoneInput && !phone) {
+    throw new Error('Invalid ADMIN_SEED_PHONE. Use a Bangladesh mobile number.');
   }
 
   const allowedRoles = ['admin', 'manager', 'support'];
@@ -47,6 +69,7 @@ async function main() {
       name,
       role,
       passwordHash,
+      phone,
       isActive: true,
       mustResetPassword: false,
       passwordUpdatedAt: new Date(),
@@ -55,6 +78,7 @@ async function main() {
       name,
       role,
       passwordHash,
+      phone,
       isActive: true,
       mustResetPassword: false,
       passwordUpdatedAt: new Date(),

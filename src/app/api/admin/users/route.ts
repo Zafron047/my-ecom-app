@@ -6,7 +6,7 @@ import {
   createPasswordResetToken,
   hashPasswordResetToken,
 } from '@/lib/admin-password-reset';
-import { normalizeAdminEmail } from '@/lib/admin-auth';
+import { normalizeAdminEmail, normalizeAdminPhone } from '@/lib/admin-auth';
 import { requireAdminApiRole } from '@/lib/admin-api-auth';
 import { logAdminAudit } from '@/lib/admin-audit';
 import { hashPassword } from '@/lib/password-auth';
@@ -15,6 +15,7 @@ import { prisma } from '@/lib/prisma';
 type CreateAdminUserBody = {
   email?: string;
   name?: string;
+  phone?: string;
   role?: AdminRole;
 };
 
@@ -46,11 +47,20 @@ export async function POST(request: Request) {
   }
 
   const email = normalizeAdminEmail(body.email);
+  const rawPhone = typeof body.phone === 'string' ? body.phone.trim() : '';
+  const phone = rawPhone ? normalizeAdminPhone(rawPhone) : null;
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   const role = body.role;
 
   if (!email) {
     return NextResponse.json({ error: 'A valid email is required.' }, { status: 400 });
+  }
+
+  if (rawPhone && !phone) {
+    return NextResponse.json(
+      { error: 'Use a valid Bangladesh mobile number.' },
+      { status: 400 },
+    );
   }
 
   if (name.length < 2) {
@@ -76,6 +86,7 @@ export async function POST(request: Request) {
           mustResetPassword: true,
           name,
           passwordHash,
+          phone,
           role,
         },
         select: {
@@ -86,6 +97,7 @@ export async function POST(request: Request) {
           mustResetPassword: true,
           name: true,
           passwordUpdatedAt: true,
+          phone: true,
           role: true,
         },
       });
@@ -111,6 +123,7 @@ export async function POST(request: Request) {
       metadata: {
         role: created.role,
         targetEmail: created.email,
+        targetPhone: created.phone,
       },
       request,
     });
@@ -125,6 +138,7 @@ export async function POST(request: Request) {
         expiresAt: resetExpiresAt.toISOString(),
         reason: 'new_admin_user',
         targetEmail: created.email,
+        targetPhone: created.phone,
       },
       request,
     });
@@ -142,6 +156,7 @@ export async function POST(request: Request) {
           mustResetPassword: created.mustResetPassword,
           name: created.name,
           passwordUpdatedAt: created.passwordUpdatedAt?.toISOString() ?? null,
+          phone: created.phone,
           role: created.role,
         },
       },
@@ -150,7 +165,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (isPrismaUniqueConstraintError(error)) {
       return NextResponse.json(
-        { error: 'An admin user with this email already exists.' },
+        { error: 'An admin user with this email or mobile number already exists.' },
         { status: 409 },
       );
     }
