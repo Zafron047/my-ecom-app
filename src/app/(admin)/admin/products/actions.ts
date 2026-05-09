@@ -663,7 +663,7 @@ function getSupabaseStorageConfig() {
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
-      'Product image uploads require SUPABASE_SERVICE_ROLE_KEY. Set SUPABASE_URL too if it cannot be inferred from DATABASE_URL.',
+      'Product image storage operations require SUPABASE_SERVICE_ROLE_KEY. Set SUPABASE_URL too if it cannot be inferred from DATABASE_URL.',
     );
   }
 
@@ -937,6 +937,12 @@ async function deleteProductImageFiles(storagePaths: string[]) {
 
   if (objectKeys.length === 0) return;
 
+  if (!getOptionalSupabaseStorageConfig()) {
+    throw new Error(
+      'Product image storage deletion requires SUPABASE_SERVICE_ROLE_KEY. Set SUPABASE_URL too if it cannot be inferred from DATABASE_URL.',
+    );
+  }
+
   const maxAttempts = 4;
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -954,6 +960,16 @@ async function deleteProductImageFiles(storagePaths: string[]) {
   throw new Error(
     `Failed to delete product image(s) from storage after ${maxAttempts} attempts.${lastError instanceof Error ? ` ${lastError.message}` : ''}`,
   );
+}
+
+async function deleteProductImageFilesBestEffort(storagePaths: string[]) {
+  if (storagePaths.length === 0) return;
+
+  try {
+    await deleteProductImageFiles(storagePaths);
+  } catch (error) {
+    console.error('Failed to delete removed product image files:', error);
+  }
 }
 
 async function saveProductImages(
@@ -1326,10 +1342,7 @@ export async function updateProduct(formData: FormData) {
         },
       })
     : [];
-
-  if (shouldSaveProductMedia) {
-    await deleteProductImageFiles(removedImages.map((image) => image.storagePath));
-  }
+  const removedImageStoragePaths = removedImages.map((image) => image.storagePath);
 
   const existingImages = await prisma.productImage.findMany({
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -1481,6 +1494,29 @@ export async function updateProduct(formData: FormData) {
             id: { in: [...removedImageIds] },
             productId,
           },
+        });
+      }
+
+      if (removedImageStoragePaths.length > 0) {
+        await tx.productVariantImage.deleteMany({
+          where: {
+            imagePath: { in: removedImageStoragePaths },
+            variant: { productId },
+          },
+        });
+        await tx.productVariant.updateMany({
+          where: {
+            imagePath: { in: removedImageStoragePaths },
+            productId,
+          },
+          data: { imagePath: null },
+        });
+        await tx.productBundleOffer.updateMany({
+          where: {
+            imagePath: { in: removedImageStoragePaths },
+            productId,
+          },
+          data: { imagePath: null },
         });
       }
 
@@ -1833,6 +1869,8 @@ export async function updateProduct(formData: FormData) {
       await syncProductBundleSummary(tx, productId);
     }
   });
+
+  await deleteProductImageFilesBestEffort(removedImageStoragePaths);
 
   revalidatePath('/admin/products');
   revalidatePath(`/admin/products/${productId}/edit`);
