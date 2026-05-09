@@ -38,6 +38,8 @@ Backups are saved to `backups/`.
   - Bandwidth
   - Function execution/invocations
   - Edge/cache usage
+- Confirm the project Function Region is Asia Pacific (Mumbai) - `bom1`.
+- When testing deployment configuration, redeploy the `dev` branch as a Preview environment first.
 - Same threshold policy:
   - warn at ~70%
   - action at ~85%

@@ -19,13 +19,24 @@ npm run prisma:seed:admin
 
 Use a unique `ADMIN_SEED_EMAIL` and rotate `ADMIN_SEED_PASSWORD` after handover.
 
+Admin user identities must use valid email addresses. Do not store phone numbers,
+staff IDs, or temporary nicknames in `AdminUser.email`; the admin login and user
+creation API validate this field as an email address.
+
+## Deployment Notes
+
+- Vercel function region is pinned to Asia Pacific (Mumbai) - `bom1`.
+- The region is configured in `vercel.json` and has also been saved in the Vercel portal.
+- Keep Supabase and Vercel compute in the same region where possible. The current Supabase database URL uses `ap-south-1`, so `bom1` avoids slow cross-region database calls.
+- After changing Vercel project settings, redeploy the `dev` branch as a Preview deployment before promoting or handing over changes.
+
 ## Client SOP
 
 Add staff:
 
 1. Sign in as an active `admin`.
 2. Open `Admin > Settings > Admin Access`.
-3. Enter name, email, and role.
+3. Enter name, valid email address, and role.
 4. Create the account and share the one-time reset link through a private channel.
 
 Change roles:
