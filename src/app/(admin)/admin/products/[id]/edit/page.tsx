@@ -157,6 +157,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
 
   return (
     <ProductForm
+      key={product.updatedAt.toISOString()}
       action={safeUpdateProduct}
       categories={categories}
       brands={brands}

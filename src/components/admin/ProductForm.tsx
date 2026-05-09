@@ -100,6 +100,7 @@ type ActivationRequirementsState = {
   variants: boolean;
 };
 
+type EditorSection = 'product' | 'variants' | 'bundles';
 type VariantVisibility = 'all' | 'active' | 'inactive';
 type SubmitIntent = 'productMedia' | 'variants' | 'bundleOffers' | 'full' | '';
 
@@ -820,11 +821,14 @@ export default function ProductForm({
       }),
     [
       initialVariantRows,
+      initialProduct.brandId,
       initialProduct.bundleOffers,
       initialProduct.categoryIds,
       initialProduct.description,
       initialProduct.images,
       initialProduct.name,
+      initialProduct.seoDescription,
+      initialProduct.seoTitle,
       initialProduct.shortDescription,
       initialProduct.specifications,
       initialProduct.status,
@@ -962,8 +966,14 @@ export default function ProductForm({
       }),
     [initialProduct.bundleOffers],
   );
-  const hasBundleChanges = currentBundleSnapshot !== initialBundleSnapshot;
-  const activeEditorSection = hasProductChanges
+  const [savedBundleSnapshot, setSavedBundleSnapshot] = useState(
+    initialBundleSnapshot,
+  );
+  useEffect(() => {
+    setSavedBundleSnapshot(initialBundleSnapshot);
+  }, [initialBundleSnapshot]);
+  const hasBundleChanges = currentBundleSnapshot !== savedBundleSnapshot;
+  const activeEditorSection: EditorSection | null = hasProductChanges
     ? 'product'
     : hasVariantChanges
       ? 'variants'
@@ -972,8 +982,12 @@ export default function ProductForm({
         : null;
   const isProductEditorEnabled =
     activeEditorSection === null || activeEditorSection === 'product';
-  const isVariantEditorEnabled = isVariantSectionEnabled;
-  const isBundleEditorEnabled = isBundleSectionEnabled;
+  const isVariantEditorEnabled =
+    isVariantSectionEnabled &&
+    (activeEditorSection === null || activeEditorSection === 'variants');
+  const isBundleEditorEnabled =
+    isBundleSectionEnabled &&
+    (activeEditorSection === null || activeEditorSection === 'bundles');
   const isVariantError =
     Boolean(submitError) && /variant/i.test(submitError ?? '');
 
@@ -1314,6 +1328,8 @@ export default function ProductForm({
   }
 
   function toggleVariantOpen(index: number) {
+    if (isSubmittingProduct || !isVariantEditorEnabled) return;
+
     setOpenVariantIndexes((current) => {
       const next = new Set(current);
       if (next.has(index)) {
@@ -1326,6 +1342,8 @@ export default function ProductForm({
   }
 
   function toggleBundleOpen(index: number) {
+    if (isSubmittingProduct || !isBundleEditorEnabled) return;
+
     setOpenBundleIndexes((current) => {
       const next = new Set(current);
       if (next.has(index)) {
@@ -1536,6 +1554,7 @@ export default function ProductForm({
       }
     }
 
+    let keepSaveLocked = false;
     setIsSubmittingProduct(true);
     setActiveSubmitIntent(submitIntent);
     try {
@@ -1566,8 +1585,21 @@ export default function ProductForm({
         setSavedVariantSnapshot(
           buildVariantSnapshot(rowsRef.current, removedVariantIdsRef.current),
         );
+        keepSaveLocked = true;
+        router.refresh();
+      } else if (submitIntent === 'bundleOffers') {
+        setSavedBundleSnapshot(currentBundleSnapshot);
+        keepSaveLocked = true;
+        router.refresh();
       } else if (submitIntent === 'productMedia' || submitIntent === 'full') {
         setSavedProductSnapshot(currentProductSnapshot);
+        if (submitIntent === 'full') {
+          setSavedVariantSnapshot(
+            buildVariantSnapshot(rowsRef.current, removedVariantIdsRef.current),
+          );
+          setSavedBundleSnapshot(currentBundleSnapshot);
+        }
+        keepSaveLocked = true;
         router.refresh();
       }
     } catch (error) {
@@ -1582,8 +1614,19 @@ export default function ProductForm({
           setSavedVariantSnapshot(
             buildVariantSnapshot(rowsRef.current, removedVariantIdsRef.current),
           );
+          keepSaveLocked = true;
+        } else if (submitIntent === 'bundleOffers') {
+          setSavedBundleSnapshot(currentBundleSnapshot);
+          keepSaveLocked = true;
         } else if (submitIntent === 'productMedia' || submitIntent === 'full') {
           setSavedProductSnapshot(currentProductSnapshot);
+          if (submitIntent === 'full') {
+            setSavedVariantSnapshot(
+              buildVariantSnapshot(rowsRef.current, removedVariantIdsRef.current),
+            );
+            setSavedBundleSnapshot(currentBundleSnapshot);
+          }
+          keepSaveLocked = true;
         }
         throw error;
       }
@@ -1593,8 +1636,10 @@ export default function ProductForm({
           : 'Failed to save product. Please try again.';
       setSubmitError(message);
     } finally {
-      setIsSubmittingProduct(false);
-      setActiveSubmitIntent('');
+      if (!keepSaveLocked) {
+        setIsSubmittingProduct(false);
+        setActiveSubmitIntent('');
+      }
     }
   }
 
@@ -1664,7 +1709,10 @@ export default function ProductForm({
               Another section has pending changes. Save or reset it first.
             </p>
           )}
-          <fieldset disabled={!isProductEditorEnabled} className="space-y-0 disabled:opacity-70">
+          <fieldset
+            disabled={isSubmittingProduct || !isProductEditorEnabled}
+            className="space-y-0 disabled:opacity-70"
+          >
           <input type="hidden" name="brandId" value={selectedBrandId} />
           <div className="grid gap-4 md:grid-cols-[minmax(220px,1fr)_140px]">
             <label className={labelClass}>
@@ -2243,6 +2291,7 @@ export default function ProductForm({
             </p>
             <select
               value={variantVisibility}
+              disabled={isSubmittingProduct}
               onChange={(event) =>
                 setVariantVisibility(event.target.value as VariantVisibility)
               }
@@ -2273,7 +2322,7 @@ export default function ProductForm({
             </p>
           )}
           <fieldset
-            disabled={!isVariantEditorEnabled}
+            disabled={isSubmittingProduct || !isVariantEditorEnabled}
             className="space-y-4 disabled:opacity-70"
           >
             {visibleVariantIndexes.map((index) => {
@@ -2640,7 +2689,10 @@ export default function ProductForm({
                 Another section has pending changes. Save or reset it first.
               </p>
             )}
-            <fieldset disabled={!isBundleEditorEnabled} className="space-y-3 disabled:opacity-70">
+            <fieldset
+              disabled={isSubmittingProduct || !isBundleEditorEnabled}
+              className="space-y-3 disabled:opacity-70"
+            >
               {bundleOffers.map((offer, index) => {
                 const isOpen = openBundleIndexes.has(index);
                 const titlePercent = extractPercentFromBundleTitle(offer.title);
@@ -2849,7 +2901,9 @@ export default function ProductForm({
                       : 'cursor-not-allowed bg-slate-300'
                   }`}
                 >
-                  Save Bundles
+                  {isSubmittingProduct && activeSubmitIntent === 'bundleOffers'
+                    ? 'Saving...'
+                    : 'Save Bundles'}
                 </button>
                 <button
                   type="button"
@@ -2866,6 +2920,11 @@ export default function ProductForm({
                   Cancel
                 </button>
               </div>
+              {isSubmittingProduct && activeSubmitIntent === 'bundleOffers' ? (
+                <p className="text-xs font-medium text-amber-900">
+                  Bundle save in progress... please wait.
+                </p>
+              ) : null}
             </div>
           )}
         </div>

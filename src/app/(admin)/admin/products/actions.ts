@@ -1043,63 +1043,18 @@ function getVariantImagePaths(
   return paths;
 }
 
-function getOrderedImageKeysForAssignment(
-  preferredOrder: string[],
-  storagePathByOrderKey: Map<string, string>,
-) {
-  const preferredKnownKeys = preferredOrder.filter((key) =>
-    storagePathByOrderKey.has(key),
-  );
-
-  if (preferredKnownKeys.length > 0) return preferredKnownKeys;
-  return [...storagePathByOrderKey.keys()];
-}
-
 function buildVariantImagePathsByIndex<
   TVariant extends { imageSelection: string },
 >(
   variants: TVariant[],
   storagePathByOrderKey: Map<string, string>,
-  orderedImageKeys: string[],
 ) {
-  const selectedKeys = new Set<string>();
-  const variantImagePathsByIndex = variants.map((variant) => {
-    const selectedPaths = getVariantImagePaths(
+  return variants.map((variant) =>
+    getVariantImagePaths(
       variant.imageSelection,
       storagePathByOrderKey,
-    );
-
-    variant.imageSelection
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .forEach((key) => {
-        if (storagePathByOrderKey.has(key)) {
-          selectedKeys.add(key);
-        }
-      });
-
-    return [...selectedPaths];
-  });
-
-  if (variants.length > 0) {
-    const firstVariantPaths = variantImagePathsByIndex[0] ?? [];
-    const existingFirstVariantPathSet = new Set(firstVariantPaths);
-
-    for (const key of orderedImageKeys) {
-      if (selectedKeys.has(key)) continue;
-      const unassignedPath = storagePathByOrderKey.get(key);
-      if (!unassignedPath || existingFirstVariantPathSet.has(unassignedPath)) {
-        continue;
-      }
-      firstVariantPaths.push(unassignedPath);
-      existingFirstVariantPathSet.add(unassignedPath);
-    }
-
-    variantImagePathsByIndex[0] = firstVariantPaths;
-  }
-
-  return variantImagePathsByIndex;
+    ),
+  );
 }
 
 async function ensureUniqueSkus<
@@ -1157,10 +1112,6 @@ export async function createProduct(formData: FormData) {
   images.forEach((image) => {
     storagePathByOrderKey.set(`new:${image.clientId}`, image.storagePath);
   });
-  const orderedImageKeys = getOrderedImageKeysForAssignment(
-    getImageOrder(formData),
-    storagePathByOrderKey,
-  );
   ensureProductReadyForActiveStatus(payload.status, {
     categoryCount: payload.categoryIds.length,
     imageCount: images.length,
@@ -1169,7 +1120,6 @@ export async function createProduct(formData: FormData) {
   const variantImagePathsByIndex = buildVariantImagePathsByIndex(
     variants,
     storagePathByOrderKey,
-    orderedImageKeys,
   );
 
   try {
@@ -1445,10 +1395,6 @@ export async function updateProduct(formData: FormData) {
   newImages.forEach((image) => {
     storagePathByOrderKey.set(`new:${image.clientId}`, image.storagePath);
   });
-  const orderedImageKeys = getOrderedImageKeysForAssignment(
-    normalizedImageOrder,
-    storagePathByOrderKey,
-  );
   const projectedImageCount = shouldSaveProductMedia
     ? existingImages.length + newImages.length
     : await prisma.productImage.count({
@@ -1465,7 +1411,7 @@ export async function updateProduct(formData: FormData) {
     variantCount: persistedVariantCount,
   });
   const variantImagePathsByIndex = shouldSaveVariants
-    ? buildVariantImagePathsByIndex(variants, storagePathByOrderKey, orderedImageKeys)
+    ? buildVariantImagePathsByIndex(variants, storagePathByOrderKey)
     : [];
 
   await prisma.$transaction(async (tx) => {
