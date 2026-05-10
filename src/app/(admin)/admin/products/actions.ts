@@ -171,6 +171,27 @@ function normalizeDynamicAttribute(value: string) {
   return value.trim().normalize('NFKC').replace(/\s+/g, ' ');
 }
 
+function normalizeColorHex(value: string) {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return null;
+
+  const hexValue = trimmedValue.startsWith('#')
+    ? trimmedValue.slice(1)
+    : trimmedValue;
+
+  if (/^[0-9a-f]{6}$/i.test(hexValue)) {
+    return `#${hexValue.toLowerCase()}`;
+  }
+
+  if (/^[0-9a-f]{3}$/i.test(hexValue)) {
+    return `#${Array.from(hexValue.toLowerCase())
+      .map((char) => `${char}${char}`)
+      .join('')}`;
+  }
+
+  throw new Error('Color hex must be a valid 3 or 6 digit hex code.');
+}
+
 function normalizeSkuPart(value: string | null) {
   return (value ?? '')
     .trim()
@@ -209,6 +230,7 @@ function generateSku(name: string, color: string | null, size: string | null) {
 function getVariantRows(formData: FormData) {
   const ids = getIndexedStringList(formData, 'variantId');
   const colors = formData.getAll('variantColor');
+  const colorHexes = formData.getAll('variantColorHex');
   const imageSelections = formData.getAll('variantImageSelection');
   const sizes = formData.getAll('variantSize');
   const prices = formData.getAll('variantPrice');
@@ -219,6 +241,7 @@ function getVariantRows(formData: FormData) {
   const activeStates = formData.getAll('variantIsActive');
   const rowCount = Math.max(
     colors.length,
+    colorHexes.length,
     sizes.length,
     prices.length,
     compareAtPrices.length,
@@ -233,6 +256,10 @@ function getVariantRows(formData: FormData) {
     const colorRaw =
       typeof colors[index] === 'string'
         ? normalizeDynamicAttribute(colors[index])
+        : '';
+    const colorHexRaw =
+      typeof colorHexes[index] === 'string'
+        ? colorHexes[index].trim()
         : '';
     const imageSelectionRaw =
       typeof imageSelections[index] === 'string'
@@ -252,6 +279,7 @@ function getVariantRows(formData: FormData) {
     const isBlankNewVariant =
       !id &&
       !colorRaw &&
+      !colorHexRaw &&
       !sizeRaw &&
       !imageSelectionRaw &&
       !priceRaw &&
@@ -263,6 +291,7 @@ function getVariantRows(formData: FormData) {
     return {
       id,
       color: colorRaw || null,
+      colorHex: normalizeColorHex(colorHexRaw),
       imageSelection: imageSelectionRaw,
       size: sizeRaw || null,
       price: parseRequiredDecimal(priceRaw, 'Price'),
@@ -275,6 +304,7 @@ function getVariantRows(formData: FormData) {
   }).filter((row): row is {
     id: string;
     color: string | null;
+    colorHex: string | null;
     imageSelection: string;
     size: string | null;
     price: string;
@@ -1193,6 +1223,7 @@ export async function createProduct(formData: FormData) {
             sku: variant.sku,
             sortOrder: index,
             color: variant.color,
+            colorHex: variant.colorHex,
             size: variant.size,
             imagePath: variantImagePaths[0] ?? null,
             price: variant.price,
@@ -1635,6 +1666,7 @@ export async function updateProduct(formData: FormData) {
           sku: variant.sku,
           sortOrder: index,
           color: variant.color,
+          colorHex: variant.colorHex,
           size: variant.size,
           imagePath: (variantImagePathsByIndex[index] ?? [])[0] ?? null,
           price: variant.price,

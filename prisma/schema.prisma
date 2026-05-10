@@ -291,9 +291,10 @@ model ProductVariant {
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  sku   String  @unique
-  color String?
-  size  String?
+  sku      String  @unique
+  color    String?
+  colorHex String?
+  size     String?
 
   price          Decimal  @db.Decimal(12, 2)
   compareAtPrice Decimal? @db.Decimal(12, 2)

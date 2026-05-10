@@ -66,6 +66,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
             id: true,
             sku: true,
             color: true,
+            colorHex: true,
             size: true,
             imagePath: true,
             variantImages: {
@@ -221,6 +222,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
             id: variant.id,
             sku: variant.sku,
             color: variant.color ?? '',
+            colorHex: variant.colorHex ?? '',
             imageSelection: imageSelectionKeys.join(','),
             size: variant.size ?? '',
             price: decimalToString(variant.price),

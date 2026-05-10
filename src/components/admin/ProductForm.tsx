@@ -21,6 +21,7 @@ type VariantFormRow = {
   id: string;
   sku: string;
   color: string;
+  colorHex: string;
   imageSelection: string;
   size: string;
   price: string;
@@ -143,6 +144,7 @@ const emptyVariant = (): VariantFormRow => ({
   id: '',
   sku: '',
   color: '',
+  colorHex: '',
   imageSelection: '',
   size: '',
   price: '',
@@ -257,6 +259,29 @@ function getFileExtension(nameOrPath: string) {
   return extension || '.jpg';
 }
 
+function normalizeColorHex(value: string) {
+  const trimmedValue = value.trim();
+  const hexValue = trimmedValue.startsWith('#')
+    ? trimmedValue.slice(1)
+    : trimmedValue;
+
+  if (/^[0-9a-f]{6}$/i.test(hexValue)) {
+    return `#${hexValue.toLowerCase()}`;
+  }
+
+  if (/^[0-9a-f]{3}$/i.test(hexValue)) {
+    return `#${Array.from(hexValue.toLowerCase())
+      .map((char) => `${char}${char}`)
+      .join('')}`;
+  }
+
+  return '';
+}
+
+function getColorPickerValue(value: string) {
+  return normalizeColorHex(value) || '#000000';
+}
+
 function getImageOrderKey(item: ProductImageItem) {
   return item.type === 'existing'
     ? `existing:${item.id}`
@@ -271,6 +296,7 @@ function buildVariantSnapshot(
     removedVariantIds: [...removedVariantIds].sort(),
     rows: rows.map((row) => ({
       color: row.color,
+      colorHex: row.colorHex,
       compareAtPrice: row.compareAtPrice,
       costPrice: row.costPrice,
       id: row.id,
@@ -729,6 +755,7 @@ export default function ProductForm({
         })),
         rows: rows.map((row) => ({
           color: row.color,
+          colorHex: row.colorHex,
           compareAtPrice: row.compareAtPrice,
           costPrice: row.costPrice,
           id: row.id,
@@ -797,6 +824,7 @@ export default function ProductForm({
         })),
         rows: initialVariantRows.map((row) => ({
           color: row.color,
+          colorHex: row.colorHex,
           compareAtPrice: row.compareAtPrice,
           costPrice: row.costPrice,
           id: row.id,
@@ -2353,12 +2381,15 @@ export default function ProductForm({
                   >
                     <div className="flex flex-wrap items-center gap-4">
                       <div className="inline-flex items-center gap-2">
+                        {/* Reorder variants from the collapsible header without toggling it. */}
                         <button
                           type="button"
                           aria-label={`Move variant ${index + 1} up`}
-                          onClick={() => moveRow(index, 'up')}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            moveRow(index, 'up');
+                          }}
                           onMouseDown={(event) => event.stopPropagation()}
-                          onClickCapture={(event) => event.stopPropagation()}
                           disabled={index === 0}
                           className={`flex h-7 w-7 items-center justify-center rounded-md border text-slate-700 transition ${
                             index === 0
@@ -2382,9 +2413,11 @@ export default function ProductForm({
                         <button
                           type="button"
                           aria-label={`Move variant ${index + 1} down`}
-                          onClick={() => moveRow(index, 'down')}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            moveRow(index, 'down');
+                          }}
                           onMouseDown={(event) => event.stopPropagation()}
-                          onClickCapture={(event) => event.stopPropagation()}
                           disabled={index === rows.length - 1}
                           className={`flex h-7 w-7 items-center justify-center rounded-md border text-slate-700 transition ${
                             index === rows.length - 1
@@ -2495,7 +2528,7 @@ export default function ProductForm({
                     </div>
                   </div>
                   <div className={isOpen ? '' : 'hidden'}>
-                  <div className="grid gap-3 md:grid-cols-[minmax(150px,0.95fr)_minmax(150px,1fr)_minmax(120px,0.8fr)_minmax(110px,0.75fr)_minmax(120px,0.85fr)]">
+                  <div className="grid gap-3 md:grid-cols-[minmax(120px,0.8fr)_minmax(130px,0.9fr)_minmax(150px,0.95fr)_minmax(95px,0.65fr)_76px_76px] [&>label]:min-w-0">
                     <label className={compactLabelClass}>
                       <span>Image</span>
                       <VariantImagePicker
@@ -2508,7 +2541,7 @@ export default function ProductForm({
                       />
                     </label>
                     <label className={compactLabelClass}>
-                      <span>Color</span>
+                      <span>Color Name</span>
                       <input
                         name="variantColor"
                         value={row.color}
@@ -2517,6 +2550,28 @@ export default function ProductForm({
                         }
                         className={fieldClass}
                       />
+                    </label>
+                    <label className={compactLabelClass}>
+                      <span>Color Hex</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          name="variantColorHex"
+                          value={row.colorHex}
+                          onChange={(event) =>
+                            updateRow(index, { colorHex: event.target.value })
+                          }
+                          className={`${fieldClass} min-w-0 flex-1`}
+                        />
+                        <input
+                          type="color"
+                          aria-label={`Pick color hex for variant ${index + 1}`}
+                          value={getColorPickerValue(row.colorHex)}
+                          onChange={(event) =>
+                            updateRow(index, { colorHex: event.target.value })
+                          }
+                          className="h-11 w-12 shrink-0 cursor-pointer rounded-xl border border-slate-300 bg-white p-1"
+                        />
+                      </div>
                     </label>
                     <label className={compactLabelClass}>
                       <span>Size</span>
@@ -2544,7 +2599,7 @@ export default function ProductForm({
                       />
                     </label>
                     <label className={compactLabelClass}>
-                      <span>Reorder Level</span>
+                      <span>Reorder</span>
                       <input
                         name="variantReorderLevel"
                         inputMode="numeric"
