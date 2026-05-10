@@ -40,8 +40,8 @@ export default function ProductDetail() {
       setIsLoading(true);
       try {
         const [productResponse, catalogResponse] = await Promise.all([
-          fetch(`/api/storefront/products/${productId}`),
-          fetch('/api/storefront/catalog'),
+          fetch(`/api/storefront/products/${productId}`, { cache: 'no-store' }),
+          fetch('/api/storefront/catalog', { cache: 'no-store' }),
         ]);
 
         if (!isMounted) return;

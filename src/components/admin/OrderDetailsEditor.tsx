@@ -266,7 +266,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
       const offers = offersByProductId.get(line.productId) ?? [];
       for (const offer of offers) {
         const variantMatch =
-          offer.variantIds.length === 0 || offer.variantIds.includes(line.variantId);
+          offer.variantIds.includes(line.variantId);
         if (!variantMatch) continue;
         eligibleQtyByOfferId.set(
           offer.id,
@@ -294,7 +294,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
     for (const item of draft.items) {
       const offers = (offersByProductId.get(item.productId) ?? []).map((offer) => {
         const variantMatch =
-          offer.variantIds.length === 0 || offer.variantIds.includes(item.variantId);
+          offer.variantIds.includes(item.variantId);
         const eligibleQty = eligibleQtyByOfferId.get(offer.id) ?? 0;
         return {
           id: offer.id,

@@ -50,7 +50,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
   await requireAdminPermission(`/admin/products/${id}/edit`, 'products.write');
   await requireAdminRole(`/admin/products/${id}/edit`, ['admin']);
 
-  const [product, categories, brands] = await Promise.all([
+  const [product, categories, brands, productNavigationRows] = await Promise.all([
     prisma.product.findUnique({
       include: {
         categories: {
@@ -150,11 +150,39 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
         isActive: true,
       },
     }),
+    prisma.product.findMany({
+      orderBy: [
+        {
+          updatedAt: 'desc',
+        },
+        {
+          id: 'asc',
+        },
+      ],
+      select: {
+        id: true,
+      },
+      take: 500,
+    }),
   ]);
 
   if (!product) {
     notFound();
   }
+
+  const currentProductIndex = productNavigationRows.findIndex(
+    (row) => row.id === product.id,
+  );
+  const productNavigation =
+    currentProductIndex >= 0
+      ? {
+          previousId: productNavigationRows[currentProductIndex - 1]?.id ?? null,
+          nextId: productNavigationRows[currentProductIndex + 1]?.id ?? null,
+        }
+      : {
+          previousId: null,
+          nextId: null,
+        };
 
   return (
     <ProductForm
@@ -162,6 +190,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
       action={safeUpdateProduct}
       categories={categories}
       brands={brands}
+      productNavigation={productNavigation}
       product={{
         id: product.id,
         name: product.name,

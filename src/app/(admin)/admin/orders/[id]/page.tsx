@@ -155,7 +155,7 @@ export default async function AdminOrderDetailsPage({
     const offers = offersByProductId.get(line.productId) ?? [];
     for (const offer of offers) {
       const isEligibleVariant =
-        offer.variantIds.length === 0 || offer.variantIds.includes(line.variantId);
+        offer.variantIds.includes(line.variantId);
       if (!isEligibleVariant) continue;
       eligibleQtyByOfferId.set(
         offer.id,

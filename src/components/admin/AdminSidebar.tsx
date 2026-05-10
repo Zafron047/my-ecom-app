@@ -71,6 +71,11 @@ const adminNavGroups: AdminNavGroup[] = [
         allowedRoles: ['manager', 'admin'],
       },
       {
+        href: '/admin/products/brands',
+        label: 'Brands',
+        allowedRoles: ['manager', 'admin'],
+      },
+      {
         href: '/admin/products/stock',
         label: 'Stock',
         allowedRoles: ['manager', 'admin'],

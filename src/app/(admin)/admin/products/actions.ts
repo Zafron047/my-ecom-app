@@ -410,6 +410,11 @@ function getBundleOfferRows(formData: FormData) {
       !minTotalQtyRaw &&
       !discountPercentRaw;
     if (isBlank) return null;
+    if (isActive && !variantSelection) {
+      throw new Error(
+        'Active bundle offers must include at least one eligible variant.',
+      );
+    }
 
     return {
       id,
@@ -1258,12 +1263,9 @@ export async function createProduct(formData: FormData) {
           .filter(Boolean)
           .map((key) => variantIdBySelectionKey.get(key) || '')
           .filter(Boolean);
-        const allVariantIds = [...variantIdBySelectionKey.values()];
-        const variantIds =
-          requestedVariantIds.length > 0 ? requestedVariantIds : allVariantIds;
-        if (variantIds.length === 0) {
+        if (offer.isActive && requestedVariantIds.length === 0) {
           throw new Error(
-            'Bundle offer variants must reference saved variants. Save variants first.',
+            'Active bundle offers must include at least one explicitly selected saved variant.',
           );
         }
         const imagePath = offer.imageSelection
@@ -1281,13 +1283,15 @@ export async function createProduct(formData: FormData) {
           },
           select: { id: true },
         });
-        await tx.productBundleOfferVariant.createMany({
-          data: variantIds.map((variantId) => ({
-            bundleOfferId: createdOffer.id,
-            variantId,
-          })),
-          skipDuplicates: true,
-        });
+        if (requestedVariantIds.length > 0) {
+          await tx.productBundleOfferVariant.createMany({
+            data: requestedVariantIds.map((variantId) => ({
+              bundleOfferId: createdOffer.id,
+              variantId,
+            })),
+            skipDuplicates: true,
+          });
+        }
       }
 
       await syncProductBundleSummary(tx, productId);
@@ -1755,11 +1759,10 @@ export async function updateProduct(formData: FormData) {
             .filter(Boolean)
             .map((key) => variantIdBySelectionKey.get(key) || '')
             .filter(Boolean);
-          const allVariantIds = [...variantIdBySelectionKey.values()];
-          const variantIds =
-            requestedVariantIds.length > 0 ? requestedVariantIds : allVariantIds;
-          if (variantIds.length === 0) {
-            throw new Error('Each bundle offer needs at least one valid variant.');
+          if (offer.isActive && requestedVariantIds.length === 0) {
+            throw new Error(
+              'Active bundle offers must include at least one valid variant.',
+            );
           }
 
           const imagePath = offer.imageSelection
@@ -1795,13 +1798,15 @@ export async function updateProduct(formData: FormData) {
           await tx.productBundleOfferVariant.deleteMany({
             where: { bundleOfferId },
           });
-          await tx.productBundleOfferVariant.createMany({
-            data: variantIds.map((variantId) => ({
-              bundleOfferId,
-              variantId,
-            })),
-            skipDuplicates: true,
-          });
+          if (requestedVariantIds.length > 0) {
+            await tx.productBundleOfferVariant.createMany({
+              data: requestedVariantIds.map((variantId) => ({
+                bundleOfferId,
+                variantId,
+              })),
+              skipDuplicates: true,
+            });
+          }
         }
       }
     }
@@ -1837,11 +1842,10 @@ export async function updateProduct(formData: FormData) {
           .filter(Boolean)
           .map((key) => variantIdBySelectionKey.get(key) || '')
           .filter(Boolean);
-        const allVariantIds = [...variantIdBySelectionKey.values()];
-        const variantIds =
-          requestedVariantIds.length > 0 ? requestedVariantIds : allVariantIds;
-        if (variantIds.length === 0) {
-          throw new Error('Each bundle offer needs at least one valid variant.');
+        if (offer.isActive && requestedVariantIds.length === 0) {
+          throw new Error(
+            'Active bundle offers must include at least one valid variant.',
+          );
         }
 
         const imagePath = offer.imageSelection
@@ -1877,13 +1881,15 @@ export async function updateProduct(formData: FormData) {
         await tx.productBundleOfferVariant.deleteMany({
           where: { bundleOfferId },
         });
-        await tx.productBundleOfferVariant.createMany({
-          data: variantIds.map((variantId) => ({
-            bundleOfferId,
-            variantId,
-          })),
-          skipDuplicates: true,
-        });
+        if (requestedVariantIds.length > 0) {
+          await tx.productBundleOfferVariant.createMany({
+            data: requestedVariantIds.map((variantId) => ({
+              bundleOfferId,
+              variantId,
+            })),
+            skipDuplicates: true,
+          });
+        }
       }
     }
 

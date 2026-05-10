@@ -28,8 +28,7 @@ function isLineEligibleForOffer(
   line: Pick<CartLineInput, 'variantId'>,
   offer: Pick<BundleOfferLite, 'variantIds'>,
 ) {
-  // Admin rule: no eligible variants configured means offer applies to all variants.
-  if (offer.variantIds.length === 0) return true;
+  if (offer.variantIds.length === 0) return false;
   if (!line.variantId) return false;
   return offer.variantIds.includes(line.variantId);
 }

@@ -91,6 +91,10 @@ type ProductFormProps = {
     | ((formData: FormData) => Promise<{ error?: string } | void>);
   categories: CategoryOption[];
   brands: BrandOption[];
+  productNavigation?: {
+    nextId: string | null;
+    previousId: string | null;
+  };
   product?: ProductFormValue;
   submitLabel: string;
 };
@@ -102,7 +106,6 @@ type ActivationRequirementsState = {
 };
 
 type EditorSection = 'product' | 'variants' | 'bundles';
-type VariantVisibility = 'all' | 'active' | 'inactive';
 type SubmitIntent = 'productMedia' | 'variants' | 'bundleOffers' | 'full' | '';
 
 const statuses: ProductStatus[] = ['draft', 'active', 'archived'];
@@ -129,6 +132,8 @@ type DropdownOption = {
 };
 
 type MediaOption = {
+  assignedVariantSku?: string;
+  disabled?: boolean;
   label: string;
   previewUrl: string;
   value: string;
@@ -372,6 +377,7 @@ function SelectArrow() {
 }
 
 function FormDropdown({
+  disabled = false,
   id,
   label,
   name,
@@ -379,6 +385,7 @@ function FormDropdown({
   options,
   value,
 }: {
+  disabled?: boolean;
   id: string;
   label?: string;
   name: string;
@@ -397,13 +404,14 @@ function FormDropdown({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
+        disabled={disabled}
         onClick={() => setIsOpen((current) => !current)}
         onBlur={() => setTimeout(() => setIsOpen(false), 120)}
         className={`h-11 w-full rounded-xl border bg-white px-3.5 py-2.5 pr-11 text-left text-sm outline-none transition ${
           isOpen
             ? 'border-slate-500 text-slate-900 shadow-md ring-2 ring-slate-200'
             : 'border-slate-300 text-slate-800'
-        }`}
+        } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
       >
         {selectedOption?.label ?? label ?? 'Select'}
       </button>
@@ -458,6 +466,7 @@ function VariantImagePicker({
   value: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [hoveredOption, setHoveredOption] = useState<MediaOption | null>(null);
   const selectedValues = new Set(
     value
       .split(',')
@@ -534,7 +543,7 @@ function VariantImagePicker({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
             transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute left-0 top-[calc(100%+8px)] z-20 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl shadow-slate-200/70"
+            className="absolute left-0 top-[calc(100%+8px)] z-20 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl shadow-slate-200/70"
             role="listbox"
           >
             <div className="grid grid-cols-4 gap-2">
@@ -561,8 +570,12 @@ function VariantImagePicker({
                   type="button"
                   role="option"
                   aria-selected={selectedValues.has(option.value)}
+                  aria-disabled={option.disabled}
                   onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setHoveredOption(option)}
+                  onMouseLeave={() => setHoveredOption(null)}
                   onClick={() => {
+                    if (option.disabled) return;
                     const nextValues = new Set(selectedValues);
                     if (nextValues.has(option.value)) {
                       nextValues.delete(option.value);
@@ -572,11 +585,17 @@ function VariantImagePicker({
                     onChange([...nextValues].join(','));
                   }}
                   className={`relative aspect-square overflow-hidden rounded-xl border transition ${
-                    selectedValues.has(option.value)
+                    option.disabled
+                      ? 'cursor-not-allowed border-slate-200 bg-slate-100 opacity-60 grayscale'
+                      : selectedValues.has(option.value)
                       ? 'border-slate-900 bg-slate-100'
                       : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100'
                   }`}
-                  title={option.label}
+                  title={
+                    option.assignedVariantSku
+                      ? `${option.label} tied to ${option.assignedVariantSku}`
+                      : option.label
+                  }
                 >
                   <Image
                     src={option.previewUrl}
@@ -586,9 +605,33 @@ function VariantImagePicker({
                     sizes="56px"
                     className="object-contain p-1"
                   />
+                  {option.assignedVariantSku ? (
+                    <span className="absolute inset-x-1 bottom-1 truncate rounded bg-white/90 px-1 py-0.5 text-[9px] font-semibold text-slate-700">
+                      {option.assignedVariantSku}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
+            {hoveredOption ? (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <div className="relative h-36 w-full overflow-hidden rounded-md bg-white">
+                  <Image
+                    src={hoveredOption.previewUrl}
+                    alt={hoveredOption.label}
+                    fill
+                    unoptimized
+                    sizes="256px"
+                    className="object-contain p-2"
+                  />
+                </div>
+                <p className="mt-2 truncate text-[11px] font-semibold text-slate-700">
+                  {hoveredOption.assignedVariantSku
+                    ? hoveredOption.assignedVariantSku
+                    : hoveredOption.label}
+                </p>
+              </div>
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>
@@ -600,6 +643,7 @@ export default function ProductForm({
   action,
   categories,
   brands,
+  productNavigation,
   product,
   submitLabel,
 }: ProductFormProps) {
@@ -631,12 +675,13 @@ export default function ProductForm({
   const [removedSpecificationIds, setRemovedSpecificationIds] = useState<string[]>([]);
   const [draggedSpecificationIndex, setDraggedSpecificationIndex] = useState<number | null>(null);
   const [rows, setRows] = useState(initialVariantRows);
+  const [highlightedVariantIndex, setHighlightedVariantIndex] = useState<
+    number | null
+  >(null);
   const [openVariantIndexes, setOpenVariantIndexes] = useState<Set<number>>(
     () => new Set([0]),
   );
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
-  const [variantVisibility, setVariantVisibility] =
-    useState<VariantVisibility>('active');
   const [bundleOffers, setBundleOffers] = useState<BundleOfferFormRow[]>(
     initialProduct.bundleOffers.length > 0
       ? initialProduct.bundleOffers
@@ -645,6 +690,9 @@ export default function ProductForm({
   const [openBundleIndexes, setOpenBundleIndexes] = useState<Set<number>>(
     () => new Set([0]),
   );
+  const [highlightedBundleIndex, setHighlightedBundleIndex] = useState<
+    number | null
+  >(null);
   const [removedBundleOfferIds, setRemovedBundleOfferIds] = useState<string[]>([]);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>(
     initialProduct.categoryIds,
@@ -692,17 +740,33 @@ export default function ProductForm({
   const variantMediaOptions = isEditing
     ? mediaOptions.filter((option) => option.value.startsWith('existing:'))
     : mediaOptions;
+  function getVariantMediaOptions(rowIndex: number) {
+    const assignedByImageKey = new Map<string, string>();
+    rows.forEach((row, index) => {
+      if (index === rowIndex) return;
+      const sku = generateSku(productName, row.color, row.size);
+      row.imageSelection
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .forEach((imageKey) => {
+          assignedByImageKey.set(imageKey, sku || `Variant ${index + 1}`);
+        });
+    });
+
+    return variantMediaOptions.map((option) => {
+      const assignedVariantSku = assignedByImageKey.get(option.value);
+      return {
+        ...option,
+        assignedVariantSku,
+        disabled: Boolean(assignedVariantSku),
+      };
+    });
+  }
   const hasPersistedVariants = rows.some((row) => Boolean(row.id));
   const isVariantSectionEnabled = isEditing;
   const isBundleSectionEnabled = isEditing && hasPersistedVariants;
-  const visibleVariantIndexes = rows
-    .map((row, index) => ({ row, index }))
-    .filter(({ row }) => {
-      if (variantVisibility === 'active') return row.isActive;
-      if (variantVisibility === 'inactive') return !row.isActive;
-      return true;
-    })
-    .map(({ index }) => index);
+  const visibleVariantIndexes = rows.map((_, index) => index);
   const bundleVariantOptions = rows
     .filter((row) => Boolean(row.id) && row.isActive)
     .map((row, index) => {
@@ -1025,6 +1089,7 @@ export default function ProductForm({
   useEffect(() => {
     rowsRef.current = rows;
   }, [rows]);
+
   useEffect(() => {
     removedVariantIdsRef.current = removedVariantIds;
   }, [removedVariantIds]);
@@ -1075,6 +1140,19 @@ export default function ProductForm({
         rowIndex === index ? { ...row, ...patch } : row,
       ),
     );
+  }
+
+  function glowVariant(index: number) {
+    setHighlightedVariantIndex(index);
+  }
+
+  function glowBundle(index: number) {
+    setHighlightedBundleIndex(index);
+  }
+
+  function clearRowHighlights() {
+    setHighlightedVariantIndex(null);
+    setHighlightedBundleIndex(null);
   }
 
   function updateSpecification(
@@ -1283,6 +1361,7 @@ export default function ProductForm({
       next.add(insertIndex);
       return next;
     });
+    glowBundle(insertIndex);
   }
 
   function moveDraggedSpecification(targetIndex: number, sourceIndex?: number) {
@@ -1331,16 +1410,18 @@ export default function ProductForm({
       next.add(insertIndex);
       return next;
     });
+    glowVariant(insertIndex);
   }
 
   function moveRow(index: number, direction: 'up' | 'down') {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= rowsRef.current.length) return;
+
     setRows((current) => {
-      const targetIndex = direction === 'up' ? index - 1 : index + 1;
       if (targetIndex < 0 || targetIndex >= current.length) return current;
       return moveItem(current, index, targetIndex);
     });
     setOpenVariantIndexes((current) => {
-      const targetIndex = direction === 'up' ? index - 1 : index + 1;
       const next = new Set<number>();
       current.forEach((openIndex) => {
         if (openIndex === index) {
@@ -1353,6 +1434,7 @@ export default function ProductForm({
       });
       return next;
     });
+    glowVariant(targetIndex);
   }
 
   function toggleVariantOpen(index: number) {
@@ -1686,7 +1768,11 @@ export default function ProductForm({
   }
 
   return (
-    <form onSubmit={handleFormSubmit} className="space-y-6 pb-2">
+    <form
+      onSubmit={handleFormSubmit}
+      onPointerDownCapture={clearRowHighlights}
+      className="space-y-6 pb-2"
+    >
       {initialProduct.id && (
         <input type="hidden" name="productId" value={initialProduct.id} />
       )}
@@ -1728,8 +1814,82 @@ export default function ProductForm({
       />
       <input type="hidden" name="status" value={selectedStatus} />
       <section className="space-y-4 border-b border-slate-200 pb-6">
-        <div>
+        <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-slate-900">Product</h3>
+          {productNavigation ? (
+            <div className="flex items-center gap-2">
+              {productNavigation.previousId ? (
+                <Link
+                  href={`/admin/products/${productNavigation.previousId}/edit`}
+                  aria-label="Previous product"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m12 5-5 5 5 5" />
+                  </svg>
+                </Link>
+              ) : (
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-400">
+                  <svg
+                    className="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m12 5-5 5 5 5" />
+                  </svg>
+                </span>
+              )}
+              {productNavigation.nextId ? (
+                <Link
+                  href={`/admin/products/${productNavigation.nextId}/edit`}
+                  aria-label="Next product"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m8 5 5 5-5 5" />
+                  </svg>
+                </Link>
+              ) : (
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-400">
+                  <svg
+                    className="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m8 5 5 5-5 5" />
+                  </svg>
+                </span>
+              )}
+            </div>
+          ) : null}
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           {!isProductEditorEnabled && (
@@ -1759,7 +1919,7 @@ export default function ProductForm({
               <input
                 name="name"
                 required
-                placeholder="brand? 1 + name 2- 3 + size? 1"
+                placeholder="Enter Product title 3-6 words max"
                 value={productName}
                 onChange={(event) =>
                   setProductName(limitProductNameWords(event.target.value))
@@ -2313,27 +2473,6 @@ export default function ProductForm({
               : 'border border-slate-200'
           }`}
         >
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Variant Visibility
-            </p>
-            <select
-              value={variantVisibility}
-              disabled={isSubmittingProduct}
-              onChange={(event) =>
-                setVariantVisibility(event.target.value as VariantVisibility)
-              }
-              className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-500"
-            >
-              <option value="all">All ({rows.length})</option>
-              <option value="active">
-                Active ({rows.filter((row) => row.isActive).length})
-              </option>
-              <option value="inactive">
-                Inactive ({rows.filter((row) => !row.isActive).length})
-              </option>
-            </select>
-          </div>
           {activationRequirements.variants ? (
             <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
               At least one variant with price is required to set status to active.
@@ -2362,7 +2501,11 @@ export default function ProductForm({
               return (
                 <div
                   key={`${row.id || 'new'}-${index}`}
-                  className="rounded-xl border border-slate-200 bg-slate-50/70 p-4"
+                  className={`rounded-xl border p-4 transition-all duration-700 ${
+                    highlightedVariantIndex === index
+                      ? 'border-blue-400 bg-blue-50 shadow-[0_0_0_4px_rgba(59,130,246,0.18)]'
+                      : 'border-slate-200 bg-slate-50/70'
+                  }`}
                 >
                   <input type="hidden" name="variantId" value={row.id} />
                   <div
@@ -2379,7 +2522,7 @@ export default function ProductForm({
                     aria-label={isOpen ? `Collapse variant ${index + 1}` : `Expand variant ${index + 1}`}
                     aria-expanded={isOpen}
                   >
-                    <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-4">
                       <div className="inline-flex items-center gap-2">
                         {/* Reorder variants from the collapsible header without toggling it. */}
                         <button
@@ -2455,7 +2598,7 @@ export default function ProductForm({
                           </svg>
                         </span>
                       </div>
-                      <label className="mb-0 inline-flex items-center gap-2">
+                      <label className="mb-0 flex min-w-[260px] flex-1 items-center gap-2">
                         <span className="inline-flex shrink-0 items-center text-xs font-semibold leading-none text-slate-600">
                           SKU
                         </span>
@@ -2463,26 +2606,48 @@ export default function ProductForm({
                           name="variantSku"
                           readOnly
                           value={generatedSku}
-                          className={`${readOnlyFieldClass} w-[220px]`}
+                          className={`${readOnlyFieldClass} min-w-[220px] max-w-[520px] flex-1`}
+                        />
+                      </label>
+                      <label className="mb-0 flex min-w-[180px] max-w-[260px] flex-1 items-center gap-2">
+                        <span className="shrink-0 text-xs font-semibold text-slate-600">
+                          Image
+                        </span>
+                        <VariantImagePicker
+                          name="variantImageSelection"
+                          mediaOptions={getVariantMediaOptions(index)}
+                          value={row.imageSelection}
+                          onChange={(value) =>
+                            updateRow(index, { imageSelection: value })
+                          }
                         />
                       </label>
                     </div>
                     <div className="flex items-center gap-2">
                       <label className="mb-0 flex h-11 items-center gap-2">
-                        <span className="shrink-0 text-xs font-semibold text-slate-600">
-                          Active
-                        </span>
-                        <div className="w-[110px]">
-                          <FormDropdown
-                            id={`variantIsActive-${index}`}
-                            name="variantIsActive"
-                            options={activeOptions}
-                            value={row.isActive ? 'true' : 'false'}
-                            onChange={(value) =>
-                              updateRow(index, { isActive: value === 'true' })
+                        <input
+                          type="hidden"
+                          name="variantIsActive"
+                          value={row.isActive ? 'true' : 'false'}
+                        />
+                        <span
+                          className={`inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 ${
+                            isSubmittingProduct || !isVariantEditorEnabled
+                              ? 'cursor-not-allowed opacity-60'
+                              : ''
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={row.isActive}
+                            disabled={isSubmittingProduct || !isVariantEditorEnabled}
+                            onChange={(event) =>
+                              updateRow(index, { isActive: event.target.checked })
                             }
+                            className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-200"
                           />
-                        </div>
+                          <span>Active</span>
+                        </span>
                       </label>
                       <button
                         type="button"
@@ -2528,18 +2693,7 @@ export default function ProductForm({
                     </div>
                   </div>
                   <div className={isOpen ? '' : 'hidden'}>
-                  <div className="grid gap-3 md:grid-cols-[minmax(120px,0.8fr)_minmax(130px,0.9fr)_minmax(150px,0.95fr)_minmax(95px,0.65fr)_76px_76px] [&>label]:min-w-0">
-                    <label className={compactLabelClass}>
-                      <span>Image</span>
-                      <VariantImagePicker
-                        name="variantImageSelection"
-                        mediaOptions={variantMediaOptions}
-                        value={row.imageSelection}
-                        onChange={(value) =>
-                          updateRow(index, { imageSelection: value })
-                        }
-                      />
-                    </label>
+                  <div className="grid gap-3 md:grid-cols-[minmax(130px,0.9fr)_minmax(160px,1fr)_minmax(95px,0.65fr)_76px_76px] [&>label]:min-w-0">
                     <label className={compactLabelClass}>
                       <span>Color Name</span>
                       <input
@@ -2569,7 +2723,7 @@ export default function ProductForm({
                           onChange={(event) =>
                             updateRow(index, { colorHex: event.target.value })
                           }
-                          className="h-11 w-12 shrink-0 cursor-pointer rounded-xl border border-slate-300 bg-white p-1"
+                          className="h-11 w-11 shrink-0 cursor-pointer border-[2.4px] border-slate-500 bg-white p-0 shadow-sm"
                         />
                       </div>
                     </label>
@@ -2736,7 +2890,7 @@ export default function ProductForm({
             </div>
             {!isBundleSectionEnabled && (
               <p className="rounded-md border border-amber-200 bg-amber-100/70 px-2 py-1 text-xs font-semibold text-amber-900">
-                Bundle section activates after at least one saved variant exists.
+                Create variant to apply bundle
               </p>
             )}
             {isBundleSectionEnabled && !isBundleEditorEnabled && (
@@ -2771,7 +2925,11 @@ export default function ProductForm({
                 return (
                 <div
                   key={`${offer.id || 'new-offer'}-${index}`}
-                  className="rounded-lg border border-amber-200 bg-white p-3"
+                  className={`rounded-lg border p-3 transition-all duration-700 ${
+                    highlightedBundleIndex === index
+                      ? 'border-teal-400 bg-teal-50 shadow-[0_0_0_4px_rgba(20,184,166,0.22)]'
+                      : 'border-amber-200 bg-white'
+                  }`}
                 >
                   <input type="hidden" name="bundleOfferId" value={offer.id} />
                   <input
@@ -2893,6 +3051,11 @@ export default function ProductForm({
                         updateBundleOffer(index, { variantSelection: value })
                       }
                     />
+                    {offer.isActive && !offer.variantSelection.trim() ? (
+                      <p className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-700">
+                        Pick at least one eligible variant before activating.
+                      </p>
+                    ) : null}
                   </label>
                     <div className="grid gap-3 md:grid-cols-2">
                       <label className={compactLabelClass}>
