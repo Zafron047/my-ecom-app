@@ -10,6 +10,10 @@ import Link from 'next/link';
 import { notFound, useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
+function isValidColorHex(value: string | undefined) {
+  return Boolean(value && /^#[0-9a-f]{6}$/i.test(value));
+}
+
 export default function ProductDetail() {
   const params = useParams<{ id: string }>();
   const productId = params?.id;
@@ -90,6 +94,43 @@ export default function ProductDetail() {
     () => product?.variants?.[selectedVariantIndex],
     [product, selectedVariantIndex],
   );
+  const variantGroups = useMemo(() => {
+    if (!product) return [];
+    const groups = new Map<
+      string,
+      {
+        color: string;
+        colorHex?: string;
+        indexes: number[];
+      }
+    >();
+
+    product.variants.forEach((variant, index) => {
+      const color = variant.color?.trim() || 'Default';
+      const key = color.toLowerCase();
+      const current =
+        groups.get(key) ??
+        {
+          color,
+          colorHex: isValidColorHex(variant.colorHex) ? variant.colorHex : undefined,
+          indexes: [],
+        };
+      current.indexes.push(index);
+      if (!current.colorHex && isValidColorHex(variant.colorHex)) {
+        current.colorHex = variant.colorHex;
+      }
+      groups.set(key, current);
+    });
+
+    return [...groups.values()];
+  }, [product]);
+  const activeVariantGroup = useMemo(
+    () =>
+      variantGroups.find((group) =>
+        group.indexes.includes(selectedVariantIndex),
+      ) ?? variantGroups[0],
+    [selectedVariantIndex, variantGroups],
+  );
   const bestActiveBundleOffer = useMemo(
     () =>
       [...(product?.bundleOffers ?? [])]
@@ -166,6 +207,20 @@ export default function ProductDetail() {
     imageUrl
       .replace(/\/(thumb|detail|zoom)\//i, '/original/')
       .replace(/-(thumb|detail|zoom)\.webp$/i, '.webp');
+  const selectVariantAtIndex = (index: number) => {
+    if (!product) return;
+    const variant = product.variants[index];
+    if (!variant) return;
+    setSelectedVariantIndex(index);
+    const variantImage = variant.image;
+    const imageIndex = product.images.findIndex(
+      (img) =>
+        img === variantImage ||
+        toVariantImageUrl(img, 'thumb') === variantImage ||
+        img === toOriginalFromVariantUrl(variantImage),
+    );
+    setSelectedImage(imageIndex >= 0 ? imageIndex : 0);
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -341,33 +396,60 @@ export default function ProductDetail() {
 
           {product.variants.length > 0 && (
             <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
-              <p className="mb-3 text-sm font-semibold text-slate-900">Variants</p>
+              <p className="mb-3 text-sm font-semibold text-slate-900">
+                Color
+              </p>
               <div className="flex flex-wrap gap-2">
-                {product.variants.map((variant, index) => (
+                {variantGroups.map((group) => (
                   <button
-                    key={variant.id}
+                    key={group.color}
                     type="button"
-                    onClick={() => {
-                      setSelectedVariantIndex(index);
-                      const variantImage = variant.image;
-                      const imageIndex = product.images.findIndex(
-                        (img) =>
-                          img === variantImage ||
-                          toVariantImageUrl(img, 'thumb') === variantImage ||
-                          img === toOriginalFromVariantUrl(variantImage),
-                      );
-                      setSelectedImage(imageIndex >= 0 ? imageIndex : 0);
-                    }}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                      index === selectedVariantIndex
+                    onClick={() => selectVariantAtIndex(group.indexes[0] ?? 0)}
+                    className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition ${
+                      group === activeVariantGroup
                         ? 'border-blue-600 bg-blue-600 text-white'
                         : 'border-slate-300 bg-white text-slate-700 hover:border-blue-300'
                     }`}
                   >
-                    {formatVariantLabel(variant.color, variant.size)}
+                    <span
+                      className="h-4 w-4 rounded-full border border-white/70 shadow-sm ring-1 ring-slate-300"
+                      style={{
+                        backgroundColor: group.colorHex ?? '#e5e7eb',
+                      }}
+                      aria-hidden="true"
+                    />
+                    {group.color}
                   </button>
                 ))}
               </div>
+              {activeVariantGroup ? (
+                <div className="mt-4">
+                  <p className="mb-3 text-sm font-semibold text-slate-900">
+                    Size
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {activeVariantGroup.indexes.map((index) => {
+                      const variant = product.variants[index];
+                      if (!variant) return null;
+
+                      return (
+                        <button
+                          key={variant.id}
+                          type="button"
+                          onClick={() => selectVariantAtIndex(index)}
+                          className={`min-w-12 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                            index === selectedVariantIndex
+                              ? 'border-blue-600 bg-white text-blue-700 ring-2 ring-blue-100'
+                              : 'border-slate-300 bg-white text-slate-700 hover:border-blue-300'
+                          }`}
+                        >
+                          {variant.size?.trim() || 'Default'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white">

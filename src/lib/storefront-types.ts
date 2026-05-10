@@ -17,6 +17,7 @@ export interface StorefrontCatalogProduct {
   variants: {
     id: string;
     color: string;
+    colorHex?: string;
     size: string;
     price: number;
     salePrice?: number;
@@ -79,6 +80,7 @@ export interface StorefrontProductDetail {
   variants: {
     id: string;
     color: string;
+    colorHex?: string;
     size: string;
     price: number;
     salePrice?: number;

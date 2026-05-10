@@ -107,8 +107,10 @@ type ActivationRequirementsState = {
 
 type EditorSection = 'product' | 'variants' | 'bundles';
 type SubmitIntent = 'productMedia' | 'variants' | 'bundleOffers' | 'full' | '';
+type ProductProcessState = 'idle' | 'creating' | 'saving' | 'created' | 'saved';
 
 const statuses: ProductStatus[] = ['draft', 'active', 'archived'];
+const PRODUCT_FORM_FLASH_KEY = 'admin-product-form-flash';
 const PRODUCT_NAME_WORD_LIMIT = 6;
 const SHORT_DESCRIPTION_WORD_LIMIT = 40;
 const MAX_PRODUCT_IMAGE_FILES = 10;
@@ -713,6 +715,8 @@ export default function ProductForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmittingProduct, setIsSubmittingProduct] = useState(false);
   const [activeSubmitIntent, setActiveSubmitIntent] = useState<SubmitIntent>('');
+  const [productProcessState, setProductProcessState] =
+    useState<ProductProcessState>('idle');
   const [activationRequirements, setActivationRequirements] =
     useState<ActivationRequirementsState>({
       categories: false,
@@ -1082,6 +1086,20 @@ export default function ProductForm({
     (activeEditorSection === null || activeEditorSection === 'bundles');
   const isVariantError =
     Boolean(submitError) && /variant/i.test(submitError ?? '');
+  const productProcessMessage =
+    productProcessState === 'creating'
+      ? 'Creating, please wait.'
+      : productProcessState === 'saving'
+        ? 'Saving, please wait.'
+        : productProcessState === 'created'
+          ? 'Created.'
+          : productProcessState === 'saved'
+            ? 'Saved.'
+            : null;
+  const productProcessMessageClass =
+    productProcessState === 'created' || productProcessState === 'saved'
+      ? 'text-emerald-700'
+      : 'text-slate-600';
 
   useEffect(() => {
     imageItemsRef.current = imageItems;
@@ -1089,6 +1107,17 @@ export default function ProductForm({
   useEffect(() => {
     rowsRef.current = rows;
   }, [rows]);
+
+  useEffect(() => {
+    const flash = window.sessionStorage.getItem(PRODUCT_FORM_FLASH_KEY);
+    if (flash !== 'created' && flash !== 'saved') return;
+    window.sessionStorage.removeItem(PRODUCT_FORM_FLASH_KEY);
+    setProductProcessState(flash);
+    const timeout = window.setTimeout(() => {
+      setProductProcessState('idle');
+    }, 4000);
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   useEffect(() => {
     removedVariantIdsRef.current = removedVariantIds;
@@ -1628,16 +1657,25 @@ export default function ProductForm({
     if (isSubmittingProduct) return;
     setSubmitError(null);
     const submitIntent = String(formData.get('submitIntent') ?? '').trim() as SubmitIntent;
+    const isProductSubmit =
+      submitIntent === '' ||
+      submitIntent === 'full' ||
+      submitIntent === 'productMedia';
     const shouldValidateActivation =
       submitIntent !== 'variants' && submitIntent !== 'bundleOffers';
     const intendedStatus = String(formData.get('status') ?? selectedStatus)
       .trim()
       .toLowerCase();
+    if (isProductSubmit) {
+      setProductProcessState(isEditing ? 'saving' : 'creating');
+    } else {
+      setProductProcessState('idle');
+    }
     if (shouldValidateActivation && intendedStatus === 'active') {
       const missing = getActivationMissingRequirements();
       setActivationRequirements(missing);
 
-      if (missing.categories || missing.media || missing.variants) {
+      if (!isEditing || missing.categories || missing.media || missing.variants) {
         setSelectedStatus('draft');
         formData.set('status', 'draft');
       }
@@ -1691,6 +1729,9 @@ export default function ProductForm({
         result.error.trim().length > 0
       ) {
         setSubmitError(result.error);
+        if (isProductSubmit) {
+          setProductProcessState('idle');
+        }
       } else if (submitIntent === 'variants') {
         setSavedVariantSnapshot(
           buildVariantSnapshot(rowsRef.current, removedVariantIdsRef.current),
@@ -1709,6 +1750,7 @@ export default function ProductForm({
           );
           setSavedBundleSnapshot(currentBundleSnapshot);
         }
+        setProductProcessState(isEditing ? 'saved' : 'created');
         keepSaveLocked = true;
         router.refresh();
       }
@@ -1720,6 +1762,12 @@ export default function ProductForm({
         typeof (error as { digest?: unknown }).digest === 'string' &&
         (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
       ) {
+        if (isProductSubmit) {
+          window.sessionStorage.setItem(
+            PRODUCT_FORM_FLASH_KEY,
+            isEditing ? 'saved' : 'created',
+          );
+        }
         if (submitIntent === 'variants') {
           setSavedVariantSnapshot(
             buildVariantSnapshot(rowsRef.current, removedVariantIdsRef.current),
@@ -1745,10 +1793,16 @@ export default function ProductForm({
           ? error.message
           : 'Failed to save product. Please try again.';
       setSubmitError(message);
+      if (isProductSubmit) {
+        setProductProcessState('idle');
+      }
     } finally {
       if (!keepSaveLocked) {
         setIsSubmittingProduct(false);
         setActiveSubmitIntent('');
+        if (isProductSubmit && productProcessState !== 'created' && productProcessState !== 'saved') {
+          setProductProcessState('idle');
+        }
       }
     }
   }
@@ -1937,6 +1991,18 @@ export default function ProductForm({
                 value={selectedStatus}
                 onChange={(value) => {
                   const nextValue = value as ProductStatus;
+                  if (!isEditing && nextValue === 'active') {
+                    setSelectedStatus('draft');
+                    setActivationRequirements({
+                      categories: selectedCategoryIds.length === 0,
+                      media: imageItems.length === 0,
+                      variants: true,
+                    });
+                    setSubmitError(
+                      'Create product as draft first. You can activate it after product ID and variants are created.',
+                    );
+                    return;
+                  }
                   setSelectedStatus(nextValue);
                   if (nextValue !== 'active') {
                     setActivationRequirements({
@@ -2413,7 +2479,9 @@ export default function ProductForm({
                 }`}
               >
                 {isSubmittingProduct
-                  ? 'Saving...'
+                  ? isEditing
+                    ? 'Saving...'
+                    : 'Creating...'
                   : isEditing
                     ? 'Save Product'
                     : submitLabel}
@@ -2442,9 +2510,9 @@ export default function ProductForm({
                 </Link>
               )}
             </div>
-            {isSubmittingProduct ? (
-              <p className="mt-2 text-xs font-medium text-slate-600">
-                Save in progress... please wait.
+            {productProcessMessage ? (
+              <p className={`mt-2 text-xs font-medium ${productProcessMessageClass}`}>
+                {productProcessMessage}
               </p>
             ) : null}
             {submitError && !isVariantError ? (
@@ -2814,7 +2882,7 @@ export default function ProductForm({
             })}
             {visibleVariantIndexes.length === 0 ? (
               <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-                No variants match the selected visibility filter.
+                No variants have been added yet.
               </p>
             ) : null}
           </fieldset>

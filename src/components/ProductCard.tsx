@@ -17,6 +17,7 @@ interface Product {
   variants: {
     id: string;
     color: string;
+    colorHex?: string;
     size: string;
     price: number;
     salePrice?: number;

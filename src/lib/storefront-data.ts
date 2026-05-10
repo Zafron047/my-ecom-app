@@ -155,6 +155,7 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
     return {
       id: variant.id,
       color: variant.color?.trim() || '',
+      ...(variant.colorHex?.trim() ? { colorHex: variant.colorHex.trim() } : {}),
       size: variant.size?.trim() || '',
       price: hasVariantSale ? compareAt : basePrice,
       ...(hasVariantSale ? { salePrice: basePrice } : {}),
