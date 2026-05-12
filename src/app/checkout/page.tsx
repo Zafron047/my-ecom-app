@@ -1,6 +1,9 @@
 'use client';
 
-import { useCart } from '@/components/CartProvider';
+import {
+  ABANDONED_CHECKOUT_SESSION_KEY,
+  useCart,
+} from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
 import { getGroupedAreaOptions } from '@/lib/location-presenter';
 import { getShippingCharge } from '@/lib/shipping-charge';
@@ -89,6 +92,8 @@ export default function Checkout() {
         method: paymentMethod,
       },
       items: selectedCartItems,
+      abandonedCheckoutSessionId:
+        localStorage.getItem(ABANDONED_CHECKOUT_SESSION_KEY) ?? undefined,
       totals: {
         subtotal,
         shipping: shippingCharge,

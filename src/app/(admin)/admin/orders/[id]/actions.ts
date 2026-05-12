@@ -254,6 +254,7 @@ export async function updateOrderDetailsAction(
           variantId: variant.id,
           productName: variant.product.name,
           variantLabel: variantLabel || null,
+          imagePath: variant.imagePath ?? null,
           sku: variant.sku,
           quantity,
           unitPrice,
@@ -451,7 +452,9 @@ export async function updateOrderDetailsAction(
       variantLabel:
         item.variantLabel ??
         `${item.variant.color || 'Standard'} / ${item.variant.size || 'Standard'}`,
-      imagePath: item.variant.imagePath ?? '',
+      imagePath: item.imagePath ?? item.variant.imagePath ?? '',
+      bundleRule: item.bundleRule,
+      appliedBundleTitle: item.bundleTitle ?? undefined,
       quantity: item.quantity,
       unitPrice: decimalToNumberSafe(item.unitPrice),
       discountAmount: decimalToNumberSafe(item.discountAmount),

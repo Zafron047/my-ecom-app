@@ -64,7 +64,14 @@ export async function GET(
     price: Number(item.unitPrice),
     salePrice: undefined,
     quantity: item.quantity,
-    image: item.product.images.find((image) => image.isPrimary)?.storagePath || item.product.images[0]?.storagePath || '',
+    variantLabel: item.variantLabel ?? 'Standard',
+    image:
+      item.imagePath ||
+      item.product.images.find((image) => image.isPrimary)?.storagePath ||
+      item.product.images[0]?.storagePath ||
+      '',
+    bundleTitle: item.bundleTitle,
+    bundleRule: item.bundleRule,
   }));
 
   return Response.json({

@@ -1,7 +1,11 @@
 'use client';
 
-import { useCart } from '@/components/CartProvider';
+import {
+  ABANDONED_CHECKOUT_SESSION_KEY,
+  useCart,
+} from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
+import { fetchStorefrontCatalogClient } from '@/lib/storefront-catalog-client';
 import { getGroupedAreaOptions } from '@/lib/location-presenter';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -10,7 +14,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SearchableDropdown from '@/components/SearchableDropdown';
-import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 
 const MOBILE_PATTERN = /^(?:\+8801[3-9]\d{8}|01[3-9]\d{8})$/;
 
@@ -91,6 +94,7 @@ export default function Header() {
   const lastNameHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const shouldLoadCheckoutLocations = isCartOpen && isCheckoutView;
 
   const shippingCharge = useMemo(() => {
     return getShippingCharge({
@@ -339,15 +343,7 @@ export default function Header() {
 
     async function loadSearchProducts() {
       try {
-        const response = await fetch('/api/storefront/catalog');
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          products: Array<
-            StorefrontCatalogProduct & {
-              variantCount?: number;
-            }
-          >;
-        };
+        const payload = await fetchStorefrontCatalogClient();
         if (!isMounted) return;
         setSearchableProducts(
           (payload.products ?? []).map((product) => ({
@@ -377,6 +373,12 @@ export default function Header() {
   useEffect(() => {
     let isMounted = true;
 
+    if (!shouldLoadCheckoutLocations) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
     async function loadDivisions() {
       try {
         const response = await fetch('/api/delivery-locations');
@@ -395,12 +397,12 @@ export default function Header() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [shouldLoadCheckoutLocations]);
 
   useEffect(() => {
     let isMounted = true;
 
-    if (!checkoutForm.division) {
+    if (!shouldLoadCheckoutLocations || !checkoutForm.division) {
       setLocationDistricts([]);
       return () => {
         isMounted = false;
@@ -429,12 +431,12 @@ export default function Header() {
     return () => {
       isMounted = false;
     };
-  }, [checkoutForm.division]);
+  }, [checkoutForm.division, shouldLoadCheckoutLocations]);
 
   useEffect(() => {
     let isMounted = true;
 
-    if (!checkoutForm.division || !checkoutForm.district) {
+    if (!shouldLoadCheckoutLocations || !checkoutForm.division || !checkoutForm.district) {
       setLocationAreas([]);
       return () => {
         isMounted = false;
@@ -464,7 +466,7 @@ export default function Header() {
     return () => {
       isMounted = false;
     };
-  }, [checkoutForm.district, checkoutForm.division]);
+  }, [checkoutForm.district, checkoutForm.division, shouldLoadCheckoutLocations]);
 
   useEffect(() => {
     function handleOutsideClick(event: MouseEvent) {
@@ -671,6 +673,8 @@ export default function Header() {
         method: paymentMethod,
       },
       items: selectedCartItems,
+      abandonedCheckoutSessionId:
+        localStorage.getItem(ABANDONED_CHECKOUT_SESSION_KEY) ?? undefined,
       totals: {
         subtotal,
         shipping: shippingCharge,

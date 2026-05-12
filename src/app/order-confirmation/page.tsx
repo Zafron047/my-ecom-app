@@ -6,6 +6,7 @@ import {
   readPendingOrderId,
   shouldClearSelectedItems,
 } from '@/lib/checkoutPendingOrder.mjs';
+import SafeImage from '@/components/SafeImage';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -30,7 +31,7 @@ interface OrderData {
     expiryDate?: string;
     cvv?: string;
   };
-  items: CartItem[];
+  items: Array<CartItem & { bundleTitle?: string | null; bundleRule?: string | null }>;
   totals: {
     subtotal: number;
     shipping: number;
@@ -214,10 +215,11 @@ function OrderConfirmationContent() {
                 className="flex items-center gap-4 py-4 border-b border-gray-100 last:border-b-0"
               >
                 <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden">
-                  <img
+                  <SafeImage
                     src={item.image}
                     alt={item.name}
                     className="w-full h-full object-cover"
+                    fallbackClassName="flex h-full w-full items-center justify-center bg-gray-100 px-1 text-center text-[10px] font-medium leading-tight text-gray-400"
                   />
                 </div>
                 <div className="flex-1">
@@ -225,6 +227,12 @@ function OrderConfirmationContent() {
                   <p className="text-sm text-gray-600">
                     Variant: {item.variantLabel?.trim() || 'Standard'}
                   </p>
+                  {item.bundleTitle ? (
+                    <p className="text-sm text-emerald-700">
+                      Bundle: {item.bundleTitle}
+                      {item.bundleRule ? ` (${item.bundleRule})` : ''}
+                    </p>
+                  ) : null}
                   <p className="text-sm text-gray-600">
                     Quantity: {item.quantity}
                   </p>

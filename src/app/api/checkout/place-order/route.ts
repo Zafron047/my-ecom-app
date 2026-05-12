@@ -25,6 +25,7 @@ type PlaceOrderPayload = {
     method: 'bkash' | 'cod';
   };
   items: CheckoutItemInput[];
+  abandonedCheckoutSessionId?: string;
   totals: {
     subtotal: number;
     shipping: number;
@@ -108,7 +109,37 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    const selectedVariantIds = [
+      ...new Set(
+        payload.items
+          .map((item) => item.variantId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    const globalBundleOffers = await prisma.bundleOffer.findMany({
+      where: {
+        isActive: true,
+        variants: {
+          some: {
+            variantId: { in: selectedVariantIds },
+          },
+        },
+        OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }],
+        AND: [
+          {
+            OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }],
+          },
+        ],
+      },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        variants: {
+          select: { variantId: true },
+        },
+      },
+    });
     const pricingResult = buildCheckoutPricing({
+      globalBundleOffers,
       items: payload.items,
       products,
       shipping: payload.shipping,
@@ -191,11 +222,14 @@ export async function POST(request: Request) {
                 variantId: line.variantId,
                 productName: line.productName,
                 variantLabel: line.variantLabel || null,
+                imagePath: line.imagePath || null,
                 sku: line.sku,
                 quantity: line.quantity,
                 unitPrice: line.unitPrice,
                 lineTotal: line.lineTotal,
                 discountAmount: line.discountAmount,
+                bundleTitle: line.bundleTitle,
+                bundleRule: line.bundleRule,
               })),
             },
           },
@@ -221,6 +255,20 @@ export async function POST(request: Request) {
         { error: 'Could not generate a unique order number. Please retry.' },
         { status: 500 },
       );
+    }
+
+    if (payload.abandonedCheckoutSessionId?.trim()) {
+      await prisma.abandonedCheckout.updateMany({
+        where: {
+          sessionId: payload.abandonedCheckoutSessionId.trim(),
+        },
+        data: {
+          status: 'recovered',
+          recoveredOrderId: order.id,
+          completedAt: new Date(),
+          lastActivityAt: new Date(),
+        },
+      });
     }
 
     const response = NextResponse.json({

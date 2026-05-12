@@ -2,6 +2,7 @@
 
 import HomeProductListSection from '@/components/HomeProductListSection';
 import HeroSlider from '@/components/HeroSlider';
+import { fetchStorefrontCatalogClient } from '@/lib/storefront-catalog-client';
 import type {
   StorefrontCatalogProduct,
   StorefrontHomepageSection,
@@ -86,14 +87,7 @@ export default function Home() {
 
     async function loadCatalog() {
       try {
-        const response = await fetch('/api/storefront/catalog');
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          categories: string[];
-          categoryThumbnails?: Record<string, string>;
-          homepageSections?: StorefrontHomepageSection[];
-          products: StorefrontCatalogProduct[];
-        };
+        const payload = await fetchStorefrontCatalogClient();
         if (!isMounted) return;
         setCatalogProducts(payload.products ?? []);
         setCatalogCategories(payload.categories ?? []);

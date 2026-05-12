@@ -10,23 +10,132 @@ type CartPricePayload = {
   }>;
 };
 
+type CartPriceResponse = {
+  linePricingById: Record<
+    string,
+    {
+      lineSubtotal: number;
+      lineDiscount: number;
+      lineTotal: number;
+      bundleTitle?: string;
+      bundleMinTotalQty?: number;
+      bundleDiscountPercent?: number;
+    }
+  >;
+  subtotalBeforeDiscount: number;
+  discountTotal: number;
+  subtotal: number;
+};
+
+type CartPriceLine = CartPriceResponse['linePricingById'][string];
+
+const EMPTY_CART_PRICING: CartPriceResponse = {
+  linePricingById: {},
+  subtotalBeforeDiscount: 0,
+  discountTotal: 0,
+  subtotal: 0,
+};
+
+const CART_PRICE_CACHE_TTL_MS = 30_000;
+
+type CartPriceCacheEntry = {
+  expiresAt: number;
+  payload: Omit<CartPriceResponse, 'linePricingById'>;
+  lines: Array<{
+    signature: string;
+    pricing: CartPriceLine;
+  }>;
+};
+
+const globalForCartPrice = globalThis as unknown as {
+  cartPriceCache?: Map<string, CartPriceCacheEntry>;
+};
+
 function toMoney(value: number) {
   return Number(value.toFixed(2));
 }
 
+function getCartPriceCache() {
+  globalForCartPrice.cartPriceCache ??= new Map();
+  return globalForCartPrice.cartPriceCache;
+}
+
+function getCartPriceCacheHeaders(state: 'HIT' | 'MISS' | 'BYPASS') {
+  return {
+    'Cache-Control': 'private, max-age=30',
+    'X-Cart-Price-Cache': state,
+  };
+}
+
+function getCartPriceCacheKey(items: CartPricePayload['items']) {
+  return JSON.stringify(
+    items
+      .map((item) => ({
+        productId: typeof item.detailId === 'string' && item.detailId.trim()
+          ? item.detailId.trim()
+          : typeof item.id === 'string'
+            ? item.id.trim()
+            : '',
+        variantId: typeof item.variantId === 'string' ? item.variantId.trim() : '',
+        quantity: Math.max(1, Math.floor(item.quantity || 1)),
+      }))
+      .sort((a, b) => {
+        const first = `${a.productId}:${a.variantId}:${a.quantity}`;
+        const second = `${b.productId}:${b.variantId}:${b.quantity}`;
+        return first.localeCompare(second);
+      }),
+  );
+}
+
+function getCartPriceLineSignature(item: CartPricePayload['items'][number]) {
+  const productId = typeof item.detailId === 'string' && item.detailId.trim()
+    ? item.detailId.trim()
+    : typeof item.id === 'string'
+      ? item.id.trim()
+      : '';
+  const variantId = typeof item.variantId === 'string' ? item.variantId.trim() : '';
+  const quantity = Math.max(1, Math.floor(item.quantity || 1));
+  return `${productId}:${variantId}:${quantity}`;
+}
+
+function responseFromCacheEntry(
+  entry: CartPriceCacheEntry,
+  items: CartPricePayload['items'],
+): CartPriceResponse {
+  const linesBySignature = new Map<string, CartPriceLine[]>();
+  for (const line of entry.lines) {
+    linesBySignature.set(line.signature, [
+      ...(linesBySignature.get(line.signature) ?? []),
+      line.pricing,
+    ]);
+  }
+
+  const linePricingById: CartPriceResponse['linePricingById'] = {};
+  for (const item of items) {
+    const signature = getCartPriceLineSignature(item);
+    const matchingLines = linesBySignature.get(signature);
+    const pricing = matchingLines?.shift();
+    if (!pricing) continue;
+    linePricingById[item.id] = pricing;
+  }
+
+  return {
+    linePricingById,
+    ...entry.payload,
+  };
+}
+
 export async function POST(request: Request) {
   try {
-    const payload = (await request.json()) as CartPricePayload;
+    const requestText = await request.text();
+    const payload = requestText
+      ? (JSON.parse(requestText) as CartPricePayload)
+      : ({ items: [] } satisfies CartPricePayload);
     if (!Array.isArray(payload?.items) || payload.items.length === 0) {
-      return Response.json(
-        {
-          linePricingById: {},
-          subtotalBeforeDiscount: 0,
-          discountTotal: 0,
-          subtotal: 0,
-        },
-        { status: 200 },
-      );
+      return Response.json(EMPTY_CART_PRICING, {
+        status: 200,
+        headers: getCartPriceCacheHeaders('BYPASS'),
+      });
     }
 
     const seenLineIds = new Set<string>();
@@ -44,42 +153,124 @@ export async function POST(request: Request) {
       seenLineIds.add(lineId);
     }
 
-    const productIds = [...new Set(payload.items.map((item) => item.detailId ?? item.id).filter(Boolean))];
-    const products = await prisma.product.findMany({
-      where: {
-        id: { in: productIds },
-        status: 'active',
-      },
-      include: {
-        variants: {
-          where: { isActive: true },
+    const cacheKey = getCartPriceCacheKey(payload.items);
+    const cache = getCartPriceCache();
+    const cached = cache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return Response.json(responseFromCacheEntry(cached, payload.items), {
+        status: 200,
+        headers: getCartPriceCacheHeaders('HIT'),
+      });
+    }
+    if (cached) {
+      cache.delete(cacheKey);
+    }
+
+    const productIds = [
+      ...new Set(payload.items.map((item) => item.detailId ?? item.id).filter(Boolean)),
+    ];
+    const selectedVariantIds = [
+      ...new Set(
+        payload.items
+          .map((item) => item.variantId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    const [variants, globalBundleOffers] = await Promise.all([
+      prisma.productVariant.findMany({
+        where: {
+          isActive: true,
+          ...(selectedVariantIds.length > 0
+            ? { id: { in: selectedVariantIds } }
+            : {}),
+          product: {
+            id: { in: productIds },
+            status: 'active',
+          },
         },
-        bundleOffers: {
-          where: { isActive: true },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          include: {
-            variants: {
-              select: { variantId: true },
+        select: {
+          id: true,
+          price: true,
+          productId: true,
+          product: {
+            select: {
+              bundleOffers: {
+                where: { isActive: true },
+                orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                select: {
+                  id: true,
+                  title: true,
+                  minTotalQty: true,
+                  discountPercent: true,
+                  isActive: true,
+                  variants: {
+                    select: { variantId: true },
+                  },
+                },
+              },
             },
           },
         },
-      },
-    });
+      }),
+      selectedVariantIds.length > 0
+        ? prisma.bundleOffer.findMany({
+            where: {
+              isActive: true,
+              variants: {
+                some: {
+                  variantId: { in: selectedVariantIds },
+                },
+              },
+              OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }],
+              AND: [
+                {
+                  OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }],
+                },
+              ],
+            },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            include: {
+              variants: {
+                select: { variantId: true },
+              },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
 
-    const productById = new Map(products.map((product) => [product.id, product]));
-    const offersByProductId = new Map(
-      products.map((product) => [
-        product.id,
-        product.bundleOffers.map((offer) => ({
-          id: offer.id,
-          title: offer.title?.trim() || 'Bundle Offer',
-          minTotalQty: offer.minTotalQty,
-          discountPercent: offer.discountPercent.toNumber(),
-          variantIds: offer.variants.map((item) => item.variantId),
-          isActive: offer.isActive,
-        })),
-      ]),
-    );
+    const variantById = new Map(variants.map((variant) => [variant.id, variant]));
+    const variantsByProductId = new Map<string, typeof variants>();
+    const offersByProductId = new Map<
+      string,
+      Array<{
+        id: string;
+        title: string;
+        minTotalQty: number;
+        discountPercent: number;
+        variantIds: string[];
+        isActive: boolean;
+      }>
+    >();
+
+    for (const variant of variants) {
+      variantsByProductId.set(variant.productId, [
+        ...(variantsByProductId.get(variant.productId) ?? []),
+        variant,
+      ]);
+      if (!offersByProductId.has(variant.productId)) {
+        offersByProductId.set(
+          variant.productId,
+          variant.product.bundleOffers.map((offer) => ({
+            id: offer.id,
+            title: offer.title?.trim() || 'Bundle Offer',
+            minTotalQty: offer.minTotalQty,
+            discountPercent: offer.discountPercent.toNumber(),
+            variantIds: offer.variants.map((item) => item.variantId),
+            isActive: offer.isActive,
+          })),
+        );
+      }
+    }
 
     const pricingLines: Array<{
       id: string;
@@ -91,11 +282,11 @@ export async function POST(request: Request) {
 
     for (const item of payload.items) {
       const productId = item.detailId ?? item.id;
-      const product = productById.get(productId);
-      if (!product) continue;
       const variant =
-        product.variants.find((candidate) => candidate.id === item.variantId) ??
-        (product.variants.length === 1 ? product.variants[0] : undefined);
+        (item.variantId ? variantById.get(item.variantId) : undefined) ??
+        (variantsByProductId.get(productId)?.length === 1
+          ? variantsByProductId.get(productId)?.[0]
+          : undefined);
       if (!variant) continue;
 
       pricingLines.push({
@@ -110,6 +301,14 @@ export async function POST(request: Request) {
     const pricing = computeCartPricing(
       pricingLines,
       (productId) => offersByProductId.get(productId) ?? [],
+      globalBundleOffers.map((offer) => ({
+        id: offer.id,
+        title: offer.title?.trim() || 'Bundle Offer',
+        minTotalQty: offer.minTotalQty,
+        discountPercent: offer.discountPercent.toNumber(),
+        variantIds: offer.variants.map((item) => item.variantId),
+        isActive: offer.isActive,
+      })),
     );
 
     const normalizedLinePricingById = Object.fromEntries(
@@ -124,13 +323,43 @@ export async function POST(request: Request) {
       ]),
     );
 
-    return Response.json({
+    const responsePayload: CartPriceResponse = {
       linePricingById: normalizedLinePricingById,
       subtotalBeforeDiscount: toMoney(pricing.subtotalBeforeDiscount),
       discountTotal: toMoney(pricing.discountTotal),
       subtotal: toMoney(pricing.subtotal),
+    };
+    cache.set(cacheKey, {
+      expiresAt: Date.now() + CART_PRICE_CACHE_TTL_MS,
+      payload: {
+        subtotalBeforeDiscount: responsePayload.subtotalBeforeDiscount,
+        discountTotal: responsePayload.discountTotal,
+        subtotal: responsePayload.subtotal,
+      },
+      lines: payload.items
+        .map((item) => {
+          const pricing = responsePayload.linePricingById[item.id];
+          if (!pricing) return null;
+          return {
+            signature: getCartPriceLineSignature(item),
+            pricing,
+          };
+        })
+        .filter((line): line is { signature: string; pricing: CartPriceLine } =>
+          Boolean(line),
+        ),
+    });
+
+    return Response.json(responsePayload, {
+      headers: getCartPriceCacheHeaders('MISS'),
     });
   } catch (error) {
+    if (error instanceof SyntaxError) {
+      return Response.json(EMPTY_CART_PRICING, {
+        status: 200,
+        headers: getCartPriceCacheHeaders('BYPASS'),
+      });
+    }
     console.error(error);
     return Response.json(
       { error: 'Failed to price cart.' },

@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, useTransition } from 'react';
 import { useEffect } from 'react';
 import { updateOrderDetailsAction } from '@/app/(admin)/admin/orders/[id]/actions';
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
+import SafeImage from '@/components/SafeImage';
 
 type EditableOrderItem = {
   id: string;
@@ -16,6 +17,7 @@ type EditableOrderItem = {
   unitPrice: number;
   discountAmount: number;
   lineTotal: number;
+  bundleRule?: string | null;
   appliedBundleTitle?: string;
   activeBundleOffers?: Array<{
     id: string;
@@ -1126,13 +1128,11 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-3">
                         <div className="h-11 w-11 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
-                          {item.imagePath ? (
-                            <img
-                              src={item.imagePath}
-                              alt={item.productName}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : null}
+                          <SafeImage
+                            src={item.imagePath}
+                            alt={item.productName}
+                            className="h-full w-full object-cover"
+                          />
                         </div>
                         <div>
                           <p className="text-sm font-medium text-slate-800">{item.productName}</p>
@@ -1140,6 +1140,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
                           {bundlePreview?.appliedBundleTitle ? (
                             <p className="mt-1 text-[11px] font-semibold text-emerald-700">
                               Applied bundle: {bundlePreview.appliedBundleTitle}
+                              {item.bundleRule ? ` (${item.bundleRule})` : ''}
                             </p>
                           ) : null}
                         </div>

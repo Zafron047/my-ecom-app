@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { requireAdminPermission } from '@/lib/admin-session';
 import OrderDetailsEditor from '@/components/admin/OrderDetailsEditor';
 import OrderPrintButton from '@/components/admin/OrderPrintButton';
+import SafeImage from '@/components/SafeImage';
 import { prisma } from '@/lib/prisma';
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
 
@@ -270,12 +271,14 @@ export default async function AdminOrderDetailsPage({
             variantLabel:
               item.variantLabel ??
                 `${item.variant.color || 'Standard'} / ${item.variant.size || 'Standard'}`,
-            imagePath: item.variant.imagePath ?? '',
+            imagePath: item.imagePath ?? item.variant.imagePath ?? '',
             quantity: item.quantity,
             unitPrice: item.unitPrice.toNumber(),
             discountAmount: item.discountAmount.toNumber(),
             lineTotal: item.lineTotal.toNumber(),
+            bundleRule: item.bundleRule,
             appliedBundleTitle:
+              item.bundleTitle ??
               pricingWithCurrentOffers.linePricingById[item.id]?.bundleTitle,
             activeBundleOffers: (item.product.bundleOffers ?? []).map((offer) => {
               const eligibleQty = eligibleQtyByOfferId.get(offer.id) ?? 0;
@@ -362,13 +365,12 @@ export default async function AdminOrderDetailsPage({
               <div key={item.id} className="grid grid-cols-[1fr_170px_90px_170px] items-center gap-3">
                 <div className="flex items-center gap-3">
                   <div className="h-16 w-16 overflow-hidden border border-slate-300">
-                    {item.variant.imagePath ? (
-                      <img
-                        src={item.variant.imagePath}
-                        alt={item.productName}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : null}
+                    <SafeImage
+                      src={item.imagePath ?? item.variant.imagePath}
+                      alt={item.productName}
+                      className="h-full w-full object-cover"
+                      fallbackClassName="flex h-full w-full items-center justify-center bg-white px-1 text-center text-[9px] font-medium leading-tight text-slate-400"
+                    />
                   </div>
                   <div>
                     <p className="text-[18px] leading-6">{item.productName}</p>
@@ -376,6 +378,12 @@ export default async function AdminOrderDetailsPage({
                       {item.variantLabel ??
                         `${item.variant.color || 'Standard'} / ${item.variant.size || 'Standard'}`}
                     </p>
+                    {item.bundleTitle ? (
+                      <p className="text-[14px]">
+                        {item.bundleTitle}
+                        {item.bundleRule ? ` (${item.bundleRule})` : ''}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="text-right text-[18px]">

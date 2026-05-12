@@ -1,7 +1,14 @@
 'use client';
 
 import { Provider, useDispatch, useSelector } from 'react-redux';
-import { useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { type CartLinePricing } from '@/lib/cart-bundle-pricing';
 import { cartActions, type CartItem, type CartProduct, type ShippingOption } from '@/store/cartSlice';
 import { store, type AppDispatch, type RootState } from '@/store/store';
@@ -16,6 +23,7 @@ import {
   selectLastBundleSyncSnapshot,
 } from '@/store/cartSelectors';
 import { type CartPricingResult } from '@/lib/cart-bundle-pricing';
+import { fetchStorefrontCatalogClient } from '@/lib/storefront-catalog-client';
 
 export type { CartItem } from '@/store/cartSlice';
 
@@ -63,10 +71,25 @@ type CartContextValue = {
   clearSelectedItems: () => void;
 };
 
+const CartContext = createContext<CartContextValue | null>(null);
+
 const STORAGE_KEY = 'shop-easy-cart';
 const SHIPPING_STORAGE_KEY = 'shop-easy-shipping-option';
+export const ABANDONED_CHECKOUT_SESSION_KEY = 'shop-easy-abandoned-checkout-session';
 const LEGACY_STORAGE_KEYS: string[] = [];
 const LEGACY_SHIPPING_STORAGE_KEYS: string[] = [];
+
+function getAbandonedCheckoutSessionId() {
+  const existing = window.localStorage.getItem(ABANDONED_CHECKOUT_SESSION_KEY);
+  if (existing) return existing;
+
+  const sessionId =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+  window.localStorage.setItem(ABANDONED_CHECKOUT_SESSION_KEY, sessionId);
+  return sessionId;
+}
 
 function CartStateSync({ children }: { children: React.ReactNode }) {
   const dispatch = useDispatch<AppDispatch>();
@@ -136,34 +159,41 @@ function CartStateSync({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hasHydrated) return;
+
+    const syncTimer = window.setTimeout(() => {
+      const sessionId = getAbandonedCheckoutSessionId();
+      void fetch('/api/cart/abandoned-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          sessionId,
+          items: cartItems,
+        }),
+      }).catch(() => {
+        // Abandoned checkout tracking must never block cart UX.
+      });
+    }, 500);
+
+    return () => {
+      window.clearTimeout(syncTimer);
+    };
+  }, [cartItems, hasHydrated]);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
     window.localStorage.setItem(SHIPPING_STORAGE_KEY, shippingOption);
   }, [hasHydrated, shippingOption]);
 
   useEffect(() => {
     if (!hasHydrated) return;
+    if (cartItems.length === 0) return;
 
     let isMounted = true;
 
     async function syncCatalogAndCartFromServer() {
       try {
-        const response = await fetch('/api/storefront/catalog', { cache: 'no-store' });
-        if (!response.ok) return;
-
-        const payload = (await response.json()) as {
-          products?: Array<{
-            id: string;
-            image: string;
-            name: string;
-            price: number;
-            salePrice?: number;
-            variants?: Array<{ id: string; price: number; salePrice?: number; color?: string; size?: string }>;
-            hasActiveBundleOffer?: boolean;
-            bundleMinTotalQty?: number;
-            bundleDiscountPercent?: number;
-            bundleDisplayText?: string;
-            bundleOffers?: CartProduct['bundleOffers'];
-          }>;
-        };
+        const payload = await fetchStorefrontCatalogClient();
         if (!isMounted || !payload.products) return;
 
         const productById = new Map(payload.products.map((product) => [product.id, product]));
@@ -300,12 +330,14 @@ function CartStateSync({ children }: { children: React.ReactNode }) {
 export function CartProvider({ children }: { children: React.ReactNode }) {
   return (
     <Provider store={store}>
-      <CartStateSync>{children}</CartStateSync>
+      <CartStateSync>
+        <CartRuntimeProvider>{children}</CartRuntimeProvider>
+      </CartStateSync>
     </Provider>
   );
 }
 
-export function useCart(): CartContextValue {
+function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
   const dispatch = useDispatch<AppDispatch>();
   const cartItems = useSelector(selectCartItems);
   const isCartOpen = useSelector(selectIsCartOpen);
@@ -316,6 +348,7 @@ export function useCart(): CartContextValue {
   const selectedItemCount = useSelector(selectSelectedItemCount);
   const [serverPricing, setServerPricing] = useState<CartPricingResult | null>(null);
   const [isPricingAuthoritative, setIsPricingAuthoritative] = useState(false);
+  const authoritativePricingSignatureRef = useRef<string | null>(null);
   const lastBundleSyncSnapshot = useSelector(selectLastBundleSyncSnapshot);
 
   useEffect(() => {
@@ -327,8 +360,24 @@ export function useCart(): CartContextValue {
     ).__LAST_BUNDLE_SYNC_SNAPSHOT__ = lastBundleSyncSnapshot;
   }, [lastBundleSyncSnapshot]);
 
+  const selectedCartPricingSignature = JSON.stringify(
+    selectedCartItems.map((item) => ({
+      id: item.id,
+      detailId: item.detailId,
+      variantId: item.variantId,
+      quantity: item.quantity,
+    })),
+  );
+
   useEffect(() => {
-    if (selectedCartItems.length === 0) {
+    const requestPayload = JSON.parse(selectedCartPricingSignature) as {
+      id: string;
+      detailId?: string;
+      variantId?: string;
+      quantity: number;
+    }[];
+
+    if (requestPayload.length === 0) {
       setServerPricing({
         linePricingById: {},
         subtotalBeforeDiscount: 0,
@@ -339,21 +388,20 @@ export function useCart(): CartContextValue {
       return;
     }
 
+    if (!isCartOpen) {
+      return;
+    }
+
+    if (authoritativePricingSignatureRef.current === selectedCartPricingSignature) {
+      setIsPricingAuthoritative(true);
+      return;
+    }
+
     const retries = [0, 200, 600, 1200];
     let activeTimer: number | null = null;
-    let pollingTimer: number | null = null;
     let disposed = false;
     const controllers = new Set<AbortController>();
-    const POLL_INTERVAL_MS = 20000;
-
-    const requestPayload = {
-      items: selectedCartItems.map((item) => ({
-        id: item.id,
-        detailId: item.detailId,
-        variantId: item.variantId,
-        quantity: item.quantity,
-      })),
-    };
+    const body = JSON.stringify({ items: requestPayload });
 
     const runPricingFetch = async (markPending: boolean): Promise<void> => {
       if (disposed) return;
@@ -366,7 +414,7 @@ export function useCart(): CartContextValue {
           const response = await fetch('/api/cart/price', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestPayload),
+            body,
             signal: controller.signal,
           });
           if (!response.ok) {
@@ -374,6 +422,7 @@ export function useCart(): CartContextValue {
           }
           const payload = (await response.json()) as CartPricingResult;
           if (disposed) return;
+          authoritativePricingSignatureRef.current = selectedCartPricingSignature;
           setServerPricing(payload);
           setIsPricingAuthoritative(true);
         } catch {
@@ -397,53 +446,50 @@ export function useCart(): CartContextValue {
       void runPricingFetch(true);
     }, 120);
 
-    const shouldPollNow = () =>
-      isCartOpen && document.visibilityState === 'visible';
-
-    if (shouldPollNow()) {
-      pollingTimer = window.setInterval(() => {
-        if (!shouldPollNow()) return;
-        void runPricingFetch(false);
-      }, POLL_INTERVAL_MS);
-    }
-
     const handleOnline = () => {
       void runPricingFetch(true);
     };
-    const handleVisibilityChange = () => {
-      if (!shouldPollNow()) return;
-      void runPricingFetch(true);
-      if (pollingTimer !== null) return;
-      pollingTimer = window.setInterval(() => {
-        if (!shouldPollNow()) return;
-        void runPricingFetch(false);
-      }, POLL_INTERVAL_MS);
-    };
     window.addEventListener('online', handleOnline);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       disposed = true;
       window.removeEventListener('online', handleOnline);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
       for (const controller of controllers) {
         controller.abort();
       }
       if (activeTimer !== null) {
         window.clearTimeout(activeTimer);
       }
-      if (pollingTimer !== null) {
-        window.clearInterval(pollingTimer);
-      }
     };
-  }, [isCartOpen, selectedCartItems]);
+  }, [isCartOpen, selectedCartPricingSignature]);
 
-  const effectivePricing = serverPricing ?? {
-    linePricingById: {},
-    subtotalBeforeDiscount: 0,
-    discountTotal: 0,
-    subtotal: 0,
-  };
+  const localPricingFallback = useMemo<CartPricingResult>(() => {
+    const linePricingById = Object.fromEntries(
+      selectedCartItems.map((item) => {
+        const lineSubtotal = (item.salePrice ?? item.price) * item.quantity;
+        return [
+          item.id,
+          {
+            lineSubtotal,
+            lineDiscount: 0,
+            lineTotal: lineSubtotal,
+          },
+        ];
+      }),
+    );
+    const subtotal = selectedCartItems.reduce(
+      (sum, item) => sum + (item.salePrice ?? item.price) * item.quantity,
+      0,
+    );
+    return {
+      linePricingById,
+      subtotalBeforeDiscount: subtotal,
+      discountTotal: 0,
+      subtotal,
+    };
+  }, [selectedCartItems]);
+
+  const effectivePricing = serverPricing ?? localPricingFallback;
   const linePricingById = effectivePricing.linePricingById;
   const subtotalBeforeDiscount = effectivePricing.subtotalBeforeDiscount;
   const discountTotal = effectivePricing.discountTotal;
@@ -556,7 +602,7 @@ export function useCart(): CartContextValue {
     setCartItems(cartItems.filter((item) => !item.selected));
   }
 
-  return {
+  const value = {
     cartItems,
     selectedCartItems,
     isCartOpen,
@@ -581,4 +627,14 @@ export function useCart(): CartContextValue {
     removeFromCart,
     clearSelectedItems,
   };
+
+  return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
+}
+
+export function useCart(): CartContextValue {
+  const value = useContext(CartContext);
+  if (!value) {
+    throw new Error('useCart must be used inside CartProvider.');
+  }
+  return value;
 }
