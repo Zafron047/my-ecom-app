@@ -862,22 +862,24 @@ async function uploadOptimizedImageVariantsFromBuffer(
   objectKey: string,
   sourceBuffer: Buffer,
 ) {
-  for (const variant of PRODUCT_IMAGE_VARIANTS) {
-    const optimizedBuffer = await sharp(sourceBuffer)
-      .rotate()
-      .resize({
-        width: variant.width,
-        withoutEnlargement: true,
-      })
-      .webp({ quality: variant.quality })
-      .toBuffer();
+  await Promise.all(
+    PRODUCT_IMAGE_VARIANTS.map(async (variant) => {
+      const optimizedBuffer = await sharp(sourceBuffer)
+        .rotate()
+        .resize({
+          width: variant.width,
+          withoutEnlargement: true,
+        })
+        .webp({ quality: variant.quality })
+        .toBuffer();
 
-    await uploadStorageBuffer(
-      getVariantObjectKey(objectKey, variant.suffix),
-      optimizedBuffer,
-      'image/webp',
-    );
-  }
+      await uploadStorageBuffer(
+        getVariantObjectKey(objectKey, variant.suffix),
+        optimizedBuffer,
+        'image/webp',
+      );
+    }),
+  );
 }
 
 function getContentTypeFromExtension(extension: string) {
@@ -1308,7 +1310,10 @@ export async function createProduct(formData: FormData) {
   }
 
   revalidatePath('/admin/products');
-  redirect(`/admin/products/${productId}/edit`);
+  return {
+    productId,
+    redirectTo: `/admin/products/${productId}/edit`,
+  };
 }
 
 export async function updateProduct(formData: FormData) {
@@ -2055,6 +2060,80 @@ export async function applyProductsBulkActionWithState(
       message: `Unarchived ${result.count} products to draft.`,
       appliedCount: result.count,
       skipped: [],
+    };
+  }
+
+  if (bulkAction === 'delete') {
+    const selected = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: {
+        id: true,
+        name: true,
+        images: {
+          select: {
+            storagePath: true,
+          },
+        },
+        _count: {
+          select: {
+            orderProducts: true,
+          },
+        },
+      },
+    });
+
+    const skipped = selected
+      .map((product) => ({
+        id: product.id,
+        name: product.name,
+        reasons:
+          product._count.orderProducts > 0
+            ? ['Product has order history; archive it instead']
+            : [],
+      }))
+      .filter((item) => item.reasons.length > 0);
+    const skippedIds = new Set(skipped.map((item) => item.id));
+    const deletable = selected.filter((product) => !skippedIds.has(product.id));
+    const deletedImagePaths: string[] = [];
+    let deletedCount = 0;
+
+    for (const product of deletable) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.bundleOfferVariant.deleteMany({
+            where: {
+              variant: {
+                productId: product.id,
+              },
+            },
+          });
+          await tx.product.delete({
+            where: { id: product.id },
+          });
+        });
+        deletedImagePaths.push(...product.images.map((image) => image.storagePath));
+        deletedCount += 1;
+      } catch {
+        skipped.push({
+          id: product.id,
+          name: product.name,
+          reasons: ['Product is referenced by another record; archive it instead'],
+        });
+      }
+    }
+
+    await deleteProductImageFilesBestEffort(deletedImagePaths);
+    revalidatePath('/admin/products');
+    revalidatePath('/api/storefront/catalog');
+    revalidatePath('/products');
+    return {
+      error: null,
+      message:
+        skipped.length > 0
+          ? `Deleted ${deletedCount} products. Skipped ${skipped.length}.`
+          : `Deleted ${deletedCount} products.`,
+      appliedCount: deletedCount,
+      skipped,
     };
   }
 

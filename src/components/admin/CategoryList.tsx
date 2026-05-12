@@ -66,6 +66,7 @@ function CategoryEditPanel({
   const [previewUrl, setPreviewUrl] = useState(category.imagePath ?? '');
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const handledArchivedAtRef = useRef<number | undefined>(undefined);
   const handledDeletedAtRef = useRef<number | undefined>(undefined);
   const handledSavedAtRef = useRef<number | undefined>(undefined);
   const initialSnapshot = useMemo(
@@ -130,6 +131,14 @@ function CategoryEditPanel({
     );
     router.refresh();
   }, [description, isActive, name, router, slug, state.savedAt]);
+
+  useEffect(() => {
+    if (!state.archivedAt) return;
+    if (handledArchivedAtRef.current === state.archivedAt) return;
+    handledArchivedAtRef.current = state.archivedAt;
+    onCancel();
+    router.refresh();
+  }, [onCancel, router, state.archivedAt]);
 
   useEffect(() => {
     if (!state.deletedAt) return;
@@ -263,6 +272,23 @@ function CategoryEditPanel({
           {isPending ? 'Saving...' : 'Save Category'}
         </button>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="submit"
+            name="intent"
+            value="archive"
+            formNoValidate
+            aria-label="Archive category"
+            title="Archive category"
+            onClick={(event) => {
+              if (!window.confirm('Archive this category?')) {
+                event.preventDefault();
+              }
+            }}
+            className="rounded-xl border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 shadow-sm transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isPending || !isActive}
+          >
+            Archive
+          </button>
           <button
             type="submit"
             name="intent"

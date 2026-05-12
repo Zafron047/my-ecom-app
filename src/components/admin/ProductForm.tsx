@@ -88,7 +88,7 @@ type ProductFormValue = {
 type ProductFormProps = {
   action:
     | ((formData: FormData) => Promise<void> | void)
-    | ((formData: FormData) => Promise<{ error?: string } | void>);
+    | ((formData: FormData) => Promise<{ error?: string; redirectTo?: string } | void>);
   categories: CategoryOption[];
   brands: BrandOption[];
   productNavigation?: {
@@ -111,6 +111,8 @@ type ProductProcessState = 'idle' | 'creating' | 'saving' | 'created' | 'saved';
 
 const statuses: ProductStatus[] = ['draft', 'active', 'archived'];
 const PRODUCT_FORM_FLASH_KEY = 'admin-product-form-flash';
+// Temporarily hide product-scoped bundle editing while bundle offers move to a global reusable model.
+const SHOW_PRODUCT_BUNDLE_EDITOR = false;
 const PRODUCT_NAME_WORD_LIMIT = 6;
 const SHORT_DESCRIPTION_WORD_LIMIT = 40;
 const MAX_PRODUCT_IMAGE_FILES = 10;
@@ -139,12 +141,6 @@ type MediaOption = {
   label: string;
   previewUrl: string;
   value: string;
-};
-
-type UploadedImagePayload = {
-  clientId: string;
-  name: string;
-  objectKey: string;
 };
 
 const emptyVariant = (): VariantFormRow => ({
@@ -287,6 +283,16 @@ function normalizeColorHex(value: string) {
 
 function getColorPickerValue(value: string) {
   return normalizeColorHex(value) || '#000000';
+}
+
+function getActivationRequirementLabels(
+  missing: ActivationRequirementsState,
+) {
+  return [
+    missing.media ? 'Image' : null,
+    missing.categories ? 'Category' : null,
+    missing.variants ? 'Price' : null,
+  ].filter((label): label is string => Boolean(label));
 }
 
 function getImageOrderKey(item: ProductImageItem) {
@@ -1086,6 +1092,8 @@ export default function ProductForm({
     (activeEditorSection === null || activeEditorSection === 'bundles');
   const isVariantError =
     Boolean(submitError) && /variant/i.test(submitError ?? '');
+  const isActivationReadinessError =
+    Boolean(submitError) && (submitError ?? '').startsWith('Cannot activate.');
   const productProcessMessage =
     productProcessState === 'creating'
       ? 'Creating, please wait.'
@@ -1285,58 +1293,6 @@ export default function ProductForm({
       syncFileInputWithImageItems(nextImageItems);
       return nextImageItems;
     });
-  }
-
-  async function uploadNewImagesToStorage(newItems: NewImageItem[]) {
-    const uploaded: UploadedImagePayload[] = [];
-
-    for (const item of newItems) {
-      const extension = getFileExtension(item.file.name);
-      const signResponse = await fetch('/api/admin/product-images/sign-upload', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contentType: item.file.type || 'application/octet-stream',
-          extension,
-        }),
-      });
-
-      if (!signResponse.ok) {
-        throw new Error('Failed to prepare image upload.');
-      }
-
-      const signPayload = (await signResponse.json()) as {
-        objectKey?: string;
-        uploadUrl?: string;
-      };
-
-      if (!signPayload.objectKey || !signPayload.uploadUrl) {
-        throw new Error('Invalid upload configuration from server.');
-      }
-
-      const uploadResponse = await fetch(signPayload.uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': item.file.type || 'application/octet-stream',
-          'x-upsert': 'false',
-        },
-        body: item.file,
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload selected image.');
-      }
-
-      uploaded.push({
-        clientId: item.clientId,
-        name: item.file.name,
-        objectKey: signPayload.objectKey,
-      });
-    }
-
-    return uploaded;
   }
 
   function updateBundleOffer(index: number, patch: Partial<BundleOfferFormRow>) {
@@ -1614,12 +1570,38 @@ export default function ProductForm({
     setSubmitError(null);
   }
 
-  function getActivationMissingRequirements() {
-    const hasMedia = imageItems.length > 0;
-    const hasCategories = selectedCategoryIds.length > 0;
-    const hasVariantWithPrice = rows.some(
-      (row) => Boolean(row.id) || row.price.trim().length > 0,
-    );
+  function getActivationMissingRequirements(formData?: FormData) {
+    const submittedImageOrder = formData
+      ?.getAll('imageOrder')
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const submittedCategories = formData
+      ?.getAll('categoryIds')
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const submittedVariantIds = formData
+      ?.getAll('variantId')
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const submittedVariantPrices = formData
+      ?.getAll('variantPrice')
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    const hasMedia = formData
+      ? (submittedImageOrder?.length ?? 0) > 0
+      : imageItems.length > 0;
+    const hasCategories = formData
+      ? (submittedCategories?.length ?? 0) > 0
+      : selectedCategoryIds.length > 0;
+    const hasVariantWithPrice = formData
+      ? (submittedVariantIds?.length ?? 0) > 0 ||
+        (submittedVariantPrices?.length ?? 0) > 0
+      : rows.some((row) => Boolean(row.id) || row.price.trim().length > 0);
 
     return {
       categories: !hasCategories,
@@ -1672,12 +1654,16 @@ export default function ProductForm({
       setProductProcessState('idle');
     }
     if (shouldValidateActivation && intendedStatus === 'active') {
-      const missing = getActivationMissingRequirements();
+      const missing = getActivationMissingRequirements(formData);
       setActivationRequirements(missing);
 
-      if (!isEditing || missing.categories || missing.media || missing.variants) {
-        setSelectedStatus('draft');
-        formData.set('status', 'draft');
+      if (missing.categories || missing.media || missing.variants) {
+        const missingLabels = getActivationRequirementLabels(missing);
+        setSubmitError(
+          `Cannot activate. Missing fields: ${missingLabels.join(', ')}.`,
+        );
+        setProductProcessState('idle');
+        return;
       }
     } else if (shouldValidateActivation) {
       setActivationRequirements({
@@ -1706,20 +1692,6 @@ export default function ProductForm({
     setIsSubmittingProduct(true);
     setActiveSubmitIntent(submitIntent);
     try {
-      const newImageItems = imageItems.filter(
-        (item): item is NewImageItem => item.type === 'new',
-      );
-      if (newImageItems.length > 0) {
-        const uploadedImages = await uploadNewImagesToStorage(newImageItems);
-        formData.delete('productImages');
-        formData.delete('productImageClientIds');
-        for (const image of uploadedImages) {
-          formData.append('uploadedProductImageClientIds', image.clientId);
-          formData.append('uploadedProductImageObjectKeys', image.objectKey);
-          formData.append('uploadedProductImageNames', image.name);
-        }
-      }
-
       const result = await action(formData);
       if (
         result &&
@@ -1732,6 +1704,19 @@ export default function ProductForm({
         if (isProductSubmit) {
           setProductProcessState('idle');
         }
+      } else if (
+        result &&
+        typeof result === 'object' &&
+        'redirectTo' in result &&
+        typeof result.redirectTo === 'string' &&
+        result.redirectTo.trim().length > 0
+      ) {
+        if (isProductSubmit) {
+          window.sessionStorage.setItem(PRODUCT_FORM_FLASH_KEY, 'created');
+        }
+        setProductProcessState('created');
+        keepSaveLocked = true;
+        router.replace(result.redirectTo);
       } else if (submitIntent === 'variants') {
         setSavedVariantSnapshot(
           buildVariantSnapshot(rowsRef.current, removedVariantIdsRef.current),
@@ -1866,7 +1851,6 @@ export default function ProductForm({
         name="slug"
         value={buildProductSlug(productName, initialProduct.slug)}
       />
-      <input type="hidden" name="status" value={selectedStatus} />
       <section className="space-y-4 border-b border-slate-200 pb-6">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-slate-900">Product</h3>
@@ -1991,18 +1975,6 @@ export default function ProductForm({
                 value={selectedStatus}
                 onChange={(value) => {
                   const nextValue = value as ProductStatus;
-                  if (!isEditing && nextValue === 'active') {
-                    setSelectedStatus('draft');
-                    setActivationRequirements({
-                      categories: selectedCategoryIds.length === 0,
-                      media: imageItems.length === 0,
-                      variants: true,
-                    });
-                    setSubmitError(
-                      'Create product as draft first. You can activate it after product ID and variants are created.',
-                    );
-                    return;
-                  }
                   setSelectedStatus(nextValue);
                   if (nextValue !== 'active') {
                     setActivationRequirements({
@@ -2253,7 +2225,7 @@ export default function ProductForm({
 
           <p
             className={`mt-5 text-sm font-medium ${
-              activationRequirements.media ? 'text-red-700' : 'text-slate-900'
+              activationRequirements.media ? 'text-amber-700' : 'text-slate-900'
             }`}
           >
             Media
@@ -2262,7 +2234,7 @@ export default function ProductForm({
             Upload JPG/PNG/WEBP/AVIF. Keep each image under 4MB.
           </p>
           {activationRequirements.media ? (
-            <p className="mt-1 text-xs font-semibold text-red-700">
+            <p className="mt-1 text-xs font-semibold text-amber-700">
               At least one product image is required to set status to active.
             </p>
           ) : null}
@@ -2279,7 +2251,7 @@ export default function ProductForm({
           <div
             className={`mt-3 flex flex-wrap items-start gap-2 rounded-xl p-2 ${
               activationRequirements.media
-                ? 'border border-red-300 bg-red-50/40'
+                ? 'border border-amber-300 bg-amber-50/50'
                 : ''
             }`}
           >
@@ -2364,7 +2336,7 @@ export default function ProductForm({
           <div
             className={`mt-5 rounded-xl p-2 ${
               activationRequirements.categories
-                ? 'border border-red-300 bg-red-50/40'
+                ? 'border border-amber-300 bg-amber-50/50'
                 : ''
             }`}
           >
@@ -2382,7 +2354,7 @@ export default function ProductForm({
               )}
             </div>
             {activationRequirements.categories ? (
-              <p className="mb-2 text-xs font-semibold text-red-700">
+              <p className="mb-2 text-xs font-semibold text-amber-700">
                 At least one category is required to set status to active.
               </p>
             ) : null}
@@ -2404,7 +2376,7 @@ export default function ProductForm({
                 }
                 className={`h-11 w-full rounded-xl border bg-white px-3.5 py-2.5 pr-12 text-left text-sm outline-none transition ${
                   activationRequirements.categories
-                    ? 'border-red-300 text-slate-900 ring-2 ring-red-100'
+                    ? 'border-amber-300 text-slate-900 ring-2 ring-amber-100'
                     : isCategoryDropdownOpen
                       ? 'border-slate-500 text-slate-900 shadow-md ring-2 ring-slate-200'
                       : 'border-slate-300 text-slate-800'
@@ -2516,7 +2488,13 @@ export default function ProductForm({
               </p>
             ) : null}
             {submitError && !isVariantError ? (
-              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              <p
+                className={`mt-3 rounded-lg border px-3 py-2 text-sm font-medium ${
+                  isActivationReadinessError
+                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : 'border-red-200 bg-red-50 text-red-700'
+                }`}
+              >
                 {submitError}
               </p>
             ) : null}
@@ -2537,12 +2515,12 @@ export default function ProductForm({
         <div
           className={`rounded-xl bg-white p-5 shadow-sm ${
             activationRequirements.variants
-              ? 'border border-red-300'
+              ? 'border border-amber-300'
               : 'border border-slate-200'
           }`}
         >
           {activationRequirements.variants ? (
-            <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
               At least one variant with price is required to set status to active.
             </p>
           ) : null}
@@ -2944,6 +2922,9 @@ export default function ProductForm({
         </div>
       </section>
 
+      {/* Product-scoped bundle editor is temporarily hidden while global bundles are verified. */}
+      {/* do not remove code block commented temporarily */}
+      {SHOW_PRODUCT_BUNDLE_EDITOR ? (
       <section className="space-y-4 border-b border-slate-200 pb-6">
         <div>
           <h3 className="text-sm font-semibold text-amber-900">Bundles</h3>
@@ -3215,6 +3196,7 @@ export default function ProductForm({
           )}
         </div>
       </section>
+      ) : null}
 
     </form>
   );

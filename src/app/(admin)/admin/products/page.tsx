@@ -33,6 +33,29 @@ function formatMoney(value: { toNumber: () => number } | number) {
   }).format(amount);
 }
 
+type ProductStatsRow = {
+  activeProducts: number;
+  archivedProducts: number;
+  draftProducts: number;
+  totalProducts: number;
+  totalVariants: number;
+  outOfStockVariants: number;
+};
+
+type ProductListRow = {
+  altText: string | null;
+  categoryNames: string[] | null;
+  id: string;
+  maximumPrice: string | null;
+  minimumPrice: string | null;
+  name: string;
+  slug: string;
+  status: ProductStatus;
+  stock: number | null;
+  storagePath: string | null;
+  variantCount: number;
+};
+
 export default async function AdminProductsPage({
   searchParams,
 }: ProductsPageProps) {
@@ -43,74 +66,89 @@ export default async function AdminProductsPage({
   const status = getStatus(params.status);
 
   const [
-    totalProducts,
-    activeProducts,
-    draftProducts,
-    archivedProducts,
-    totalVariants,
-    outOfStockVariants,
+    productStats,
+    products,
   ] = await Promise.all([
-    prisma.product.count(),
-    prisma.product.count({ where: { status: ProductStatus.active } }),
-    prisma.product.count({ where: { status: ProductStatus.draft } }),
-    prisma.product.count({ where: { status: ProductStatus.archived } }),
-    prisma.productVariant.count(),
-    prisma.productVariant.count({ where: { stockQuantity: { lte: 0 } } }),
+    prisma.$queryRaw<ProductStatsRow[]>`
+      SELECT
+        COUNT(*)::int AS "totalProducts",
+        COUNT(*) FILTER (WHERE "status" = 'active')::int AS "activeProducts",
+        COUNT(*) FILTER (WHERE "status" = 'draft')::int AS "draftProducts",
+        COUNT(*) FILTER (WHERE "status" = 'archived')::int AS "archivedProducts",
+        (SELECT COUNT(*)::int FROM "ProductVariant") AS "totalVariants",
+        (
+          SELECT COUNT(*)::int
+          FROM "ProductVariant"
+          WHERE "stockQuantity" <= 0
+        ) AS "outOfStockVariants"
+      FROM "Product"
+    `,
+    prisma.$queryRaw<ProductListRow[]>`
+      SELECT
+        p."id",
+        p."name",
+        p."slug",
+        p."status",
+        COALESCE(variant_stats."variantCount", 0)::int AS "variantCount",
+        COALESCE(variant_stats."stock", 0)::int AS "stock",
+        variant_stats."minimumPrice"::text AS "minimumPrice",
+        variant_stats."maximumPrice"::text AS "maximumPrice",
+        category_stats."categoryNames",
+        primary_image."storagePath",
+        primary_image."altText"
+      FROM "Product" p
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*)::int AS "variantCount",
+          SUM("stockQuantity")::int AS "stock",
+          MIN("price") AS "minimumPrice",
+          MAX("price") AS "maximumPrice"
+        FROM "ProductVariant"
+        WHERE "productId" = p."id"
+      ) variant_stats ON true
+      LEFT JOIN LATERAL (
+        SELECT ARRAY_AGG(category_rows."name" ORDER BY category_rows."assignedAt") AS "categoryNames"
+        FROM (
+          SELECT c."name", pc."assignedAt"
+          FROM "ProductCategory" pc
+          INNER JOIN "Category" c ON c."id" = pc."categoryId"
+          WHERE pc."productId" = p."id"
+          ORDER BY pc."assignedAt" ASC
+          LIMIT 2
+        ) category_rows
+      ) category_stats ON true
+      LEFT JOIN LATERAL (
+        SELECT "storagePath", "altText"
+        FROM "ProductImage"
+        WHERE "productId" = p."id"
+        ORDER BY "isPrimary" DESC, "sortOrder" ASC
+        LIMIT 1
+      ) primary_image ON true
+      WHERE
+        (${status ?? null}::text IS NULL OR p."status" = (${status ?? null}::text)::"ProductStatus")
+        AND (
+          ${query || null}::text IS NULL
+          OR p."name" ILIKE '%' || ${query || null} || '%'
+          OR p."slug" ILIKE '%' || ${query || null} || '%'
+          OR EXISTS (
+            SELECT 1
+            FROM "ProductVariant" pv
+            WHERE pv."productId" = p."id"
+              AND pv."sku" ILIKE '%' || ${query || null} || '%'
+          )
+        )
+      ORDER BY p."updatedAt" DESC
+      LIMIT 50
+    `,
   ]);
-
-  const products = await prisma.product.findMany({
-    include: {
-      categories: {
-        include: {
-          category: true,
-        },
-        take: 2,
-      },
-      variants: {
-        orderBy: {
-          sortOrder: 'asc',
-        },
-      },
-      images: {
-        orderBy: [
-          {
-            isPrimary: 'desc',
-          },
-          {
-            sortOrder: 'asc',
-          },
-        ],
-        take: 1,
-      },
-      _count: {
-        select: {
-          variants: true,
-        },
-      },
-    },
-    orderBy: {
-      updatedAt: 'desc',
-    },
-    take: 50,
-    where: {
-      ...(status ? { status } : {}),
-      ...(query
-        ? {
-            OR: [
-              { name: { contains: query, mode: 'insensitive' } },
-              { slug: { contains: query, mode: 'insensitive' } },
-              {
-                variants: {
-                  some: {
-                    sku: { contains: query, mode: 'insensitive' },
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
-    },
-  });
+  const {
+    activeProducts = 0,
+    archivedProducts = 0,
+    draftProducts = 0,
+    outOfStockVariants = 0,
+    totalProducts = 0,
+    totalVariants = 0,
+  } = productStats[0] ?? {};
 
   return (
     <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -164,20 +202,18 @@ export default async function AdminProductsPage({
 
       <ProductsListTable
         products={products.map((product) => {
-          const stock = product.variants.reduce(
-            (total, variant) => total + variant.stockQuantity,
-            0,
-          );
-          const prices = product.variants.map((variant) => variant.price.toNumber());
-          const minimumPrice = prices.length > 0 ? Math.min(...prices) : null;
-          const maximumPrice = prices.length > 0 ? Math.max(...prices) : null;
+          const stock = product.stock ?? 0;
+          const minimumPrice =
+            product.minimumPrice === null ? null : Number(product.minimumPrice);
+          const maximumPrice =
+            product.maximumPrice === null ? null : Number(product.maximumPrice);
           const priceLabel =
             minimumPrice === null || maximumPrice === null
               ? 'No price'
               : minimumPrice === maximumPrice
                 ? formatMoney(minimumPrice)
                 : `${formatMoney(minimumPrice)} - ${formatMoney(maximumPrice)}`;
-          const primaryImage = product.images[0];
+          const categoryNames = product.categoryNames ?? [];
 
           return {
             id: product.id,
@@ -185,16 +221,16 @@ export default async function AdminProductsPage({
             slug: product.slug,
             status: product.status,
             categoriesLabel:
-              product.categories.length > 0
-                ? product.categories.map((item) => item.category.name).join(', ')
+              categoryNames.length > 0
+                ? categoryNames.join(', ')
                 : 'Unassigned',
-            variantCount: product._count.variants,
+            variantCount: product.variantCount,
             stock,
             priceLabel,
-            primaryImage: primaryImage
+            primaryImage: product.storagePath
               ? {
-                  storagePath: primaryImage.storagePath,
-                  altText: primaryImage.altText,
+                  storagePath: product.storagePath,
+                  altText: product.altText,
                 }
               : null,
           };

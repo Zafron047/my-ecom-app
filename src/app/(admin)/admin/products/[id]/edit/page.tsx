@@ -105,24 +105,6 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
             value: true,
           },
         },
-        bundleOffers: {
-          orderBy: {
-            sortOrder: 'asc',
-          },
-          select: {
-            id: true,
-            title: true,
-            imagePath: true,
-            minTotalQty: true,
-            discountPercent: true,
-            isActive: true,
-            variants: {
-              select: {
-                variantId: true,
-              },
-            },
-          },
-        },
       },
       where: { id },
     }),
@@ -208,25 +190,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
           name: specification.name,
           value: specification.value,
         })),
-        bundleOffers: product.bundleOffers.map((offer) => {
-          const normalizedBundleImagePath = normalizeImagePathForMatch(offer.imagePath);
-          const selectedImage = product.images.find(
-            (image) =>
-              image.storagePath === offer.imagePath ||
-              normalizeImagePathForMatch(image.storagePath) === normalizedBundleImagePath,
-          );
-          return {
-            id: offer.id,
-            title: offer.title ?? '',
-            imageSelection: selectedImage ? `existing:${selectedImage.id}` : '',
-            variantSelection: offer.variants
-              .map((variant) => `existing:${variant.variantId}`)
-              .join(','),
-            minTotalQty: offer.minTotalQty.toString(),
-            discountPercent: decimalToString(offer.discountPercent),
-            isActive: offer.isActive,
-          };
-        }),
+        bundleOffers: [],
         variants: product.variants.map((variant) => {
           const imagePathsFromVariant =
             variant.variantImages.length > 0

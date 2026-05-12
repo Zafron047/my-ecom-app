@@ -65,7 +65,21 @@ export default function ProductsListTable({
 
   return (
     <div className="overflow-x-auto">
-      <form action={bulkActionFormAction} className="mb-3 flex justify-end">
+      <form
+        action={bulkActionFormAction}
+        className="mb-3 flex justify-end"
+        onSubmit={(event) => {
+          const formData = new FormData(event.currentTarget);
+          if (formData.get('bulkAction') !== 'delete') return;
+          if (
+            !window.confirm(
+              'Delete selected products permanently? Products with order history will be skipped and should be archived instead.',
+            )
+          ) {
+            event.preventDefault();
+          }
+        }}
+      >
         {selectedProductIds.map((id) => (
           <input key={id} type="hidden" name="productIds" value={id} />
         ))}
@@ -84,6 +98,7 @@ export default function ProductsListTable({
             <option value="set-archived">Set status: Archived</option>
             <option value="archive">Archive</option>
             <option value="unarchive">Unarchive (to draft)</option>
+            <option value="delete">Delete permanently</option>
           </select>
           <button
             type="submit"

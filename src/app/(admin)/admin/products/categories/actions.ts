@@ -12,6 +12,8 @@ const SUPABASE_STORAGE_BUCKET =
 const MAX_CATEGORY_IMAGE_UPLOAD_ATTEMPTS = 100;
 
 export type CategoryFormState = {
+  archivedAt?: number;
+  archivedCategoryId?: string;
   deletedAt?: number;
   deletedCategoryId?: string;
   error: string | null;
@@ -276,6 +278,44 @@ export async function updateCategory(
       deletedCategoryId: categoryId,
       error: null,
       success: 'Category deleted.',
+    };
+  }
+
+  if (intent === 'archive') {
+    if (!categoryId) {
+      return { error: 'Category could not be found.' };
+    }
+
+    const existingCategory = await prisma.category.findUnique({
+      select: {
+        id: true,
+      },
+      where: {
+        id: categoryId,
+      },
+    });
+
+    if (!existingCategory) {
+      return { error: 'Category could not be found.' };
+    }
+
+    await prisma.category.update({
+      data: { isActive: false },
+      where: {
+        id: categoryId,
+      },
+    });
+
+    revalidatePath('/admin/products/categories');
+    revalidatePath('/admin/products/new');
+    revalidatePath('/api/storefront/catalog');
+    revalidatePath('/products');
+
+    return {
+      archivedAt: Date.now(),
+      archivedCategoryId: categoryId,
+      error: null,
+      success: 'Category archived.',
     };
   }
 

@@ -40,7 +40,14 @@ export default async function AdminProductsCategoriesPage({
   const [categories, uncategorizedProductCount, uncategorizedProducts] =
     await Promise.all([
       prisma.category.findMany({
-        include: {
+        select: {
+          description: true,
+          id: true,
+          imagePath: true,
+          isActive: true,
+          name: true,
+          slug: true,
+          updatedAt: true,
           _count: {
             select: {
               products: true,

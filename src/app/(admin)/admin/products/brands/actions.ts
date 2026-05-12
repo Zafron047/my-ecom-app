@@ -7,6 +7,8 @@ import { prisma } from '@/lib/prisma';
 export type BrandFormState = {
   archivedAt?: number;
   archivedBrandId?: string;
+  deletedAt?: number;
+  deletedBrandId?: string;
   error: string | null;
   savedAt?: number;
   savedSnapshot?: string;
@@ -129,6 +131,23 @@ export async function updateBrand(
       archivedBrandId: brandId,
       error: null,
       success: 'Brand archived.',
+    };
+  }
+
+  if (intent === 'delete') {
+    await prisma.brand.delete({
+      where: { id: brandId },
+    });
+
+    revalidatePath('/admin/products/brands');
+    revalidatePath('/admin/products');
+    revalidatePath('/admin/products/new');
+
+    return {
+      deletedAt: Date.now(),
+      deletedBrandId: brandId,
+      error: null,
+      success: 'Brand deleted.',
     };
   }
 

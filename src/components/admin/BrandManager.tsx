@@ -176,6 +176,7 @@ function BrandEditPanel({
   const [description, setDescription] = useState(brand.description ?? '');
   const [isActive, setIsActive] = useState(brand.isActive);
   const handledArchivedAtRef = useRef<number | undefined>(undefined);
+  const handledDeletedAtRef = useRef<number | undefined>(undefined);
   const handledSavedAtRef = useRef<number | undefined>(undefined);
   const slug = slugify(name);
   const initialSnapshot = useMemo(
@@ -211,6 +212,13 @@ function BrandEditPanel({
     onCancel();
     router.refresh();
   }, [onCancel, router, state.archivedAt]);
+
+  useEffect(() => {
+    if (!state.deletedAt || handledDeletedAtRef.current === state.deletedAt) return;
+    handledDeletedAtRef.current = state.deletedAt;
+    onCancel();
+    router.refresh();
+  }, [onCancel, router, state.deletedAt]);
 
   return (
     <form action={formAction} className="space-y-4 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
@@ -288,6 +296,21 @@ function BrandEditPanel({
             className="rounded-xl border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Archive
+          </button>
+          <button
+            type="submit"
+            name="intent"
+            value="delete"
+            formNoValidate
+            disabled={isPending}
+            onClick={(event) => {
+              if (!window.confirm('Delete this brand permanently? Products using it will keep no brand.')) {
+                event.preventDefault();
+              }
+            }}
+            className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Delete
           </button>
           <button
             type="button"

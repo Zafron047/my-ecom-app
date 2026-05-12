@@ -34,7 +34,13 @@ export default async function AdminProductsBrandsPage({
   const status = getStatusFilter(params.status);
 
   const brands = await prisma.brand.findMany({
-    include: {
+    select: {
+      description: true,
+      id: true,
+      isActive: true,
+      name: true,
+      slug: true,
+      updatedAt: true,
       _count: {
         select: {
           products: true,

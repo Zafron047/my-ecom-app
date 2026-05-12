@@ -7,7 +7,7 @@ async function safeCreateProduct(formData: FormData) {
   'use server';
 
   try {
-    await createProduct(formData);
+    return await createProduct(formData);
   } catch (error) {
     if (
       error &&

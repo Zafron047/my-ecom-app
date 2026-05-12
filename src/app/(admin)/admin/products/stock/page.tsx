@@ -22,7 +22,16 @@ export default async function AdminProductsStockPage({
   const variantState = (params.variant ?? '').trim().toLowerCase();
 
   const variants = await prisma.productVariant.findMany({
-    include: {
+    select: {
+      color: true,
+      id: true,
+      imagePath: true,
+      isActive: true,
+      reorderLevel: true,
+      size: true,
+      sku: true,
+      stockQuantity: true,
+      updatedAt: true,
       product: {
         select: {
           id: true,
