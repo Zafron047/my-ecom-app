@@ -20,6 +20,7 @@ export type CheckoutProduct = {
     sku: string;
     color: string | null;
     size: string | null;
+    imagePath?: string | null;
     price: { toNumber(): number };
   }>;
   bundleOffers: Array<{
@@ -33,6 +34,14 @@ export type CheckoutProduct = {
 };
 
 export type BuildCheckoutPricingInput = {
+  globalBundleOffers?: Array<{
+    id: string;
+    title: string | null;
+    minTotalQty: number;
+    discountPercent: { toNumber(): number };
+    isActive: boolean;
+    variants: Array<{ variantId: string }>;
+  }>;
   items: CheckoutItemInput[];
   products: CheckoutProduct[];
   shipping: {
@@ -48,11 +57,14 @@ export type PreparedOrderLine = {
   variantId: string;
   productName: string;
   variantLabel: string;
+  imagePath: string;
   sku: string;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
   discountAmount: number;
+  bundleTitle: string | null;
+  bundleRule: string | null;
 };
 
 export type BuildCheckoutPricingResult =
@@ -93,6 +105,16 @@ export function buildCheckoutPricing(
       })),
     );
   }
+  const globalBundleOffers: BundleOfferLite[] = (input.globalBundleOffers ?? []).map(
+    (offer) => ({
+      id: offer.id,
+      title: offer.title?.trim() || 'Bundle Offer',
+      minTotalQty: offer.minTotalQty,
+      discountPercent: offer.discountPercent.toNumber(),
+      variantIds: offer.variants.map((item) => item.variantId),
+      isActive: offer.isActive,
+    }),
+  );
 
   const rawLines: Array<{
     lineId: string;
@@ -100,6 +122,7 @@ export function buildCheckoutPricing(
     variantId: string;
     productName: string;
     variantLabel: string;
+    imagePath: string;
     sku: string;
     quantity: number;
     unitPrice: number;
@@ -129,6 +152,7 @@ export function buildCheckoutPricing(
       variantId: variant.id,
       productName: product.name,
       variantLabel,
+      imagePath: variant.imagePath ?? '',
       sku: variant.sku,
       quantity,
       unitPrice,
@@ -156,6 +180,7 @@ export function buildCheckoutPricing(
       unitPrice: line.unitPrice,
     })),
     (productId) => offersByProductId.get(productId) ?? [],
+    globalBundleOffers,
   );
 
   const deliveryCharge = toMoney(
@@ -173,17 +198,25 @@ export function buildCheckoutPricing(
 
   const lines: PreparedOrderLine[] = rawLines.map((line) => {
     const pricedLine = pricing.linePricingById[line.lineId];
+    const bundleTitle = pricedLine?.bundleTitle?.trim() || null;
+    const bundleRule =
+      pricedLine?.bundleMinTotalQty && pricedLine.bundleDiscountPercent
+        ? `Buy ${pricedLine.bundleMinTotalQty}+ get ${pricedLine.bundleDiscountPercent}% off`
+        : null;
     return {
       lineId: line.lineId,
       productId: line.productId,
       variantId: line.variantId,
       productName: line.productName,
       variantLabel: line.variantLabel,
+      imagePath: line.imagePath,
       sku: line.sku,
       quantity: line.quantity,
       unitPrice: line.unitPrice,
       lineTotal: toMoney(pricedLine?.lineTotal ?? line.unitPrice * line.quantity),
       discountAmount: toMoney(pricedLine?.lineDiscount ?? 0),
+      bundleTitle,
+      bundleRule,
     };
   });
 

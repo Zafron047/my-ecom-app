@@ -141,4 +141,27 @@ describe('computeCartPricing bundle tiers', () => {
     expect(pricing.linePricingById.gray.bundleTitle).toBe('All 35%');
     expect(pricing.discountTotal).toBe(5915);
   });
+
+  it('applies a global offer across eligible variants from different products', () => {
+    const lines: CartLineInput[] = [
+      { id: 'shirt', productId: 'p-shirt', variantId: 'v-shirt-red', quantity: 1, unitPrice: 1000 },
+      { id: 'pant', productId: 'p-pant', variantId: 'v-pant-black', quantity: 1, unitPrice: 2000 },
+    ];
+    const globalOffers: BundleOfferLite[] = [
+      {
+        id: 'outfit',
+        title: 'Outfit bundle',
+        minTotalQty: 2,
+        discountPercent: 10,
+        variantIds: ['v-shirt-red', 'v-pant-black'],
+        isActive: true,
+      },
+    ];
+
+    const pricing = computeCartPricing(lines, () => [], globalOffers);
+    expect(pricing.linePricingById.shirt.bundleTitle).toBe('Outfit bundle');
+    expect(pricing.linePricingById.pant.bundleTitle).toBe('Outfit bundle');
+    expect(pricing.discountTotal).toBe(300);
+    expect(pricing.subtotal).toBe(2700);
+  });
 });

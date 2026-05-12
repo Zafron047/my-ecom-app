@@ -39,27 +39,27 @@ type OfferApplication = {
   gain: number;
 };
 
-function solveBestOfferPlanForProduct(
-  productLines: CartLineInput[],
+function solveBestOfferPlan(
+  cartLines: CartLineInput[],
   activeOffers: BundleOfferLite[],
 ) {
-  if (productLines.length === 0 || activeOffers.length === 0) {
+  if (cartLines.length === 0 || activeOffers.length === 0) {
     return {
       lineOfferById: new Map<string, BundleOfferLite>(),
     };
   }
 
-  const quantities = productLines.map((line) => line.quantity);
-  const subtotals = productLines.map((line) => line.unitPrice * line.quantity);
+  const quantities = cartLines.map((line) => line.quantity);
+  const subtotals = cartLines.map((line) => line.unitPrice * line.quantity);
 
   const eligibleLineIndexesByOffer = activeOffers.map((offer) =>
-    productLines
+    cartLines
       .map((line, index) => ({ line, index }))
       .filter(({ line }) => isLineEligibleForOffer(line, offer))
       .map(({ index }) => index),
   );
 
-  const fullState = '1'.repeat(productLines.length);
+  const fullState = '1'.repeat(cartLines.length);
   const memo = new Map<string, { gain: number; applications: OfferApplication[] }>();
 
   function solve(state: string): { gain: number; applications: OfferApplication[] } {
@@ -111,7 +111,7 @@ function solveBestOfferPlanForProduct(
   const lineOfferById = new Map<string, BundleOfferLite>();
   for (const application of bestPlan.applications) {
     for (const lineIndex of application.affectedLineIndexes) {
-      lineOfferById.set(productLines[lineIndex].id, application.offer);
+      lineOfferById.set(cartLines[lineIndex].id, application.offer);
     }
   }
 
@@ -121,6 +121,7 @@ function solveBestOfferPlanForProduct(
 export function computeCartPricing(
   lines: CartLineInput[],
   getOffersForProduct: (productId: string) => BundleOfferLite[],
+  globalOffers: BundleOfferLite[] = [],
 ): CartPricingResult {
   const seenLineIds = new Set<string>();
   for (const line of lines) {
@@ -130,44 +131,45 @@ export function computeCartPricing(
     seenLineIds.add(line.id);
   }
 
-  const linePricingById: Record<string, CartLinePricing> = {};
-  const grouped = new Map<string, CartLineInput[]>();
-
-  for (const line of lines) {
-    const group = grouped.get(line.productId) ?? [];
-    group.push(line);
-    grouped.set(line.productId, group);
+  const offersById = new Map<string, BundleOfferLite>();
+  for (const offer of globalOffers) {
+    if (offer.isActive) {
+      offersById.set(offer.id, offer);
+    }
+  }
+  for (const productId of new Set(lines.map((line) => line.productId))) {
+    for (const offer of getOffersForProduct(productId)) {
+      if (offer.isActive) {
+        offersById.set(offer.id, offer);
+      }
+    }
   }
 
-  for (const [productId, productLines] of grouped) {
-    const activeOffers = getOffersForProduct(productId).filter(
-      (offer) => offer.isActive,
-    );
-    const { lineOfferById: assignedOfferByLineId } = solveBestOfferPlanForProduct(
-      productLines,
-      activeOffers,
-    );
+  const { lineOfferById: assignedOfferByLineId } = solveBestOfferPlan(
+    lines,
+    [...offersById.values()],
+  );
+  const linePricingById: Record<string, CartLinePricing> = {};
 
-    for (const line of productLines) {
-      const lineSubtotal = line.unitPrice * line.quantity;
-      const appliedOffer = assignedOfferByLineId.get(line.id);
-      const bundleDiscountPercent = appliedOffer?.discountPercent ?? 0;
-      const lineDiscount = lineSubtotal * (bundleDiscountPercent / 100);
-      const lineTotal = lineSubtotal - lineDiscount;
+  for (const line of lines) {
+    const lineSubtotal = line.unitPrice * line.quantity;
+    const appliedOffer = assignedOfferByLineId.get(line.id);
+    const bundleDiscountPercent = appliedOffer?.discountPercent ?? 0;
+    const lineDiscount = lineSubtotal * (bundleDiscountPercent / 100);
+    const lineTotal = lineSubtotal - lineDiscount;
 
-      linePricingById[line.id] = {
-        lineSubtotal,
-        lineDiscount,
-        lineTotal,
-        ...(appliedOffer
-          ? {
-              bundleTitle: appliedOffer.title,
-              bundleMinTotalQty: appliedOffer.minTotalQty,
-              bundleDiscountPercent: appliedOffer.discountPercent,
-            }
-          : {}),
-      };
-    }
+    linePricingById[line.id] = {
+      lineSubtotal,
+      lineDiscount,
+      lineTotal,
+      ...(appliedOffer
+        ? {
+            bundleTitle: appliedOffer.title,
+            bundleMinTotalQty: appliedOffer.minTotalQty,
+            bundleDiscountPercent: appliedOffer.discountPercent,
+          }
+        : {}),
+    };
   }
 
   const subtotalBeforeDiscount = Object.values(linePricingById).reduce(

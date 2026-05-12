@@ -52,6 +52,36 @@ async function getStorefrontProducts() {
               sortOrder: 'asc',
             },
           },
+          globalBundleOfferLinks: {
+            include: {
+              bundleOffer: {
+                include: {
+                  variants: {
+                    select: {
+                      variantId: true,
+                    },
+                  },
+                },
+              },
+            },
+            where: {
+              bundleOffer: {
+                isActive: true,
+                OR: [
+                  { startsAt: null },
+                  { startsAt: { lte: new Date() } },
+                ],
+                AND: [
+                  {
+                    OR: [
+                      { endsAt: null },
+                      { endsAt: { gte: new Date() } },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
         },
       },
       tags: {
@@ -163,6 +193,15 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
       ...(variantImageList.length > 0 ? { images: variantImageList } : {}),
     };
   });
+  const globalBundleOffers = [
+    ...new Map(
+      product.variants
+        .flatMap((variant) =>
+          variant.globalBundleOfferLinks.map((link) => link.bundleOffer),
+        )
+        .map((offer) => [offer.id, offer] as const),
+    ).values(),
+  ];
 
   return {
     id: product.id,
@@ -192,7 +231,17 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
       discountPercent: offer.discountPercent.toNumber(),
       variantIds: offer.variants.map((item) => item.variantId),
       isActive: offer.isActive,
-    })),
+    })).concat(
+      globalBundleOffers.map((offer) => ({
+        id: offer.id,
+        title: offer.title.trim() || 'Bundle Offer',
+        image: offer.imagePath || '',
+        minTotalQty: offer.minTotalQty,
+        discountPercent: offer.discountPercent.toNumber(),
+        variantIds: offer.variants.map((item) => item.variantId),
+        isActive: offer.isActive,
+      })),
+    ),
   };
 }
 
@@ -362,6 +411,36 @@ export async function getStorefrontProductDetailById(productId: string) {
               sortOrder: 'asc',
             },
           },
+          globalBundleOfferLinks: {
+            include: {
+              bundleOffer: {
+                include: {
+                  variants: {
+                    select: {
+                      variantId: true,
+                    },
+                  },
+                },
+              },
+            },
+            where: {
+              bundleOffer: {
+                isActive: true,
+                OR: [
+                  { startsAt: null },
+                  { startsAt: { lte: new Date() } },
+                ],
+                AND: [
+                  {
+                    OR: [
+                      { endsAt: null },
+                      { endsAt: { gte: new Date() } },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
         },
       },
       tags: {
@@ -421,6 +500,15 @@ export async function getStorefrontProductDetailById(productId: string) {
     name: specification.name,
     value: specification.value,
   }));
+  const globalBundleOffers = [
+    ...new Map(
+      product.variants
+        .flatMap((variant) =>
+          variant.globalBundleOfferLinks.map((link) => link.bundleOffer),
+        )
+        .map((offer) => [offer.id, offer] as const),
+    ).values(),
+  ];
   const bundleOffers = product.bundleOffers.map((offer) => ({
     id: offer.id,
     title: offer.title?.trim() || `Bundle ${offer.minTotalQty}+`,
@@ -429,7 +517,17 @@ export async function getStorefrontProductDetailById(productId: string) {
     discountPercent: offer.discountPercent.toNumber(),
     variantIds: offer.variants.map((item) => item.variantId),
     isActive: offer.isActive,
-  }));
+  })).concat(
+    globalBundleOffers.map((offer) => ({
+      id: offer.id,
+      title: offer.title.trim() || `Bundle ${offer.minTotalQty}+`,
+      image: offer.imagePath || '',
+      minTotalQty: offer.minTotalQty,
+      discountPercent: offer.discountPercent.toNumber(),
+      variantIds: offer.variants.map((item) => item.variantId),
+      isActive: offer.isActive,
+    })),
+  );
 
   return {
     ...catalogBase,

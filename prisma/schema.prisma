@@ -312,6 +312,7 @@ model ProductVariant {
   orderProducts    OrderProduct[]
   variantImages    ProductVariantImage[]
   bundleOfferLinks ProductBundleOfferVariant[]
+  globalBundleOfferLinks BundleOfferVariant[]
 
   @@index([productId, isActive])
   @@index([productId, sortOrder])
@@ -362,6 +363,39 @@ model ProductBundleOfferVariant {
 
   bundleOffer ProductBundleOffer @relation(fields: [bundleOfferId], references: [id], onDelete: Cascade)
   variant     ProductVariant     @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@id([bundleOfferId, variantId])
+  @@index([variantId])
+}
+
+model BundleOffer {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  imagePath       String?
+  minTotalQty     Int
+  discountPercent Decimal  @db.Decimal(5, 2)
+  isActive        Boolean  @default(true)
+  startsAt        DateTime?
+  endsAt          DateTime?
+  sortOrder       Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  variants BundleOfferVariant[]
+
+  @@index([isActive, sortOrder])
+  @@index([startsAt, endsAt])
+}
+
+model BundleOfferVariant {
+  bundleOfferId String
+  variantId     String
+  assignedAt    DateTime @default(now())
+
+  bundleOffer BundleOffer    @relation(fields: [bundleOfferId], references: [id], onDelete: Cascade)
+  variant     ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
 
   @@id([bundleOfferId, variantId])
   @@index([variantId])
@@ -535,6 +569,27 @@ model OrderNote {
   @@index([createdByAdminId])
 }
 
+model AbandonedCheckout {
+  id                String   @id @default(cuid())
+  sessionId         String   @unique
+  status            String   @default("active")
+  items             Json
+  itemCount         Int      @default(0)
+  subtotalEstimate  Decimal  @default(0) @db.Decimal(12, 2)
+  customerName      String?
+  phone             String?
+  email             String?
+  recoveredOrderId  String?
+  firstSeenAt       DateTime @default(now())
+  lastActivityAt    DateTime @default(now())
+  completedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status, lastActivityAt])
+  @@index([phone])
+}
+
 model OrderProduct {
   id      String @id @default(cuid())
   orderId String
@@ -548,12 +603,15 @@ model OrderProduct {
 
   productName  String
   variantLabel String?
+  imagePath    String?
   sku          String
   quantity     Int
 
   unitPrice      Decimal @db.Decimal(12, 2)
   discountAmount Decimal @default(0) @db.Decimal(12, 2)
   lineTotal      Decimal @db.Decimal(12, 2)
+  bundleTitle    String?
+  bundleRule     String?
 
   createdAt DateTime @default(now())
 
