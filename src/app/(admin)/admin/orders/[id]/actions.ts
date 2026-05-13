@@ -2,6 +2,12 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireAdminPermission } from '@/lib/admin-session';
+import {
+  allocateInventoryForOrderProduct,
+  isStockHoldingOrderStatus,
+  reconcileOrderProductInventoryAllocation,
+  releaseInventoryAllocationsForOrderProducts,
+} from '@/lib/inventory-allocation';
 import { prisma } from '@/lib/prisma';
 
 type EditableOrderItemInput = {
@@ -54,6 +60,44 @@ const ORDER_STATUS_VALUES = new Set([
 const PAYMENT_METHOD_VALUES = new Set(['COD', 'BKASH'] as const);
 const PAYMENT_STATUS_VALUES = new Set(['unpaid', 'paid'] as const);
 
+const UPDATED_ORDER_INCLUDE = {
+  customer: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      phone: true,
+      email: true,
+      division: true,
+      district: true,
+      thana: true,
+      address: true,
+    },
+  },
+  products: {
+    include: {
+      product: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      variant: {
+        select: {
+          id: true,
+          color: true,
+          size: true,
+          sku: true,
+          imagePath: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: 'asc',
+    },
+  },
+} as const;
+
 function toMoney(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Number(value.toFixed(2)));
@@ -104,8 +148,65 @@ export async function updateOrderDetailsAction(
     if (!existing) {
       throw new Error('Order not found.');
     }
+    const expectedUpdatedAt = new Date(payload.expectedUpdatedAt);
+    if (Number.isNaN(expectedUpdatedAt.getTime())) {
+      throw new Error('Invalid update token. Please refresh and try again.');
+    }
+    if (existing.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+      throw new Error(
+        'This order was updated by someone else. Please refresh before saving.',
+      );
+    }
+
+    const nextOrderStatus = ORDER_STATUS_VALUES.has(payload.orderStatus as never)
+      ? payload.orderStatus
+      : 'pending';
+    const nextPaymentMethod = PAYMENT_METHOD_VALUES.has(payload.paymentMethod as never)
+      ? payload.paymentMethod
+      : 'COD';
+    const nextPaymentStatus = PAYMENT_STATUS_VALUES.has(payload.paymentStatus as never)
+      ? payload.paymentStatus
+      : 'unpaid';
+    const existingHoldsStock = isStockHoldingOrderStatus(existing.status);
+    const nextHoldsStock = isStockHoldingOrderStatus(nextOrderStatus);
+
     if (existing.status === 'shipped' || existing.status === 'delivered') {
-      throw new Error('Shipped or delivered orders are locked and cannot be edited.');
+      if (nextOrderStatus !== 'returned') {
+        throw new Error('Shipped or delivered orders can only be marked returned.');
+      }
+      if (existingHoldsStock && !nextHoldsStock) {
+        await releaseInventoryAllocationsForOrderProducts(tx, {
+          orderProductIds: existing.products.map((item) => item.id),
+          reason: 'order-status-returned',
+        });
+      }
+
+      const nextNote = payload.notes.trim();
+      if (nextNote) {
+        const createdByAdminId = adminSession.id === 'dev-admin' ? null : adminSession.id;
+        await tx.$executeRaw`
+          INSERT INTO "OrderNote" ("id", "orderId", "note", "createdByAdminId", "createdByName", "createdAt")
+          VALUES (md5(random()::text || clock_timestamp()::text), ${orderId}, ${nextNote}, ${createdByAdminId}, ${adminSession.name}, now())
+        `;
+      }
+
+      const updateResult = await tx.order.updateMany({
+        where: { id: orderId, updatedAt: expectedUpdatedAt },
+        data: {
+          notes: nextNote || existing.notes || null,
+          status: 'returned',
+        },
+      });
+      if (updateResult.count !== 1) {
+        throw new Error(
+          'This order was updated by someone else. Please refresh before saving.',
+        );
+      }
+
+      return tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: UPDATED_ORDER_INCLUDE,
+      });
     }
 
     const existingIds = new Set(existing.products.map((item) => item.id));
@@ -129,25 +230,6 @@ export async function updateOrderDetailsAction(
         );
       }
     }
-    const expectedUpdatedAt = new Date(payload.expectedUpdatedAt);
-    if (Number.isNaN(expectedUpdatedAt.getTime())) {
-      throw new Error('Invalid update token. Please refresh and try again.');
-    }
-    if (existing.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
-      throw new Error(
-        'This order was updated by someone else. Please refresh before saving.',
-      );
-    }
-
-    const nextOrderStatus = ORDER_STATUS_VALUES.has(payload.orderStatus as never)
-      ? payload.orderStatus
-      : 'pending';
-    const nextPaymentMethod = PAYMENT_METHOD_VALUES.has(payload.paymentMethod as never)
-      ? payload.paymentMethod
-      : 'COD';
-    const nextPaymentStatus = PAYMENT_STATUS_VALUES.has(payload.paymentStatus as never)
-      ? payload.paymentStatus
-      : 'unpaid';
     const sanitizedPhone = payload.phone.trim();
     const sanitizedReceiverPhone = payload.receiverPhone.trim() || sanitizedPhone;
     const submittedExistingItems = payload.items.filter((item) => existingIds.has(item.id));
@@ -176,6 +258,7 @@ export async function updateOrderDetailsAction(
         item.id,
         {
           quantity: item.quantity,
+          variantId: item.variantId,
           unitPrice: decimalToNumberSafe(item.unitPrice),
           discountAmount: decimalToNumberSafe(item.discountAmount),
         },
@@ -186,6 +269,17 @@ export async function updateOrderDetailsAction(
     const existingIdsToRemove = existing.products
       .map((item) => item.id)
       .filter((id) => !existingIdsToKeep.has(id));
+    if (existingHoldsStock && !nextHoldsStock) {
+      await releaseInventoryAllocationsForOrderProducts(tx, {
+        orderProductIds: existing.products.map((item) => item.id),
+        reason: `order-status-${nextOrderStatus}`,
+      });
+    } else if (existingHoldsStock && existingIdsToRemove.length > 0) {
+      await releaseInventoryAllocationsForOrderProducts(tx, {
+        orderProductIds: existingIdsToRemove,
+        reason: 'order-line-removed',
+      });
+    }
     if (existingIdsToRemove.length > 0) {
       await tx.orderProduct.deleteMany({
         where: {
@@ -214,6 +308,14 @@ export async function updateOrderDetailsAction(
           lineTotal: cappedLineTotal,
         },
       });
+      if (existingHoldsStock && nextHoldsStock) {
+        await reconcileOrderProductInventoryAllocation(tx, {
+          orderProductId: item.id,
+          quantity: item.quantity,
+          reason: 'order-line-quantity-updated',
+          variantId: current.variantId,
+        });
+      }
     }
 
     const requestedNewVariantIds = [...new Set(newItemsInput.map((item) => item.variantId))];
@@ -233,7 +335,13 @@ export async function updateOrderDetailsAction(
       : [];
     const variantById = new Map(variantCatalog.map((variant) => [variant.id, variant]));
 
-    const createdItems: Array<{ quantity: number; unitPrice: number; discountAmount: number }> = [];
+    const createdItems: Array<{
+      discountAmount: number;
+      orderProductId: string;
+      quantity: number;
+      unitPrice: number;
+      variantId: string;
+    }> = [];
     for (const item of newItemsInput) {
       const variant = variantById.get(item.variantId);
       if (!variant) {
@@ -247,7 +355,7 @@ export async function updateOrderDetailsAction(
       const discountAmount = Math.min(toNonNegativeMoney(item.discountAmount), maxItemDiscount);
       const lineTotal = toNonNegativeMoney(quantity * unitPrice - discountAmount);
       const variantLabel = [variant.color, variant.size].filter(Boolean).join(' / ');
-      await tx.orderProduct.create({
+      const createdItem = await tx.orderProduct.create({
         data: {
           orderId,
           productId: variant.productId,
@@ -261,8 +369,37 @@ export async function updateOrderDetailsAction(
           discountAmount,
           lineTotal,
         },
+        select: {
+          id: true,
+        },
       });
-      createdItems.push({ quantity, unitPrice, discountAmount });
+      if (nextHoldsStock) {
+        await allocateInventoryForOrderProduct(tx, {
+          orderProductId: createdItem.id,
+          quantity,
+          variantId: variant.id,
+        });
+      }
+      createdItems.push({
+        discountAmount,
+        orderProductId: createdItem.id,
+        quantity,
+        unitPrice,
+        variantId: variant.id,
+      });
+    }
+
+    if (!existingHoldsStock && nextHoldsStock) {
+      for (const item of sanitizedItems) {
+        const current = currentById.get(item.id);
+        if (!current) continue;
+        await reconcileOrderProductInventoryAllocation(tx, {
+          orderProductId: item.id,
+          quantity: item.quantity,
+          reason: `order-status-${nextOrderStatus}`,
+          variantId: current.variantId,
+        });
+      }
     }
 
     const persistedExistingItems = sanitizedItems.map((item) => {
@@ -317,8 +454,8 @@ export async function updateOrderDetailsAction(
       `;
     }
 
-    return tx.order.update({
-      where: { id: orderId },
+    const updateResult = await tx.order.updateMany({
+      where: { id: orderId, updatedAt: expectedUpdatedAt },
       data: {
         firstName: payload.firstName.trim(),
         lastName: payload.lastName.trim() || null,
@@ -338,43 +475,16 @@ export async function updateOrderDetailsAction(
         totalAmount: toMoney(total),
         paidAmount: toMoney(paidAmount),
       },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phone: true,
-            email: true,
-            division: true,
-            district: true,
-            thana: true,
-            address: true,
-          },
-        },
-        products: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            variant: {
-              select: {
-                id: true,
-                color: true,
-                size: true,
-                sku: true,
-                imagePath: true,
-              },
-            },
-          },
-          orderBy: {
-            createdAt: 'asc',
-          },
-        },
-      },
+    });
+    if (updateResult.count !== 1) {
+      throw new Error(
+        'This order was updated by someone else. Please refresh before saving.',
+      );
+    }
+
+    return tx.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: UPDATED_ORDER_INCLUDE,
     });
   });
   const noteHistory = await prisma.$queryRaw<

@@ -6,6 +6,7 @@ import {
   CUSTOMER_RECENT_ORDER_COOKIE,
   createRecentOrderAccessToken,
 } from '@/lib/customer-auth';
+import { allocateInventoryForOrderProduct } from '@/lib/inventory-allocation';
 
 type PlaceOrderPayload = {
   customer: {
@@ -196,46 +197,58 @@ export async function POST(request: Request) {
     let order = null as Awaited<ReturnType<typeof prisma.order.create>> | null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        order = await prisma.order.create({
-          data: {
-            orderNumber: createOrderNumber(),
-            customerId: customer.id,
-            status: 'pending',
-            paymentMethod: payload.payment.method === 'bkash' ? 'BKASH' : 'COD',
-            firstName: payload.customer.firstName.trim(),
-            lastName: payload.customer.lastName?.trim() || null,
-            phone: normalizedPhone,
-            receiverPhone:
-              payload.customer.receiverMobile?.trim() || payload.customer.customerMobile.trim(),
-            email: payload.customer.email?.trim() || null,
-            division: payload.shipping.division.trim(),
-            district: payload.shipping.district.trim(),
-            thana: payload.shipping.thana.trim(),
-            address: payload.shipping.address.trim(),
-            subtotalAmount: subtotalBeforeDiscount,
-            deliveryCharge,
-            totalAmount,
-            discountAmount,
-            products: {
-              create: pricingResult.lines.map((line) => ({
-                productId: line.productId,
-                variantId: line.variantId,
-                productName: line.productName,
-                variantLabel: line.variantLabel || null,
-                imagePath: line.imagePath || null,
-                sku: line.sku,
-                quantity: line.quantity,
-                unitPrice: line.unitPrice,
-                lineTotal: line.lineTotal,
-                discountAmount: line.discountAmount,
-                bundleTitle: line.bundleTitle,
-                bundleRule: line.bundleRule,
-              })),
+        order = await prisma.$transaction(async (tx) => {
+          const createdOrder = await tx.order.create({
+            data: {
+              orderNumber: createOrderNumber(),
+              customerId: customer.id,
+              status: 'pending',
+              paymentMethod: payload.payment.method === 'bkash' ? 'BKASH' : 'COD',
+              firstName: payload.customer.firstName.trim(),
+              lastName: payload.customer.lastName?.trim() || null,
+              phone: normalizedPhone,
+              receiverPhone:
+                payload.customer.receiverMobile?.trim() || payload.customer.customerMobile.trim(),
+              email: payload.customer.email?.trim() || null,
+              division: payload.shipping.division.trim(),
+              district: payload.shipping.district.trim(),
+              thana: payload.shipping.thana.trim(),
+              address: payload.shipping.address.trim(),
+              subtotalAmount: subtotalBeforeDiscount,
+              deliveryCharge,
+              totalAmount,
+              discountAmount,
+              products: {
+                create: pricingResult.lines.map((line) => ({
+                  productId: line.productId,
+                  variantId: line.variantId,
+                  productName: line.productName,
+                  variantLabel: line.variantLabel || null,
+                  imagePath: line.imagePath || null,
+                  sku: line.sku,
+                  quantity: line.quantity,
+                  unitPrice: line.unitPrice,
+                  lineTotal: line.lineTotal,
+                  discountAmount: line.discountAmount,
+                  bundleTitle: line.bundleTitle,
+                  bundleRule: line.bundleRule,
+                })),
+              },
             },
-          },
-          include: {
-            products: true,
-          },
+            include: {
+              products: true,
+            },
+          });
+
+          for (const line of createdOrder.products) {
+            await allocateInventoryForOrderProduct(tx, {
+              orderProductId: line.id,
+              quantity: line.quantity,
+              variantId: line.variantId,
+            });
+          }
+
+          return createdOrder;
         });
         break;
       } catch (error) {
@@ -288,6 +301,13 @@ export async function POST(request: Request) {
     return response;
   } catch (error) {
     console.error(error);
+    if (
+      error instanceof Error &&
+      (error.message.startsWith('Insufficient stock') ||
+        error.message.includes('Stock changed while saving order'))
+    ) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
     const isDev = process.env.NODE_ENV !== 'production';
     const message =
       error instanceof Error

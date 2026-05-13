@@ -75,6 +75,17 @@ type OrderDetailsEditorProps = {
   initialOrder: EditableOrder;
 };
 
+const ORDER_STATUS_OPTIONS = [
+  { value: 'pending', label: 'Unfulfilled' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'processing', label: 'Processing' },
+  { value: 'onHold', label: 'On Hold' },
+  { value: 'shipped', label: 'Shipped' },
+  { value: 'delivered', label: 'Delivered' },
+  { value: 'returned', label: 'Returned' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
 function formatMoney(value: number) {
   return `৳${value.toLocaleString('en-BD', { maximumFractionDigits: 0 })}`;
 }
@@ -381,6 +392,11 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
     draft.paymentStatus !== order.paymentStatus ||
     draft.orderStatus !== order.orderStatus;
   const hasPendingNote = draft.notes.trim().length > 0;
+  const orderStatusOptions = isDeliveredLocked
+    ? ORDER_STATUS_OPTIONS.filter(
+        (option) => option.value === order.orderStatus || option.value === 'returned',
+      )
+    : ORDER_STATUS_OPTIONS;
 
   useEffect(() => {
     function handleEditRequest(event: Event) {
@@ -518,8 +534,13 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
   }
 
   function handleUpdate() {
-    if (isDeliveredLocked) {
-      setError('Shipped or delivered orders are locked and cannot be edited.');
+    const isLockedReturnOnlyUpdate =
+      isDeliveredLocked &&
+      draft.orderStatus === 'returned' &&
+      draft.paymentMethod === order.paymentMethod &&
+      draft.paymentStatus === order.paymentStatus;
+    if (isDeliveredLocked && !isLockedReturnOnlyUpdate) {
+      setError('Shipped or delivered orders can only be marked returned.');
       setIsEditingAll(false);
       setIsEditingCustomerOnly(false);
       setIsEditingItemsOnly(false);
@@ -668,7 +689,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
             Order Status
             <select
               value={draft.orderStatus}
-              disabled={isDeliveredLocked || isPending}
+              disabled={isPending}
               onChange={(event) =>
                 setDraft((prev) => ({
                   ...prev,
@@ -677,14 +698,11 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
               }
               className="mt-0.5 h-8 w-full rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-900 disabled:bg-slate-50"
             >
-              <option value="pending">Unfulfilled</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="processing">Processing</option>
-              <option value="onHold">On Hold</option>
-              <option value="shipped">Shipped</option>
-              <option value="delivered">Delivered</option>
-              <option value="returned">Returned</option>
-              <option value="cancelled">Cancelled</option>
+              {orderStatusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </label>
         </div>
@@ -1309,7 +1327,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
         {error ? <p className="mt-3 text-xs font-medium text-rose-600">{error}</p> : null}
         {isDeliveredLocked ? (
           <p className="mt-3 text-xs font-medium text-amber-700">
-            This order is shipped/delivered and locked from further edits.
+            This order is shipped/delivered and locked from edits except marking it returned.
           </p>
         ) : null}
 
