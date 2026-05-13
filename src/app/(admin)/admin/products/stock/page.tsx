@@ -1,4 +1,3 @@
-import { updateVariantInventory } from '../actions';
 import StockListClient from '@/components/admin/StockListClient';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
@@ -73,7 +72,7 @@ export default async function AdminProductsStockPage({
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Stock</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Variant-level inventory view with low-stock alerts.
+            Read-only variant inventory view with low-stock alerts.
           </p>
         </div>
       </div>
@@ -99,7 +98,6 @@ export default async function AdminProductsStockPage({
             isActive: variant.isActive,
             updatedAt: variant.updatedAt.toISOString(),
           }))}
-          onSubmit={updateVariantInventory}
           initialVariantState={variantState}
         />
       </section>

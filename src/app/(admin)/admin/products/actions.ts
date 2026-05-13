@@ -147,30 +147,9 @@ function parseOptionalDecimal(value: string) {
 }
 
 
-function parseStock(value: string) {
-  const normalized = value.trim();
-  const parsed = Number(normalized);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error('Stock quantity must be a whole number.');
-  }
-
-  return parsed;
-}
-
-function parseReorderLevel(value: string) {
-  const normalized = value.trim();
-  const parsed = Number(normalized);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error('Reorder level must be a whole number.');
-  }
-
-  return parsed;
-}
-
 function normalizeDynamicAttribute(value: string) {
   return value.trim().normalize('NFKC').replace(/\s+/g, ' ');
 }
-
 function normalizeColorHex(value: string) {
   const trimmedValue = value.trim();
   if (!trimmedValue) return null;
@@ -235,9 +214,6 @@ function getVariantRows(formData: FormData) {
   const sizes = formData.getAll('variantSize');
   const prices = formData.getAll('variantPrice');
   const compareAtPrices = formData.getAll('variantCompareAtPrice');
-  const costPrices = formData.getAll('variantCostPrice');
-  const stockQuantities = formData.getAll('variantStockQuantity');
-  const reorderLevels = formData.getAll('variantReorderLevel');
   const activeStates = formData.getAll('variantIsActive');
   const rowCount = Math.max(
     colors.length,
@@ -245,9 +221,6 @@ function getVariantRows(formData: FormData) {
     sizes.length,
     prices.length,
     compareAtPrices.length,
-    costPrices.length,
-    stockQuantities.length,
-    reorderLevels.length,
     activeStates.length,
   );
 
@@ -271,9 +244,6 @@ function getVariantRows(formData: FormData) {
         : '';
     const priceRaw = String(prices[index] ?? '').trim();
     const compareAtRaw = String(compareAtPrices[index] ?? '').trim();
-    const costRaw = String(costPrices[index] ?? '').trim();
-    const stockRaw = String(stockQuantities[index] ?? '0').trim();
-    const reorderRaw = String(reorderLevels[index] ?? '10').trim();
     const isActive = activeStates[index] !== 'false';
 
     const isBlankNewVariant =
@@ -283,8 +253,7 @@ function getVariantRows(formData: FormData) {
       !sizeRaw &&
       !imageSelectionRaw &&
       !priceRaw &&
-      !compareAtRaw &&
-      !costRaw;
+      !compareAtRaw;
 
     if (isBlankNewVariant) return null;
 
@@ -296,9 +265,6 @@ function getVariantRows(formData: FormData) {
       size: sizeRaw || null,
       price: parseRequiredDecimal(priceRaw, 'Price'),
       compareAtPrice: parseOptionalDecimal(compareAtRaw),
-      costPrice: parseOptionalDecimal(costRaw),
-      stockQuantity: parseStock(stockRaw || '0'),
-      reorderLevel: parseReorderLevel(reorderRaw || '10'),
       isActive,
     };
   }).filter((row): row is {
@@ -309,9 +275,6 @@ function getVariantRows(formData: FormData) {
     size: string | null;
     price: string;
     compareAtPrice: string | null;
-    costPrice: string | null;
-    stockQuantity: number;
-    reorderLevel: number;
     isActive: boolean;
   } => row !== null);
 }
@@ -503,7 +466,6 @@ function getCatalogSnapshotFromVariants(
     sku: string;
     price: string;
     compareAtPrice: string | null;
-    stockQuantity: number;
   }>,
 ) {
   if (variants.length === 0) {
@@ -533,7 +495,7 @@ function getCatalogSnapshotFromVariants(
         ? lowestSalePrice.toFixed(2)
         : null,
     sku: variants[0]?.sku ?? null,
-    stock: variants.reduce((sum, variant) => sum + variant.stockQuantity, 0),
+    stock: 0,
   };
 }
 
@@ -1235,9 +1197,6 @@ export async function createProduct(formData: FormData) {
             imagePath: variantImagePaths[0] ?? null,
             price: variant.price,
             compareAtPrice: variant.compareAtPrice,
-            costPrice: variant.costPrice,
-            stockQuantity: variant.stockQuantity,
-            reorderLevel: variant.reorderLevel,
             isActive: variant.isActive,
             variantImages:
               variantImagePaths.length > 0
@@ -1680,9 +1639,6 @@ export async function updateProduct(formData: FormData) {
           imagePath: (variantImagePathsByIndex[index] ?? [])[0] ?? null,
           price: variant.price,
           compareAtPrice: variant.compareAtPrice,
-          costPrice: variant.costPrice,
-          stockQuantity: variant.stockQuantity,
-          reorderLevel: variant.reorderLevel,
           isActive: variant.isActive,
         };
 
@@ -2141,24 +2097,4 @@ export async function applyProductsBulkActionWithState(
     ...INITIAL_PRODUCTS_BULK_ACTION_STATE,
     error: 'Unsupported bulk action.',
   };
-}
-
-export async function updateVariantInventory(formData: FormData) {
-  await requireAdminPermission('/admin/products/stock', 'products.write');
-  await requireAdminRole('/admin/products/stock', ['admin']);
-
-  const variantId = getString(formData, 'variantId');
-  if (!variantId) {
-    throw new Error('Variant id is required.');
-  }
-
-  const stockQuantity = parseStock(getString(formData, 'stockQuantity'));
-  const reorderLevel = parseReorderLevel(getString(formData, 'reorderLevel'));
-  await prisma.productVariant.update({
-    where: { id: variantId },
-    data: {
-      stockQuantity,
-      reorderLevel,
-    },
-  });
 }

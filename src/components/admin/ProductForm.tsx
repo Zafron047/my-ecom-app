@@ -26,9 +26,6 @@ type VariantFormRow = {
   size: string;
   price: string;
   compareAtPrice: string;
-  costPrice: string;
-  stockQuantity: string;
-  reorderLevel: string;
   isActive: boolean;
 };
 
@@ -152,9 +149,6 @@ const emptyVariant = (): VariantFormRow => ({
   size: '',
   price: '',
   compareAtPrice: '',
-  costPrice: '',
-  stockQuantity: '0',
-  reorderLevel: '10',
   isActive: true,
 });
 
@@ -311,14 +305,11 @@ function buildVariantSnapshot(
       color: row.color,
       colorHex: row.colorHex,
       compareAtPrice: row.compareAtPrice,
-      costPrice: row.costPrice,
       id: row.id,
       imageSelection: row.imageSelection,
       isActive: row.isActive,
       price: row.price,
-      reorderLevel: row.reorderLevel,
       size: row.size,
-      stockQuantity: row.stockQuantity,
     })),
   });
 }
@@ -831,14 +822,11 @@ export default function ProductForm({
           color: row.color,
           colorHex: row.colorHex,
           compareAtPrice: row.compareAtPrice,
-          costPrice: row.costPrice,
           id: row.id,
           imageSelection: row.imageSelection,
           isActive: row.isActive,
           price: row.price,
-          reorderLevel: row.reorderLevel,
           size: row.size,
-          stockQuantity: row.stockQuantity,
         })),
         selectedStatus,
         shortDescription,
@@ -900,14 +888,11 @@ export default function ProductForm({
           color: row.color,
           colorHex: row.colorHex,
           compareAtPrice: row.compareAtPrice,
-          costPrice: row.costPrice,
           id: row.id,
           imageSelection: row.imageSelection,
           isActive: row.isActive,
           price: row.price,
-          reorderLevel: row.reorderLevel,
           size: row.size,
-          stockQuantity: row.stockQuantity,
         })),
         selectedStatus: initialProduct.status,
         shortDescription: initialProduct.shortDescription,
@@ -2739,7 +2724,7 @@ export default function ProductForm({
                     </div>
                   </div>
                   <div className={isOpen ? '' : 'hidden'}>
-                  <div className="grid gap-3 md:grid-cols-[minmax(130px,0.9fr)_minmax(160px,1fr)_minmax(95px,0.65fr)_76px_76px] [&>label]:min-w-0">
+                  <div className="grid gap-3 md:grid-cols-[minmax(130px,0.9fr)_minmax(160px,1fr)_minmax(95px,0.65fr)] [&>label]:min-w-0">
                     <label className={compactLabelClass}>
                       <span>Color Name</span>
                       <input
@@ -2784,37 +2769,9 @@ export default function ProductForm({
                         className={fieldClass}
                       />
                     </label>
-                    <label className={compactLabelClass}>
-                      <span>Stock</span>
-                      <input
-                        name="variantStockQuantity"
-                        inputMode="numeric"
-                        value={row.stockQuantity}
-                        onChange={(event) =>
-                          updateRow(index, {
-                            stockQuantity: event.target.value,
-                          })
-                        }
-                        className={fieldClass}
-                      />
-                    </label>
-                    <label className={compactLabelClass}>
-                      <span>Reorder</span>
-                      <input
-                        name="variantReorderLevel"
-                        inputMode="numeric"
-                        value={row.reorderLevel}
-                        onChange={(event) =>
-                          updateRow(index, {
-                            reorderLevel: event.target.value,
-                          })
-                        }
-                        className={fieldClass}
-                      />
-                    </label>
                   </div>
 
-                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <label className={compactLabelClass}>
                       <span>Price</span>
                       <input
@@ -2837,18 +2794,6 @@ export default function ProductForm({
                           updateRow(index, {
                             compareAtPrice: event.target.value,
                           })
-                        }
-                        className={fieldClass}
-                      />
-                    </label>
-                    <label className={compactLabelClass}>
-                      <span>Cost</span>
-                      <input
-                        name="variantCostPrice"
-                        inputMode="decimal"
-                        value={row.costPrice}
-                        onChange={(event) =>
-                          updateRow(index, { costPrice: event.target.value })
                         }
                         className={fieldClass}
                       />

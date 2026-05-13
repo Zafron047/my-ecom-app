@@ -2,7 +2,6 @@
 
 import Image from 'next/image';
 import { useMemo, useState } from 'react';
-import VariantInventoryInlineForm from '@/components/admin/VariantInventoryInlineForm';
 
 type StockRow = {
   id: string;
@@ -27,7 +26,6 @@ type StockListClientProps = {
   initialQuery: string;
   initialVariantState: string;
   rows: StockRow[];
-  onSubmit: (formData: FormData) => void | Promise<void>;
 };
 
 function formatDate(value: Date) {
@@ -50,7 +48,6 @@ export default function StockListClient({
   initialLevel,
   initialQuery,
   initialVariantState,
-  onSubmit,
   rows,
 }: StockListClientProps) {
   const [query, setQuery] = useState(initialQuery);
@@ -236,7 +233,6 @@ export default function StockListClient({
               <th className="px-3 py-2 text-right">Reorder</th>
               <th className="px-3 py-2">Level</th>
               <th className="px-3 py-2">Updated</th>
-              <th className="px-3 py-2 text-right">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -244,6 +240,21 @@ export default function StockListClient({
               filteredRows.map((row) => {
                 const isLow =
                   row.stockQuantity > 0 && row.stockQuantity <= row.reorderLevel;
+                const badge =
+                  row.stockQuantity <= 0
+                    ? {
+                        className: 'bg-rose-50 text-rose-700 border-rose-200',
+                        label: 'Out of stock',
+                      }
+                    : isLow
+                      ? {
+                          className: 'bg-amber-50 text-amber-700 border-amber-200',
+                          label: 'Low stock',
+                        }
+                      : {
+                          className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                          label: 'Healthy',
+                        };
                 const updatedAt = new Date(row.updatedAt);
                 return (
                   <tr
@@ -290,22 +301,29 @@ export default function StockListClient({
                         {row.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <VariantInventoryInlineForm
-                      variantId={row.id}
-                      initialStockQuantity={row.stockQuantity}
-                      initialReorderLevel={row.reorderLevel}
-                      updatedAtDateLabel={formatDate(updatedAt)}
-                      updatedAtTimeLabel={formatTime(updatedAt)}
-                      q={query}
-                      level={level}
-                      onSubmit={onSubmit}
-                    />
+                    <td className="px-3 py-3 text-right font-semibold text-slate-900">
+                      {row.stockQuantity}
+                    </td>
+                    <td className="px-3 py-3 text-right text-slate-700">
+                      {row.reorderLevel}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${badge.className}`}
+                      >
+                        {badge.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-[10px] text-slate-600">
+                      <div>{formatDate(updatedAt)}</div>
+                      <div>{formatTime(updatedAt)}</div>
+                    </td>
                   </tr>
                 );
               })
             ) : (
               <tr>
-                <td className="px-3 py-6 text-center text-slate-500" colSpan={9}>
+                <td className="px-3 py-6 text-center text-slate-500" colSpan={8}>
                   No stock rows match the current filters.
                 </td>
               </tr>
