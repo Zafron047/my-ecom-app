@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AdminNavigationGuardProvider } from '@/components/admin/AdminNavigationGuard';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import AdminTopbar from '@/components/admin/AdminTopbar';
 import { type AdminSession } from '@/lib/admin-rbac';
@@ -14,21 +15,22 @@ export default function AdminShell({ children, session }: AdminShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <AdminTopbar
-        session={session}
-        onMenuToggle={() => setIsSidebarOpen((open) => !open)}
-      />
-
-      <div className="md:flex">
-        <AdminSidebar
-          role={session.role}
-          isOpen={isSidebarOpen}
-          onClose={() => setIsSidebarOpen(false)}
+    <AdminNavigationGuardProvider>
+      <div className="min-h-screen bg-slate-100 text-slate-900">
+        <AdminTopbar
+          session={session}
+          onMenuToggle={() => setIsSidebarOpen((open) => !open)}
         />
-        <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+
+        <div className="md:flex">
+          <AdminSidebar
+            role={session.role}
+            isOpen={isSidebarOpen}
+            onClose={() => setIsSidebarOpen(false)}
+          />
+          <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+        </div>
       </div>
-    </div>
+    </AdminNavigationGuardProvider>
   );
 }
-

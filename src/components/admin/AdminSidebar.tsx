@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useAdminNavigationGuard } from '@/components/admin/AdminNavigationGuard';
 import { type AdminRole } from '@/lib/admin-rbac';
 
 type AdminNavItem = {
@@ -86,13 +87,33 @@ const adminNavGroups: AdminNavGroup[] = [
         allowedRoles: ['manager', 'admin'],
       },
       {
-        href: '/admin/products/po',
-        label: 'Purchase Order',
+        href: '/admin/products/stock-transfer',
+        label: 'Stock Transfers',
+        allowedRoles: ['manager', 'admin'],
+      },
+    ],
+  },
+  {
+    parent: {
+      exactMatch: true,
+      href: '/admin/purchase-order',
+      label: 'Purchase Orders',
+      allowedRoles: ['manager', 'admin'],
+    },
+    children: [
+      {
+        href: '/admin/purchase-order/purchase-entry',
+        label: 'Purchase Entry',
         allowedRoles: ['manager', 'admin'],
       },
       {
-        href: '/admin/products/stock-transfer',
-        label: 'Stock Transfers',
+        href: '/admin/purchase-order/records',
+        label: 'Records',
+        allowedRoles: ['manager', 'admin'],
+      },
+      {
+        href: '/admin/purchase-order/drafts',
+        label: 'Drafts',
         allowedRoles: ['manager', 'admin'],
       },
     ],
@@ -161,9 +182,10 @@ type AdminSidebarProps = {
 export default function AdminSidebar({ isOpen, onClose, role }: AdminSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { requestNavigation } = useAdminNavigationGuard();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const handleLogout = async () => {
+  const performLogout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
 
@@ -177,6 +199,12 @@ export default function AdminSidebar({ isOpen, onClose, role }: AdminSidebarProp
       router.refresh();
       setIsLoggingOut(false);
     }
+  };
+
+  const handleLogout = () => {
+    requestNavigation(() => {
+      void performLogout();
+    });
   };
 
   const sidebarNavigation = (
@@ -205,7 +233,9 @@ export default function AdminSidebar({ isOpen, onClose, role }: AdminSidebarProp
                 <button
                   type="button"
                   onClick={() => {
-                    router.push(group.parent.href);
+                    requestNavigation(() => {
+                      router.push(group.parent.href);
+                    });
                   }}
                   className={`inline-flex w-full items-center justify-between rounded-xl border px-3 py-1.5 text-left text-[12px] font-semibold transition sm:text-[13px] ${
                     parentActive || isExpanded

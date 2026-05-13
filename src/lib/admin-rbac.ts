@@ -68,6 +68,10 @@ const adminRouteRules: AdminRouteRule[] = [
     requiredPermissions: ['products.read'],
   },
   {
+    prefix: '/admin/purchase-order',
+    requiredPermissions: ['products.read'],
+  },
+  {
     prefix: '/admin/customers',
     requiredPermissions: ['customers.read'],
   },
