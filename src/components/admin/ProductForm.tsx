@@ -133,8 +133,7 @@ type DropdownOption = {
 };
 
 type MediaOption = {
-  assignedVariantSku?: string;
-  disabled?: boolean;
+  assignedVariantLabels?: string[];
   label: string;
   previewUrl: string;
   value: string;
@@ -224,8 +223,8 @@ function getProductSkuBase(name: string) {
 function generateSku(name: string, color: string, size: string) {
   return [
     getProductSkuBase(name),
-    normalizeSkuPart(color),
     normalizeSkuPart(size),
+    normalizeSkuPart(color),
   ]
     .filter(Boolean)
     .join('-');
@@ -563,54 +562,55 @@ function VariantImagePicker({
               >
                 +
               </button>
-              {mediaOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="option"
-                  aria-selected={selectedValues.has(option.value)}
-                  aria-disabled={option.disabled}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setHoveredOption(option)}
-                  onMouseLeave={() => setHoveredOption(null)}
-                  onClick={() => {
-                    if (option.disabled) return;
-                    const nextValues = new Set(selectedValues);
-                    if (nextValues.has(option.value)) {
-                      nextValues.delete(option.value);
-                    } else {
-                      nextValues.add(option.value);
+              {mediaOptions.map((option) => {
+                const tiedVariantLabels = option.assignedVariantLabels ?? [];
+                const tiedVariantSummary = tiedVariantLabels.join(', ');
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="option"
+                    aria-selected={selectedValues.has(option.value)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setHoveredOption(option)}
+                    onMouseLeave={() => setHoveredOption(null)}
+                    onClick={() => {
+                      const nextValues = new Set(selectedValues);
+                      if (nextValues.has(option.value)) {
+                        nextValues.delete(option.value);
+                      } else {
+                        nextValues.add(option.value);
+                      }
+                      onChange([...nextValues].join(','));
+                    }}
+                    className={`relative aspect-square overflow-hidden rounded-xl border transition ${
+                      selectedValues.has(option.value)
+                        ? 'border-slate-900 bg-slate-100'
+                        : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100'
+                    }`}
+                    title={
+                      tiedVariantSummary
+                        ? `${option.label} tied to ${tiedVariantSummary}`
+                        : option.label
                     }
-                    onChange([...nextValues].join(','));
-                  }}
-                  className={`relative aspect-square overflow-hidden rounded-xl border transition ${
-                    option.disabled
-                      ? 'cursor-not-allowed border-slate-200 bg-slate-100 opacity-60 grayscale'
-                      : selectedValues.has(option.value)
-                      ? 'border-slate-900 bg-slate-100'
-                      : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100'
-                  }`}
-                  title={
-                    option.assignedVariantSku
-                      ? `${option.label} tied to ${option.assignedVariantSku}`
-                      : option.label
-                  }
-                >
-                  <Image
-                    src={option.previewUrl}
-                    alt={option.label}
-                    fill
-                    unoptimized
-                    sizes="56px"
-                    className="object-contain p-1"
-                  />
-                  {option.assignedVariantSku ? (
-                    <span className="absolute inset-x-1 bottom-1 truncate rounded bg-white/90 px-1 py-0.5 text-[9px] font-semibold text-slate-700">
-                      {option.assignedVariantSku}
-                    </span>
-                  ) : null}
-                </button>
-              ))}
+                  >
+                    <Image
+                      src={option.previewUrl}
+                      alt={option.label}
+                      fill
+                      unoptimized
+                      sizes="56px"
+                      className="object-contain p-1"
+                    />
+                    {tiedVariantLabels.length > 0 ? (
+                      <span className="absolute inset-x-1 bottom-1 truncate rounded bg-white/90 px-1 py-0.5 text-[9px] font-semibold text-slate-700">
+                        {tiedVariantLabels.length} tied
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
             {hoveredOption ? (
               <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2">
@@ -625,10 +625,25 @@ function VariantImagePicker({
                   />
                 </div>
                 <p className="mt-2 truncate text-[11px] font-semibold text-slate-700">
-                  {hoveredOption.assignedVariantSku
-                    ? hoveredOption.assignedVariantSku
-                    : hoveredOption.label}
+                  {hoveredOption.label}
                 </p>
+                {(hoveredOption.assignedVariantLabels ?? []).length > 0 ? (
+                  <div className="mt-2 rounded-md border border-slate-200 bg-white px-2 py-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      Tied variants
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {(hoveredOption.assignedVariantLabels ?? []).map((label, index) => (
+                        <span
+                          key={`${label}-${index}`}
+                          className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700"
+                        >
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </motion.div>
@@ -741,26 +756,32 @@ export default function ProductForm({
   const variantMediaOptions = isEditing
     ? mediaOptions.filter((option) => option.value.startsWith('existing:'))
     : mediaOptions;
-  function getVariantMediaOptions(rowIndex: number) {
-    const assignedByImageKey = new Map<string, string>();
+  function getVariantImageAssignmentLabel(row: VariantFormRow, index: number) {
+    const sku = generateSku(productName, row.color, row.size);
+    const fallback = [row.size.trim(), row.color.trim()].filter(Boolean).join(' / ');
+
+    return sku || fallback || `Variant ${index + 1}`;
+  }
+
+  function getVariantMediaOptions() {
+    const assignedByImageKey = new Map<string, string[]>();
     rows.forEach((row, index) => {
-      if (index === rowIndex) return;
-      const sku = generateSku(productName, row.color, row.size);
+      const label = getVariantImageAssignmentLabel(row, index);
       row.imageSelection
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean)
         .forEach((imageKey) => {
-          assignedByImageKey.set(imageKey, sku || `Variant ${index + 1}`);
+          const labels = assignedByImageKey.get(imageKey) ?? [];
+          labels.push(label);
+          assignedByImageKey.set(imageKey, labels);
         });
     });
 
     return variantMediaOptions.map((option) => {
-      const assignedVariantSku = assignedByImageKey.get(option.value);
       return {
         ...option,
-        assignedVariantSku,
-        disabled: Boolean(assignedVariantSku),
+        assignedVariantLabels: assignedByImageKey.get(option.value) ?? [],
       };
     });
   }
@@ -1841,6 +1862,14 @@ export default function ProductForm({
           <h3 className="text-sm font-semibold text-slate-900">Product</h3>
           {productNavigation ? (
             <div className="flex items-center gap-2">
+              <Link
+                href="/admin/products/new"
+                aria-label="Create new product"
+                className="inline-flex h-9 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+              >
+                <span>New</span>
+                <span className="relative -top-px text-base leading-none">+</span>
+              </Link>
               {productNavigation.previousId ? (
                 <Link
                   href={`/admin/products/${productNavigation.previousId}/edit`}
@@ -2646,7 +2675,7 @@ export default function ProductForm({
                         </span>
                         <VariantImagePicker
                           name="variantImageSelection"
-                          mediaOptions={getVariantMediaOptions(index)}
+                          mediaOptions={getVariantMediaOptions()}
                           value={row.imageSelection}
                           onChange={(value) =>
                             updateRow(index, { imageSelection: value })

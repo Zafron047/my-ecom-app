@@ -199,8 +199,8 @@ function getProductSkuBase(name: string) {
 function generateSku(name: string, color: string | null, size: string | null) {
   return [
     getProductSkuBase(name),
-    normalizeSkuPart(color),
     normalizeSkuPart(size),
+    normalizeSkuPart(color),
   ]
     .filter(Boolean)
     .join('-');

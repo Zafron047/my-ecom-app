@@ -224,6 +224,7 @@ export default async function AdminProductsPage({
               categoryNames.length > 0
                 ? categoryNames.join(', ')
                 : 'Unassigned',
+            minimumPrice,
             variantCount: product.variantCount,
             stock,
             priceLabel,

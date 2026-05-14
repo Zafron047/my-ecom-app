@@ -28,6 +28,7 @@ type ProductListRow = {
   slug: string;
   status: string;
   categoriesLabel: string;
+  minimumPrice: number | null;
   variantCount: number;
   stock: number;
   priceLabel: string;
@@ -37,6 +38,16 @@ type ProductListRow = {
   } | null;
 };
 
+type ProductSortKey =
+  | 'product'
+  | 'status'
+  | 'categories'
+  | 'variants'
+  | 'stock'
+  | 'price'
+  | 'updated';
+type ProductSortDirection = 'asc' | 'desc';
+
 type ProductsListTableProps = {
   products: ProductListRow[];
   applyProductsBulkActionWithState: (
@@ -45,11 +56,67 @@ type ProductsListTableProps = {
   ) => Promise<ProductsBulkActionState>;
 };
 
+function getDefaultSortDirection(sort: ProductSortKey): ProductSortDirection {
+  return sort === 'product' || sort === 'status' || sort === 'categories'
+    ? 'asc'
+    : 'desc';
+}
+
+function compareText(first: string, second: string) {
+  return first.localeCompare(second, undefined, {
+    sensitivity: 'base',
+    numeric: true,
+  });
+}
+
+function compareNullableNumbers(
+  first: number | null,
+  second: number | null,
+  direction: ProductSortDirection,
+) {
+  if (first === null && second === null) return 0;
+  if (first === null) return 1;
+  if (second === null) return -1;
+  return direction === 'asc' ? first - second : second - first;
+}
+
+function SortIcon({
+  active,
+  direction,
+}: {
+  active: boolean;
+  direction: ProductSortDirection;
+}) {
+  return (
+    <svg
+      className="h-3.5 w-3.5"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {active ? (
+        <path d={direction === 'asc' ? 'm6 12 4-4 4 4' : 'm6 8 4 4 4-4'} />
+      ) : (
+        <>
+          <path d="m7 8 3-3 3 3" />
+          <path d="m7 12 3 3 3-3" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export default function ProductsListTable({
   products,
   applyProductsBulkActionWithState,
 }: ProductsListTableProps) {
   const router = useRouter();
+  const [sort, setSort] = useState<ProductSortKey>('updated');
+  const [direction, setDirection] = useState<ProductSortDirection>('desc');
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [bulkActionState, bulkActionFormAction, isBulkActionPending] =
     useActionState(applyProductsBulkActionWithState, INITIAL_PRODUCTS_BULK_ACTION_STATE);
@@ -62,6 +129,72 @@ export default function ProductsListTable({
     () => new Set(selectedProductIds),
     [selectedProductIds],
   );
+
+  const sortedProducts = useMemo(() => {
+    const sorted = [...products];
+
+    sorted.sort((first, second) => {
+      if (sort === 'updated') return 0;
+
+      const multiplier = direction === 'asc' ? 1 : -1;
+      const result =
+        sort === 'product'
+          ? compareText(first.name, second.name)
+          : sort === 'status'
+            ? compareText(first.status, second.status)
+            : sort === 'categories'
+              ? compareText(first.categoriesLabel, second.categoriesLabel)
+              : sort === 'variants'
+                ? first.variantCount - second.variantCount
+                : sort === 'stock'
+                ? first.stock - second.stock
+                : sort === 'price'
+                    ? compareNullableNumbers(
+                        first.minimumPrice,
+                        second.minimumPrice,
+                        direction,
+                      )
+                    : 0;
+
+      if (sort === 'price' && result !== 0) return result;
+      if (result !== 0) return result * multiplier;
+      return compareText(first.name, second.name);
+    });
+
+    return sorted;
+  }, [direction, products, sort]);
+
+  function updateSort(nextSort: ProductSortKey) {
+    if (sort === nextSort) {
+      setDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+
+    setSort(nextSort);
+    setDirection(getDefaultSortDirection(nextSort));
+  }
+
+  function renderSortableHeader(
+    label: string,
+    nextSort: ProductSortKey,
+    align: 'left' | 'right' = 'left',
+  ) {
+    const isActive = sort === nextSort;
+
+    return (
+      <button
+        type="button"
+        onClick={() => updateSort(nextSort)}
+        className={`inline-flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 transition hover:bg-slate-100 hover:text-slate-700 ${
+          align === 'right' ? 'justify-end' : 'justify-start'
+        } ${isActive ? 'text-slate-900' : ''}`}
+        aria-label={`Sort by ${label}`}
+      >
+        <span>{label}</span>
+        <SortIcon active={isActive} direction={direction} />
+      </button>
+    );
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -131,8 +264,8 @@ export default function ProductsListTable({
         </div>
       ) : null}
 
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <table className="min-w-full border-collapse text-sm">
+        <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 [&_th]:border-b [&_th]:border-slate-200">
           <tr>
             <th className="px-3 py-2 align-middle">
               <div className="flex items-center justify-center gap-2">
@@ -152,20 +285,28 @@ export default function ProductsListTable({
                 </span>
               </div>
             </th>
-            <th className="px-3 py-2">Product</th>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2">Categories</th>
-            <th className="px-3 py-2">Variants</th>
-            <th className="px-3 py-2 text-right">Stock</th>
-            <th className="px-3 py-2 text-right">Price</th>
+            <th className="px-3 py-2">{renderSortableHeader('Product', 'product')}</th>
+            <th className="px-3 py-2">{renderSortableHeader('Status', 'status')}</th>
+            <th className="px-3 py-2">
+              {renderSortableHeader('Categories', 'categories')}
+            </th>
+            <th className="px-3 py-2">
+              {renderSortableHeader('Variants', 'variants')}
+            </th>
+            <th className="px-3 py-2 text-right">
+              {renderSortableHeader('Stock', 'stock', 'right')}
+            </th>
+            <th className="px-3 py-2 text-right">
+              {renderSortableHeader('Price', 'price', 'right')}
+            </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
-          {products.length > 0 ? (
-            products.map((product) => (
+        <tbody className="[&_td]:border-b [&_td]:border-slate-100">
+          {sortedProducts.length > 0 ? (
+            sortedProducts.map((product) => (
               <tr
                 key={product.id}
-                className="align-top transition hover:bg-slate-50/70 cursor-pointer"
+                className="cursor-pointer align-top hover:bg-slate-50/70"
                 onClick={() => router.push(`/admin/products/${product.id}/edit`)}
               >
                 <td className="px-3 py-3 align-middle" onClick={(event) => event.stopPropagation()}>
