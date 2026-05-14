@@ -20,6 +20,8 @@ export default function ProductDetail() {
   const { addToCart, cartItems, updateQuantity } = useCart();
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [areBundleOffersExpanded, setAreBundleOffersExpanded] = useState(false);
   const [isZooming, setIsZooming] = useState(false);
   const [zoomLensX, setZoomLensX] = useState(0);
   const [zoomLensY, setZoomLensY] = useState(0);
@@ -63,6 +65,12 @@ export default function ProductDetail() {
 
         const productPayload = (await productResponse.json()) as StorefrontProductDetail;
         setProduct(productPayload);
+        setSelectedImage(0);
+        setSelectedVariantIndex(0);
+        setIsDescriptionExpanded(false);
+        setAreBundleOffersExpanded(false);
+        setFallbackImageSet({});
+        setZoomFallbackImageSet({});
 
         if (catalogResponse.ok) {
           const catalogPayload = (await catalogResponse.json()) as {
@@ -183,6 +191,20 @@ export default function ProductDetail() {
   const fallbackPrimaryImage = product.image?.trim() ? product.image : '';
   const safeSelectedImage =
     normalizedImages[selectedImage] ?? fallbackPrimaryImage;
+  const descriptionText = product.description.trim();
+  const descriptionLineCount = descriptionText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean).length;
+  const shouldClampDescription =
+    descriptionText.length > 360 || descriptionLineCount > 5;
+  const visibleBundleOffers = areBundleOffersExpanded
+    ? product.bundleOffers
+    : product.bundleOffers.slice(0, 1);
+  const hiddenBundleOfferCount = Math.max(
+    product.bundleOffers.length - visibleBundleOffers.length,
+    0,
+  );
   const appendImageVersion = (imageUrl: string) => {
     if (!imageUrl) return imageUrl;
     try {
@@ -542,26 +564,11 @@ export default function ProductDetail() {
             </button>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">Specifications</h3>
-            <div className="space-y-2">
-              {product.specs.map((spec, index) => (
-                <div
-                  key={`${spec.name}-${index}`}
-                  className="grid grid-cols-[minmax(120px,0.9fr)_minmax(0,1.1fr)] gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
-                >
-                  <p className="text-sm font-semibold text-slate-700">{spec.name}</p>
-                  <p className="text-sm text-slate-900">{spec.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {product.bundleOffers.length > 0 && (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+            <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
               <h3 className="mb-4 text-lg font-semibold text-amber-900">Bundle Offers</h3>
               <div className="space-y-3">
-                {product.bundleOffers.map((offer) => (
+                {visibleBundleOffers.map((offer) => (
                   <div
                     key={offer.id}
                     className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2"
@@ -590,20 +597,70 @@ export default function ProductDetail() {
                   </div>
                 ))}
               </div>
+              {product.bundleOffers.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAreBundleOffersExpanded((current) => !current)
+                  }
+                  className="mt-3 text-sm font-semibold text-amber-800 transition hover:text-amber-900"
+                >
+                  {areBundleOffersExpanded
+                    ? 'See fewer offers'
+                    : `See ${hiddenBundleOfferCount} more offer${hiddenBundleOfferCount === 1 ? '' : 's'}`}
+                </button>
+              ) : null}
             </div>
           )}
 
-          <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">Key Features</h3>
-            <ul className="space-y-2.5">
-              {product.benefits.map((benefit, index) => (
-                <li key={`${benefit}-${index}`} className="flex items-start gap-3 text-gray-700">
-                  <span className="mt-1 h-2 w-2 rounded-full bg-green-600" />
-                  {benefit}
-                </li>
+          <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="mb-4 text-lg font-semibold text-gray-900">Specifications</h3>
+            <div className="space-y-2">
+              {product.specs.map((spec, index) => (
+                <div
+                  key={`${spec.name}-${index}`}
+                  className="grid grid-cols-[minmax(120px,0.9fr)_minmax(0,1.1fr)] gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+                >
+                  <p className="text-sm font-semibold text-slate-700">{spec.name}</p>
+                  <p className="text-sm text-slate-900">{spec.value}</p>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
+
+          {descriptionText ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="mb-3 text-lg font-semibold text-gray-900">
+                Description
+              </h3>
+              <div
+                className={`relative ${
+                  shouldClampDescription && !isDescriptionExpanded
+                    ? 'max-h-32 overflow-hidden'
+                    : ''
+                }`}
+              >
+                <p className="whitespace-pre-line text-sm leading-6 text-slate-700">
+                  {descriptionText}
+                </p>
+                {shouldClampDescription && !isDescriptionExpanded ? (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white to-white/0" />
+                ) : null}
+              </div>
+              {shouldClampDescription ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setIsDescriptionExpanded((current) => !current)
+                  }
+                  className="mt-3 text-sm font-semibold text-blue-600 transition hover:text-blue-700"
+                >
+                  {isDescriptionExpanded ? 'See less' : 'See more...'}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
         </div>
       </div>
 
