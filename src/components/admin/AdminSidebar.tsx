@@ -95,7 +95,7 @@ const adminNavGroups: AdminNavGroup[] = [
   },
   {
     parent: {
-      exactMatch: true,
+      exactMatch: false,
       href: '/admin/purchase-order',
       label: 'Purchase Orders',
       allowedRoles: ['manager', 'admin'],
@@ -103,17 +103,17 @@ const adminNavGroups: AdminNavGroup[] = [
     children: [
       {
         href: '/admin/purchase-order/purchase-entry',
-        label: 'Purchase Entry',
-        allowedRoles: ['manager', 'admin'],
-      },
-      {
-        href: '/admin/purchase-order/records',
-        label: 'Records',
+        label: 'New Purchase Entry',
         allowedRoles: ['manager', 'admin'],
       },
       {
         href: '/admin/purchase-order/drafts',
         label: 'Drafts',
+        allowedRoles: ['manager', 'admin'],
+      },
+      {
+        href: '/admin/purchase-order/closed',
+        label: 'Closed',
         allowedRoles: ['manager', 'admin'],
       },
     ],

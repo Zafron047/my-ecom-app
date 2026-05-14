@@ -1,15 +1,13 @@
-import { requireAdminPermission } from '@/lib/admin-session';
+import PurchaseEntryListPage from './_components/PurchaseEntryListPage';
 
-export default async function AdminPurchaseOrderPage() {
-  await requireAdminPermission('/admin/purchase-order', 'products.read');
-
+export default function AdminPurchaseOrderPage() {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-xl font-semibold text-slate-900">Purchase Orders</h2>
-      <p className="mt-2 text-sm text-slate-600">
-        Purchase order workflow scaffolded.
-      </p>
-    </section>
+    <PurchaseEntryListPage
+      description="Showing all confirmed purchase entries that are still open for receiving or settlement."
+      pathname="/admin/purchase-order"
+      title="Purchase Orders"
+      view="confirmed"
+    />
   );
 }
 

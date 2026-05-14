@@ -190,7 +190,7 @@ export default async function AdminPurchaseOrderPurchaseEntryPage({
   return (
     <section className="space-y-5">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-xl font-semibold text-slate-900">Purchase Entry</h2>
+        <h2 className="text-xl font-semibold text-slate-900">New Purchase Entry</h2>
         <p className="mt-1 text-sm text-slate-600">
           Save a draft, then submit it as an official purchase record before payment or receiving starts.
         </p>
@@ -238,7 +238,9 @@ export default async function AdminPurchaseOrderPurchaseEntryPage({
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-slate-900">Recent Records</h3>
+        <h3 className="text-sm font-semibold text-slate-900">
+          Recent Purchase Entries
+        </h3>
         <PurchaseEntryRecentEntries
           entries={recentEntries.map((entry) => ({
             entryNumber: entry.entryNumber,

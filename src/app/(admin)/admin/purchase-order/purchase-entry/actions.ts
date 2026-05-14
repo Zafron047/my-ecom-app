@@ -31,7 +31,7 @@ const PURCHASE_ENTRY_PATH = '/admin/purchase-order/purchase-entry';
 const PAYMENT_METHODS = new Set(['bank', 'bkash', 'cash']);
 const PAYMENT_STATUSES = new Set(['due', 'partial_paid', 'paid']);
 const PURCHASE_DRAFTS_PATH = '/admin/purchase-order/drafts';
-const PURCHASE_RECORDS_PATH = '/admin/purchase-order/records';
+const PURCHASE_ORDERS_PATH = '/admin/purchase-order';
 
 function getString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -480,7 +480,7 @@ export async function recordPurchaseEntry(
 
     revalidatePath(PURCHASE_ENTRY_PATH);
     revalidatePath(PURCHASE_DRAFTS_PATH);
-    revalidatePath(PURCHASE_RECORDS_PATH);
+    revalidatePath(PURCHASE_ORDERS_PATH);
     return {
       message: `Purchase entry ${entryNumber} recorded. ${totalQuantity} unit(s) locked for receiving.`,
     };

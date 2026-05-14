@@ -5,8 +5,8 @@ export default function AdminPurchaseOrderDraftsPage() {
     <PurchaseEntryListPage
       description="Review saved purchase entry drafts before they become official purchase records."
       pathname="/admin/purchase-order/drafts"
-      status="draft"
       title="Drafts"
+      view="draft"
     />
   );
 }

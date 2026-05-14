@@ -49,7 +49,7 @@ function formatStatus(status: string) {
     full_received: 'Full Received',
     partial_received: 'Partial Received',
     received: 'Received',
-    recorded: 'Recorded',
+    recorded: 'Confirmed',
   };
   return labels[status] ?? status.replace(/_/g, ' ');
 }

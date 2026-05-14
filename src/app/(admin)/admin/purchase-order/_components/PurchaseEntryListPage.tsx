@@ -5,11 +5,18 @@ import { prisma } from '@/lib/prisma';
 type PurchaseEntryListPageProps = {
   description: string;
   pathname: string;
-  status: 'draft' | 'records';
+  view: 'confirmed' | 'closed' | 'draft';
   title: string;
 };
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const CLOSED_PURCHASE_ENTRY_STATUSES = [
+  'cancelled',
+  'closed_short',
+  'full_received',
+  'received',
+];
+const CONFIRMED_PURCHASE_ENTRY_STATUSES = ['recorded', 'partial_received'];
 
 function formatMoney(value: { toNumber: () => number } | null | undefined) {
   if (!value) return '-';
@@ -36,7 +43,7 @@ function formatStatus(status: string) {
     full_received: 'Full Received',
     partial_received: 'Partial Received',
     received: 'Received',
-    recorded: 'Recorded',
+    recorded: 'Confirmed',
   };
   return labels[status] ?? status.replace(/_/g, ' ');
 }
@@ -69,16 +76,45 @@ function isUntouchedForThirtyDays(updatedAt: Date) {
   return Date.now() - updatedAt.getTime() >= THIRTY_DAYS_MS;
 }
 
+function getEntryWhere(view: PurchaseEntryListPageProps['view']) {
+  if (view === 'draft') {
+    return {
+      status: 'draft',
+    };
+  }
+
+  if (view === 'closed') {
+    return {
+      status: {
+        in: CLOSED_PURCHASE_ENTRY_STATUSES,
+      },
+    };
+  }
+
+  return {
+    status: {
+      in: CONFIRMED_PURCHASE_ENTRY_STATUSES,
+    },
+  };
+}
+
+function getEmptyMessage(view: PurchaseEntryListPageProps['view']) {
+  if (view === 'draft') return 'No draft purchase entries found.';
+  if (view === 'closed') return 'No closed purchase entries found.';
+  return 'No confirmed purchase entries found.';
+}
+
 export default async function PurchaseEntryListPage({
   description,
   pathname,
-  status,
   title,
+  view,
 }: PurchaseEntryListPageProps) {
   await requireAdminPermission(pathname, 'products.read');
+  const isDraftView = view === 'draft';
 
   const entries = await prisma.purchaseEntry.findMany({
-    orderBy: status === 'draft' ? { updatedAt: 'desc' } : { purchaseDate: 'desc' },
+    orderBy: isDraftView ? { updatedAt: 'desc' } : { purchaseDate: 'desc' },
     select: {
       createdAt: true,
       entryNumber: true,
@@ -102,17 +138,7 @@ export default async function PurchaseEntryListPage({
       totalQuantity: true,
       updatedAt: true,
     },
-    take: 50,
-    where:
-      status === 'draft'
-        ? {
-            status: 'draft',
-          }
-        : {
-            status: {
-              not: 'draft',
-            },
-          },
+    where: getEntryWhere(view),
   });
 
   return (
@@ -141,7 +167,7 @@ export default async function PurchaseEntryListPage({
               {entries.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                    No purchase entries found.
+                    {getEmptyMessage(view)}
                   </td>
                 </tr>
               ) : (
@@ -152,7 +178,7 @@ export default async function PurchaseEntryListPage({
                   );
                   const isStale = isUntouchedForThirtyDays(entry.updatedAt);
                   const actionHref =
-                    status === 'draft'
+                    isDraftView
                       ? `/admin/purchase-order/purchase-entry?draftId=${entry.id}`
                       : `/admin/purchase-order/records/${entry.id}`;
 
@@ -163,7 +189,7 @@ export default async function PurchaseEntryListPage({
                           {entry.entryNumber}
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          {status === 'draft'
+                          {isDraftView
                             ? `Updated ${formatDate(entry.updatedAt)}`
                             : formatDate(entry.purchaseDate)}
                         </div>
@@ -211,7 +237,7 @@ export default async function PurchaseEntryListPage({
                           href={actionHref}
                           className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                         >
-                          {status === 'draft' ? 'Open Draft' : 'Open Record'}
+                          {isDraftView ? 'Open Draft' : 'Open Record'}
                         </Link>
                       </td>
                     </tr>
