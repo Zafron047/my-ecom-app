@@ -440,7 +440,20 @@ function getProductPayload(
     );
   }
 
+  const description = getOptionalString(formData, 'description');
+  if (requireCoreFields && !description) {
+    throw new Error('Product description is required.');
+  }
+
+  const categoryIds = getStringList(formData, 'categoryIds');
+  if (requireCoreFields && categoryIds.length === 0) {
+    throw new Error('Select at least one product category.');
+  }
+
   const variants = includeVariants ? getVariantRows(formData) : [];
+  if (includeVariants) {
+    ensureRequiredVariantRows(variants);
+  }
   const bundleOffers = includeBundleOffers ? getBundleOfferRows(formData) : [];
   return {
     name,
@@ -449,9 +462,9 @@ function getProductPayload(
     seoDescription: getOptionalString(formData, 'seoDescription'),
     brandId: getOptionalString(formData, 'brandId'),
     shortDescription,
-    description: getOptionalString(formData, 'description'),
+    description,
     status: parseStatus(getString(formData, 'status')),
-    categoryIds: getStringList(formData, 'categoryIds'),
+    categoryIds,
     specifications: getSpecificationRows(formData),
     variants: variants.map((variant) => ({
       ...variant,
@@ -497,6 +510,34 @@ function getCatalogSnapshotFromVariants(
     sku: variants[0]?.sku ?? null,
     stock: 0,
   };
+}
+
+function ensureRequiredVariantRows(
+  variants: Array<{
+    color: string | null;
+    colorHex: string | null;
+    price: string;
+  }>,
+) {
+  if (variants.length === 0) {
+    throw new Error(
+      'Add at least one variant with color name, color hex, and price.',
+    );
+  }
+
+  variants.forEach((variant, index) => {
+    const label = `Variant ${index + 1}`;
+
+    if (!variant.color) {
+      throw new Error(`${label} color name is required.`);
+    }
+    if (!variant.colorHex) {
+      throw new Error(`${label} color hex is required.`);
+    }
+    if (!variant.price) {
+      throw new Error(`${label} price is required.`);
+    }
+  });
 }
 
 async function syncProductBundleSummary(
@@ -550,16 +591,13 @@ async function syncProductBundleSummary(
   });
 }
 
-function ensureProductReadyForActiveStatus(
-  status: ProductStatus,
+function ensureProductReadyForSave(
   readiness: {
     categoryCount: number;
     imageCount: number;
     variantCount: number;
   },
 ) {
-  if (status !== ProductStatus.active) return;
-
   const blockers: string[] = [];
   if (readiness.categoryCount <= 0) {
     blockers.push('assign at least one category');
@@ -568,12 +606,12 @@ function ensureProductReadyForActiveStatus(
     blockers.push('add at least one product image');
   }
   if (readiness.variantCount <= 0) {
-    blockers.push('save at least one variant');
+    blockers.push('add at least one variant with color name, color hex, and price');
   }
 
   if (blockers.length > 0) {
     throw new Error(
-      `Product must stay draft until ready. To activate, ${blockers.join(', ')}.`,
+      `Product cannot be saved until ready. Please ${blockers.join(', ')}.`,
     );
   }
 }
@@ -893,6 +931,32 @@ async function deleteStorageObjects(objectKeys: string[]) {
   }
 }
 
+function getStorageObjectKeysWithVariants(objectKey: string) {
+  return [
+    objectKey,
+    ...PRODUCT_IMAGE_VARIANTS.map((variant) =>
+      getVariantObjectKey(objectKey, variant.suffix),
+    ),
+  ];
+}
+
+async function deleteStorageObjectKeysBestEffort(
+  objectKeys: string[],
+  context: string,
+) {
+  if (objectKeys.length === 0) return;
+
+  try {
+    await deleteStorageObjects(
+      objectKeys.flatMap((objectKey) =>
+        getStorageObjectKeysWithVariants(objectKey),
+      ),
+    );
+  } catch (error) {
+    console.error(context, error);
+  }
+}
+
 async function uploadWithUniqueName(
   productStorageFolder: string,
   serialNumber: number,
@@ -914,8 +978,16 @@ async function uploadWithUniqueName(
     if (!reservedObjectKeys.has(objectKey)) {
       reservedObjectKeys.add(objectKey);
       if (await uploadStorageObject(objectKey, file)) {
-        await uploadOptimizedImageVariants(objectKey, file);
-        return objectKey;
+        try {
+          await uploadOptimizedImageVariants(objectKey, file);
+          return objectKey;
+        } catch (error) {
+          await deleteStorageObjectKeysBestEffort(
+            [objectKey],
+            'Failed to clean up partially processed product image:',
+          );
+          throw error;
+        }
       }
     }
 
@@ -927,12 +999,7 @@ async function deleteProductImageFiles(storagePaths: string[]) {
   const objectKeys = storagePaths
     .map((storagePath) => getStorageObjectKey(storagePath))
     .filter((objectKey): objectKey is string => Boolean(objectKey))
-    .flatMap((objectKey) => [
-      objectKey,
-      ...PRODUCT_IMAGE_VARIANTS.map((variant) =>
-        getVariantObjectKey(objectKey, variant.suffix),
-      ),
-    ]);
+    .flatMap((objectKey) => getStorageObjectKeysWithVariants(objectKey));
 
   if (objectKeys.length === 0) return;
 
@@ -981,8 +1048,15 @@ async function saveProductImages(
   if (files.length === 0 && uploadedImages.length === 0) return [];
 
   const reservedObjectKeys = new Set<string>();
-  const savedFromFiles = await Promise.all(
-    files.map(async ({ clientId, file }, index) => {
+  const savedImages: Array<{
+    clientId: string;
+    storagePath: string;
+    altText: string | null;
+    sortOrder: number;
+  }> = [];
+
+  try {
+    for (const [index, { clientId, file }] of files.entries()) {
       const extension = getFileExtension(file);
       const serialNumber = serialByClientId.get(clientId) ?? index + 1;
       const objectKey = await uploadWithUniqueName(
@@ -993,19 +1067,18 @@ async function saveProductImages(
         reservedObjectKeys,
       );
 
-      return {
+      savedImages.push({
         clientId,
         storagePath: getPublicStorageUrl(objectKey),
         altText: file.name.replace(/\.[^.]+$/, '') || null,
         sortOrder: serialNumber - 1,
-      };
-    }),
-  );
+      });
+    }
 
-  const savedFromUploaded = await Promise.all(
-    uploadedImages.map(async ({ clientId, fileName, objectKey }, index) => {
+    const savedFileCount = savedImages.length;
+    for (const [index, { clientId, fileName, objectKey }] of uploadedImages.entries()) {
       const serialNumber =
-        serialByClientId.get(clientId) ?? savedFromFiles.length + index + 1;
+        serialByClientId.get(clientId) ?? savedFileCount + index + 1;
       const extension = path.extname(objectKey) || '.jpg';
       const sourceBuffer = await downloadStorageObject(objectKey);
       const uniqueSuffix = `-${crypto.randomUUID().slice(0, 8)}`;
@@ -1016,24 +1089,42 @@ async function saveProductImages(
         uniqueSuffix,
       );
 
-      await uploadStorageBuffer(
-        finalObjectKey,
-        sourceBuffer,
-        getContentTypeFromExtension(extension),
-      );
-      await uploadOptimizedImageVariantsFromBuffer(finalObjectKey, sourceBuffer);
-      await deleteStorageObjects([objectKey]);
+      try {
+        await uploadStorageBuffer(
+          finalObjectKey,
+          sourceBuffer,
+          getContentTypeFromExtension(extension),
+        );
+        await uploadOptimizedImageVariantsFromBuffer(finalObjectKey, sourceBuffer);
+      } catch (error) {
+        await deleteStorageObjectKeysBestEffort(
+          [finalObjectKey],
+          'Failed to clean up partially promoted product image:',
+        );
+        throw error;
+      }
 
-      return {
+      try {
+        await deleteStorageObjects([objectKey]);
+      } catch (error) {
+        console.error('Failed to delete staged product image:', error);
+      }
+
+      savedImages.push({
         clientId,
         storagePath: getPublicStorageUrl(finalObjectKey),
         altText: fileName.replace(/\.[^.]+$/, '') || null,
         sortOrder: serialNumber - 1,
-      };
-    }),
-  );
+      });
+    }
 
-  return [...savedFromFiles, ...savedFromUploaded];
+    return savedImages;
+  } catch (error) {
+    await deleteProductImageFilesBestEffort(
+      savedImages.map((image) => image.storagePath),
+    );
+    throw error;
+  }
 }
 
 function getVariantImagePaths(
@@ -1127,7 +1218,7 @@ export async function createProduct(formData: FormData) {
   images.forEach((image) => {
     storagePathByOrderKey.set(`new:${image.clientId}`, image.storagePath);
   });
-  ensureProductReadyForActiveStatus(payload.status, {
+  ensureProductReadyForSave({
     categoryCount: payload.categoryIds.length,
     imageCount: images.length,
     variantCount: variants.length,
@@ -1323,6 +1414,8 @@ export async function updateProduct(formData: FormData) {
     : await prisma.productVariant.count({
         where: {
           productId,
+          color: { not: null },
+          colorHex: { not: null },
         },
       });
   const removedImageIds = shouldSaveProductMedia
@@ -1417,7 +1510,7 @@ export async function updateProduct(formData: FormData) {
     : await prisma.productCategory.count({
         where: { productId },
       });
-  ensureProductReadyForActiveStatus(payload.status, {
+  ensureProductReadyForSave({
     categoryCount: projectedCategoryCount,
     imageCount: projectedImageCount,
     variantCount: persistedVariantCount,
@@ -1426,8 +1519,9 @@ export async function updateProduct(formData: FormData) {
     ? buildVariantImagePathsByIndex(variants, storagePathByOrderKey)
     : [];
 
-  await prisma.$transaction(async (tx) => {
-    if (shouldSaveProductMedia) {
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (shouldSaveProductMedia) {
       await tx.product.update({
         where: { id: productId },
         data: {
@@ -1867,7 +1961,15 @@ export async function updateProduct(formData: FormData) {
     if (shouldSaveBundleOffers) {
       await syncProductBundleSummary(tx, productId);
     }
-  });
+    });
+  } catch (error) {
+    if (newImages.length > 0) {
+      await deleteProductImageFilesBestEffort(
+        newImages.map((image) => image.storagePath),
+      );
+    }
+    throw error;
+  }
 
   await deleteProductImageFilesBestEffort(removedImageStoragePaths);
 
@@ -1928,18 +2030,29 @@ export async function applyProductsBulkActionWithState(
       select: {
         id: true,
         name: true,
+        description: true,
         categories: { select: { categoryId: true }, take: 1 },
         images: { select: { id: true }, take: 1 },
-        variants: { select: { id: true }, take: 1 },
+        variants: {
+          select: { id: true },
+          take: 1,
+          where: {
+            color: { not: null },
+            colorHex: { not: null },
+          },
+        },
       },
     });
 
     const skipped = selected
       .map((product) => {
         const reasons: string[] = [];
+        if (!product.description?.trim()) reasons.push('Missing description');
         if (product.categories.length === 0) reasons.push('Missing category');
         if (product.images.length === 0) reasons.push('Missing image');
-        if (product.variants.length === 0) reasons.push('Missing variant');
+        if (product.variants.length === 0) {
+          reasons.push('Missing complete variant');
+        }
         return {
           id: product.id,
           name: product.name,
