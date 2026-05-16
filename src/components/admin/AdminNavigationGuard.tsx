@@ -17,9 +17,7 @@ type GuardResult = {
 };
 
 type NavigationGuard = {
-  discardLabel?: string;
   message?: string;
-  onDiscard: () => Promise<GuardResult>;
   onSave: () => Promise<GuardResult>;
   saveLabel?: string;
   shouldBlock: () => boolean;
@@ -49,7 +47,7 @@ export function AdminNavigationGuardProvider({
   const guardRef = useRef<NavigationGuard | null>(null);
   const [pendingNavigation, setPendingNavigation] =
     useState<PendingNavigation | null>(null);
-  const [action, setAction] = useState<'discard' | 'save' | null>(null);
+  const [action, setAction] = useState<'save' | null>(null);
   const [actionError, setActionError] = useState('');
 
   const registerNavigationGuard = useCallback((guard: NavigationGuard) => {
@@ -139,19 +137,16 @@ export function AdminNavigationGuardProvider({
     [registerNavigationGuard, requestNavigation],
   );
 
-  async function completePendingNavigation(choice: 'discard' | 'save') {
+  async function completePendingNavigation() {
     if (!pendingNavigation || action) return;
 
-    setAction(choice);
+    setAction('save');
     setActionError('');
 
-    const result =
-      choice === 'save'
-        ? await pendingNavigation.guard.onSave()
-        : await pendingNavigation.guard.onDiscard();
+    const result = await pendingNavigation.guard.onSave();
 
-    if (!result.ok) {
-      setActionError(result.error ?? 'Unable to continue. Please try again.');
+    if (!result?.ok) {
+      setActionError(result?.error ?? 'Unable to continue. Please try again.');
       setAction(null);
       return;
     }
@@ -206,19 +201,7 @@ export function AdminNavigationGuardProvider({
                 type="button"
                 disabled={Boolean(action)}
                 onClick={() => {
-                  void completePendingNavigation('discard');
-                }}
-                className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {action === 'discard'
-                  ? 'Discarding...'
-                  : pendingNavigation.guard.discardLabel ?? 'Discard'}
-              </button>
-              <button
-                type="button"
-                disabled={Boolean(action)}
-                onClick={() => {
-                  void completePendingNavigation('save');
+                  void completePendingNavigation();
                 }}
                 className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
               >

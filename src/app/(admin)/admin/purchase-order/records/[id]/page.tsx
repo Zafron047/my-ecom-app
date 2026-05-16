@@ -2,6 +2,11 @@ import { notFound } from 'next/navigation';
 import PurchaseRecordForm from '../../_components/PurchaseRecordForm';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
+import { PURCHASE_ENTRY_STATUS } from '@/lib/purchase-order-status';
+import {
+  receivePurchaseRecord,
+  updatePurchaseRecordPayment,
+} from './actions';
 
 type PurchaseRecordPageProps = {
   params: Promise<{ id: string }>;
@@ -31,6 +36,7 @@ export default async function AdminPurchaseOrderRecordPage({
   const record = await prisma.purchaseEntry.findFirst({
     select: {
       entryNumber: true,
+      id: true,
       lines: {
         orderBy: {
           createdAt: 'asc',
@@ -38,13 +44,25 @@ export default async function AdminPurchaseOrderRecordPage({
         select: {
           batch: {
             select: {
+              batchNumber: true,
               receivedQuantity: true,
             },
           },
+          batchNumber: true,
           id: true,
           lineTotal: true,
           product: {
             select: {
+              images: {
+                orderBy: [
+                  { isPrimary: 'desc' },
+                  { sortOrder: 'asc' },
+                ],
+                select: {
+                  storagePath: true,
+                },
+                take: 1,
+              },
               name: true,
             },
           },
@@ -53,10 +71,21 @@ export default async function AdminPurchaseOrderRecordPage({
           variant: {
             select: {
               color: true,
+              imagePath: true,
               size: true,
               sku: true,
               product: {
                 select: {
+                  images: {
+                    orderBy: [
+                      { isPrimary: 'desc' },
+                      { sortOrder: 'asc' },
+                    ],
+                    select: {
+                      storagePath: true,
+                    },
+                    take: 1,
+                  },
                   name: true,
                 },
               },
@@ -65,6 +94,7 @@ export default async function AdminPurchaseOrderRecordPage({
         },
       },
       notes: true,
+      paidAmount: true,
       paymentMethod: true,
       paymentReference: true,
       paymentStatus: true,
@@ -74,11 +104,12 @@ export default async function AdminPurchaseOrderRecordPage({
       supplierName: true,
       totalCost: true,
       totalQuantity: true,
+      updatedAt: true,
     },
     where: {
       id,
       status: {
-        not: 'draft',
+        not: PURCHASE_ENTRY_STATUS.DRAFT,
       },
     },
   });
@@ -87,9 +118,19 @@ export default async function AdminPurchaseOrderRecordPage({
 
   return (
     <PurchaseRecordForm
+      key={record.updatedAt.toISOString()}
+      payAction={updatePurchaseRecordPayment}
+      receiveAction={receivePurchaseRecord}
       record={{
         entryNumber: record.entryNumber,
+        id: record.id,
         lines: record.lines.map((line) => ({
+          imagePath:
+            line.variant?.imagePath ??
+            line.variant?.product.images[0]?.storagePath ??
+            line.product?.images[0]?.storagePath ??
+            null,
+          batchNumber: line.batch?.batchNumber ?? line.batchNumber ?? '-',
           id: line.id,
           lineTotal: decimalToNumber(line.lineTotal),
           orderedQuantity: line.quantity,
@@ -100,6 +141,7 @@ export default async function AdminPurchaseOrderRecordPage({
           variantLabel: line.variant ? formatVariantLabel(line.variant) : 'Select variant',
         })),
         notes: record.notes ?? '',
+        paidAmount: decimalToNumber(record.paidAmount),
         paymentMethod: record.paymentMethod ?? '',
         paymentReference: record.paymentReference ?? '',
         paymentStatus: record.paymentStatus,

@@ -3,9 +3,9 @@ import PurchaseEntryListPage from '../_components/PurchaseEntryListPage';
 export default function AdminPurchaseOrderClosedPage() {
   return (
     <PurchaseEntryListPage
-      description="Showing all closed purchase entries, including fully received, short closed, cancelled, and legacy received entries."
+      description="Showing all closed POs."
       pathname="/admin/purchase-order/closed"
-      title="Closed"
+      title="Closed POs"
       view="closed"
     />
   );

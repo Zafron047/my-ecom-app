@@ -1,22 +1,29 @@
 import Link from 'next/link';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
+import {
+  CLOSED_PURCHASE_ENTRY_STATUSES,
+  PURCHASE_ENTRY_STATUS,
+  PURCHASE_PAYMENT_STATUS,
+  formatPurchasePaymentStatus,
+  getPurchaseEntryLifecycleLabel,
+  getPurchaseEntryReceivingStatus,
+  shouldShowInClosedPurchaseOrderList,
+  shouldShowInOpenPurchaseOrderList,
+} from '@/lib/purchase-order-status';
 
 type PurchaseEntryListPageProps = {
+  createHref?: string;
+  createLabel?: string;
   description: string;
   pathname: string;
-  view: 'confirmed' | 'closed' | 'draft';
+  view: 'closed' | 'entry' | 'po';
   title: string;
 };
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-const CLOSED_PURCHASE_ENTRY_STATUSES = [
-  'cancelled',
-  'closed_short',
-  'full_received',
-  'received',
-];
-const CONFIRMED_PURCHASE_ENTRY_STATUSES = ['recorded', 'partial_received'];
+const CREATE_BUTTON_CLASS =
+  'inline-flex h-10 items-center justify-center rounded-xl bg-blue-700 px-4 text-sm font-semibold !text-white shadow-sm shadow-blue-900/10 transition hover:bg-blue-600 hover:!text-white visited:!text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600';
 
 function formatMoney(value: { toNumber: () => number } | null | undefined) {
   if (!value) return '-';
@@ -27,6 +34,14 @@ function formatMoney(value: { toNumber: () => number } | null | undefined) {
   }).format(value.toNumber());
 }
 
+function formatMoneyNumber(value: number) {
+  return new Intl.NumberFormat('en-BD', {
+    currency: 'BDT',
+    maximumFractionDigits: 2,
+    style: 'currency',
+  }).format(value);
+}
+
 function formatDate(value: Date) {
   return value.toLocaleDateString('en-BD', {
     day: '2-digit',
@@ -35,41 +50,13 @@ function formatDate(value: Date) {
   });
 }
 
-function formatStatus(status: string) {
-  const labels: Record<string, string> = {
-    cancelled: 'Cancelled',
-    closed_short: 'Closed Short',
-    draft: 'Draft',
-    full_received: 'Full Received',
-    partial_received: 'Partial Received',
-    received: 'Received',
-    recorded: 'Confirmed',
-  };
-  return labels[status] ?? status.replace(/_/g, ' ');
-}
-
-function formatPaymentStatus(status: string) {
-  const labels: Record<string, string> = {
-    due: 'Due',
-    paid: 'Paid',
-    partial_paid: 'Partially Paid',
-  };
-  return labels[status] ?? status.replace(/_/g, ' ');
-}
-
-function getStatusTone(status: string) {
-  if (status === 'draft') return 'bg-amber-50 text-amber-700';
-  if (status === 'cancelled') return 'bg-rose-50 text-rose-700';
-  if (status === 'recorded' || status === 'partial_received') {
-    return 'bg-blue-50 text-blue-700';
+function getStatusTone(statusLabel: string) {
+  if (statusLabel === 'Purchase Entry') return 'bg-amber-50 text-amber-700';
+  if (statusLabel === 'Cancelled' || statusLabel === 'Closed Short') {
+    return 'bg-rose-50 text-rose-700';
   }
+  if (statusLabel === 'Open') return 'bg-blue-50 text-blue-700';
   return 'bg-emerald-50 text-emerald-700';
-}
-
-function getReceivingStatus(totalQuantity: number, receivedQuantity: number) {
-  if (receivedQuantity <= 0) return 'Not Received';
-  if (receivedQuantity >= totalQuantity) return 'Full Received';
-  return 'Partial Received';
 }
 
 function isUntouchedForThirtyDays(updatedAt: Date) {
@@ -77,44 +64,49 @@ function isUntouchedForThirtyDays(updatedAt: Date) {
 }
 
 function getEntryWhere(view: PurchaseEntryListPageProps['view']) {
-  if (view === 'draft') {
+  if (view === 'entry') {
     return {
-      status: 'draft',
+      status: PURCHASE_ENTRY_STATUS.DRAFT,
     };
   }
 
   if (view === 'closed') {
     return {
-      status: {
-        in: CLOSED_PURCHASE_ENTRY_STATUSES,
-      },
+      OR: [
+        { status: { in: [...CLOSED_PURCHASE_ENTRY_STATUSES] } },
+        { paymentStatus: PURCHASE_PAYMENT_STATUS.PAID },
+      ],
     };
   }
 
   return {
     status: {
-      in: CONFIRMED_PURCHASE_ENTRY_STATUSES,
+      not: PURCHASE_ENTRY_STATUS.DRAFT,
     },
   };
 }
 
 function getEmptyMessage(view: PurchaseEntryListPageProps['view']) {
-  if (view === 'draft') return 'No draft purchase entries found.';
-  if (view === 'closed') return 'No closed purchase entries found.';
-  return 'No confirmed purchase entries found.';
+  if (view === 'entry') return 'No purchase entries found.';
+  if (view === 'closed') return 'No closed POs found.';
+  return 'No POs found.';
 }
 
 export default async function PurchaseEntryListPage({
+  createHref,
+  createLabel = 'New Purchase Entry',
   description,
   pathname,
   title,
   view,
 }: PurchaseEntryListPageProps) {
   await requireAdminPermission(pathname, 'products.read');
-  const isDraftView = view === 'draft';
+  const isPurchaseEntryView = view === 'entry';
 
   const entries = await prisma.purchaseEntry.findMany({
-    orderBy: isDraftView ? { updatedAt: 'desc' } : { purchaseDate: 'desc' },
+    orderBy: isPurchaseEntryView
+      ? [{ updatedAt: 'desc' }, { id: 'desc' }]
+      : [{ createdAt: 'desc' }, { id: 'desc' }],
     select: {
       createdAt: true,
       entryNumber: true,
@@ -130,6 +122,7 @@ export default async function PurchaseEntryListPage({
         },
       },
       paymentMethod: true,
+      paidAmount: true,
       paymentStatus: true,
       purchaseDate: true,
       status: true,
@@ -140,12 +133,44 @@ export default async function PurchaseEntryListPage({
     },
     where: getEntryWhere(view),
   });
+  const visibleEntries = entries.filter((entry) => {
+    const receivedQuantity = entry.lines.reduce(
+      (sum, line) => sum + (line.batch?.receivedQuantity ?? 0),
+      0,
+    );
+    const lifecycleInput = {
+      paymentStatus: entry.paymentStatus,
+      receivedQuantity,
+      status: entry.status,
+      totalQuantity: entry.totalQuantity,
+    };
+
+    if (view === 'closed') {
+      return shouldShowInClosedPurchaseOrderList(lifecycleInput);
+    }
+    if (view === 'po') {
+      return shouldShowInOpenPurchaseOrderList(lifecycleInput);
+    }
+    return true;
+  });
 
   return (
     <section className="space-y-5">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
-        <p className="mt-1 text-sm text-slate-600">{description}</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
+            <p className="mt-1 text-sm text-slate-600">{description}</p>
+          </div>
+          {createHref ? (
+            <Link
+              href={createHref}
+              className={CREATE_BUTTON_CLASS}
+            >
+              {createLabel}
+            </Link>
+          ) : null}
+        </div>
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -164,22 +189,28 @@ export default async function PurchaseEntryListPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {entries.length === 0 ? (
+              {visibleEntries.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                     {getEmptyMessage(view)}
                   </td>
                 </tr>
               ) : (
-                entries.map((entry) => {
+                visibleEntries.map((entry) => {
                   const receivedQuantity = entry.lines.reduce(
                     (sum, line) => sum + (line.batch?.receivedQuantity ?? 0),
                     0,
                   );
                   const isStale = isUntouchedForThirtyDays(entry.updatedAt);
+                  const statusLabel = getPurchaseEntryLifecycleLabel({
+                    paymentStatus: entry.paymentStatus,
+                    receivedQuantity,
+                    status: entry.status,
+                    totalQuantity: entry.totalQuantity,
+                  });
                   const actionHref =
-                    isDraftView
-                      ? `/admin/purchase-order/purchase-entry?draftId=${entry.id}`
+                    isPurchaseEntryView
+                      ? `/admin/purchase-order/purchase-entry?entryId=${entry.id}`
                       : `/admin/purchase-order/records/${entry.id}`;
 
                   return (
@@ -189,7 +220,7 @@ export default async function PurchaseEntryListPage({
                           {entry.entryNumber}
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          {isDraftView
+                          {isPurchaseEntryView
                             ? `Updated ${formatDate(entry.updatedAt)}`
                             : formatDate(entry.purchaseDate)}
                         </div>
@@ -202,10 +233,10 @@ export default async function PurchaseEntryListPage({
                       <td className="px-4 py-4">
                         <span
                           className={`rounded-full px-2 py-1 text-xs font-semibold capitalize ${getStatusTone(
-                            entry.status,
+                            statusLabel,
                           )}`}
                         >
-                          {formatStatus(entry.status)}
+                          {statusLabel}
                         </span>
                       </td>
                       <td className="px-4 py-4 text-slate-700">
@@ -213,14 +244,17 @@ export default async function PurchaseEntryListPage({
                       </td>
                       <td className="px-4 py-4 text-slate-700">
                         <div className="font-semibold text-slate-900">
-                          {formatPaymentStatus(entry.paymentStatus)}
+                          {formatPurchasePaymentStatus(entry.paymentStatus)}
                         </div>
                         <div className="text-xs capitalize text-slate-500">
                           {entry.paymentMethod || '-'}
                         </div>
                       </td>
                       <td className="px-4 py-4 text-slate-700">
-                        {getReceivingStatus(entry.totalQuantity, receivedQuantity)}
+                        {getPurchaseEntryReceivingStatus(
+                          entry.totalQuantity,
+                          receivedQuantity,
+                        )}
                         <div className="text-xs text-slate-500">
                           {receivedQuantity} received /{' '}
                           {Math.max(0, entry.totalQuantity - receivedQuantity)} left
@@ -230,14 +264,25 @@ export default async function PurchaseEntryListPage({
                         {entry.totalQuantity}
                       </td>
                       <td className="px-4 py-4 text-right font-semibold text-slate-900">
-                        {formatMoney(entry.totalCost)}
+                        <div>{formatMoney(entry.totalCost)}</div>
+                        <div className="mt-1 text-xs font-medium text-slate-500">
+                          {formatMoney(entry.paidAmount)} paid /{' '}
+                          {formatMoneyNumber(
+                            Math.max(
+                              0,
+                              entry.totalCost.toNumber() -
+                                entry.paidAmount.toNumber(),
+                            ),
+                          )}{' '}
+                          due
+                        </div>
                       </td>
                       <td className="px-4 py-4 text-right">
                         <Link
                           href={actionHref}
                           className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                         >
-                          {isDraftView ? 'Open Draft' : 'Open Record'}
+                          {isPurchaseEntryView ? 'Open Entry' : 'Open PO'}
                         </Link>
                       </td>
                     </tr>
