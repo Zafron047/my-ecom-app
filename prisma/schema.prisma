@@ -606,6 +606,7 @@ model PurchaseEntry {
   paymentStatus    String    @default("due")
   paymentMethod    String?
   paymentReference String?
+  paidAmount       Decimal   @default(0) @db.Decimal(12, 2)
   totalQuantity    Int       @default(0)
   totalCost        Decimal   @default(0) @db.Decimal(12, 2)
   createdAt        DateTime  @default(now())
