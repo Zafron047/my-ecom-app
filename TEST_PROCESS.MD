@@ -1,113 +1,163 @@
-## Test these flows in the UI:
+## Purchase Entry -> PO Chain
 
-1. **Homepage Refresh Requests**
-   - Open homepage with empty cart.
-   - Refresh.
-   - Expected: no repeated `/api/cart/price`; catalog should not spam.
-   - Add one cart item, refresh.
-   - Expected: only 1-2 `/api/cart/price`, not 20+.
+- [ ] Test with an admin or manager account with product write access.
+- [x] Purchase Entry required Fields: at least 1 Variant with qty
+- [x] New Purchase Entry Button: Fix color, Also Add this button in Purchase Orders page
 
-2. **Global Bundle Offer**
-   - Go to `/admin/products/bundles`.
-   - Create a bundle offer.
-   - Select eligible variants; confirm thumbnails show.
-   - Add those variants from storefront.
-   - Expected: cart applies bundle discount across eligible variants.
+### Routes
 
-3. **Bundle Delete / Archive**
-   - In `/admin/products/bundles`, open a bundle.
-   - Try Archive.
-   - Try Delete on a test bundle.
-   - Expected: archive hides/deactivates; delete removes permanently.
+- [X] Purchase Orders opens at `/admin/purchase-order` and lists all submitted POs.
+- [x] Purchase Entry opens at `/admin/purchase-order/purchase-entry` and lists saved purchase entries.
+- [x] `New Purchase Entry` opens the form at `/admin/purchase-order/purchase-entry?new=1`.
+Fix: New Purchase Entry Btn colors
 
-4. **Order Snapshot**
-   - Place an order with a bundle discount.
-   - Open admin order detail.
-   - Expected: product name, variant, price, discount, bundle rule, total are saved.
-   - Change product/variant name or bundle title later.
-   - Reopen old order.
-   - Expected: old order still shows saved order line data.
+- [x] Closed opens at `/admin/purchase-order/closed` and lists all closed POs.
+Fix: Lists open POs
 
-5. **Deleted Image Fallback**
-   - Place an order with product image.
-   - Remove that product media.
-   - Open old order/invoice/order confirmation.
-   - Expected: no broken image icon; shows `Image unavailable`.
+- [x] Old `/admin/purchase-order/entries` route redirects to `/admin/purchase-order/purchase-entry`.
+- [x] Old `/admin/purchase-order/drafts` route redirects to `/admin/purchase-order/purchase-entry`.
+Old unused URLs Should not exist
 
-6. **Product Delete / Archive**
-   - In `/admin/products`, try deleting a product with order history.
-   - Expected: skipped with message to archive instead.
-   - Try deleting a test product with no order history.
-   - Expected: hard delete works.
+### 1. Purchase Entry Form
 
-7. **Brand / Category Delete Archive**
-   - In Brands and Categories admin pages:
-   - Test Archive.
-   - Test Delete on throwaway entries.
-   - Expected: archive makes inactive; delete removes.
+- [x] Open Purchase Entry. Click `New Purchase Entry`. No payment section is visible.
+- [x] Form only has supplier/reference/date, product lines, notes, and entry actions.
 
-8. **Delivered Order Lock**
-   - Mark an order delivered.
-   - Try editing customer/items/totals.
-   - Expected: editing is blocked/read-only.
+Validation:
 
+- [x] With no line item, `Submit to PO` is disabled.
+- [x] With no line item, a clear message says at least one purchase line is required.
+- [x] Add a product but do not select a variant.
+- [x] With no variant selected, `Submit to PO` is disabled.
+- [x] With no variant selected, a clear message says variant is required.
+- [x] Set quantity to `0`.
+- [x] With quantity `0`, `Submit to PO` is disabled.
+- [x] With quantity `0`, a clear message says quantity must be greater than 0.
+- [x] Leave unit cost blank. With blank unit cost, Purchase Entry can be saved.
+- [x] With blank unit cost, `Submit to PO` stays disabled.
+- [x] With blank unit cost, saved entry appears under Purchase Entry, not Purchase Orders.
+- [x] Set unit cost to `0`. With unit cost `0`, `Submit to PO` is disabled.
+- [x] With unit cost `0`, a clear message says unit cost must be greater than 0.
+- [ ] Fill product, variant, quantity greater than 0, and unit cost greater than 0. With complete valid lines, `Submit to PO` is enabled.
 
-## Stock
-Yes, move real cost management out of the variant edit form.
+### 2. Save Purchase Entry
 
-Best structure:
+- [x] Create an incomplete Purchase Entry and click `Save Purchase Entry`. Success message uses "Purchase entry", not "Draft".
+- [x] Entry appears at `/admin/purchase-order/purchase-entry`.
+- [x] Action button says `Open Entry`.
+- [x] Open the entry.
+- [x] Product lines load back into the Purchase Entry form.
+- [x] Save Purchase Entry without any product. Expected: Select at least 1 variant with qty
+Fix: Empty purchase entries are blocked.
 
-- Variant edit page:
-  - Sell price: editable
-  - Compare price: editable
-  - Cost price: read-only or remove from main edit
-  - Show “Current average/FIFO cost” as informational only
+### 3. Submit Purchase Entry To PO
 
-- Stock / Purchase Entry page:
-  - Search product
-  - Select variant
-  - Enter quantity received
-  - Enter unit cost
-  - Supplier optional
-  - Invoice/reference optional
-  - Batch/lot number auto-generated
-  - Save creates an inventory batch
+- [x] Create a complete Purchase Entry.
+- [x] Click `Submit to PO`.
+- [x] Redirects to `/admin/purchase-order/records/[id]`.
+- [x] Submitted item no longer appears in Purchase Entry.
+- [x] PO appears in Purchase Orders.
+- [x] Initial PO status is Open.
+- [x] Payment status is Due.
+- [x] Paid amount is `0`.
+- [x] Payable equals total cost.
 
-For FIFO:
-- Each batch stores `unitCost`, `quantityReceived`, `quantityRemaining`, `receivedAt`.
-- When an order is placed, stock is consumed from oldest available batches.
-- Order line snapshots the actual consumed cost.
+### 4. PO Product List Card
 
-Example:
+- [x] Open the PO detail page. Product List card is default open.
+- [x] Product List card is collapsible.
+- [x] Product list is read-only.
+- [x] No add/remove product controls are available on the PO.
+- [x] Ordered quantity matches the Purchase Entry.
+- [x] Unit cost matches the Purchase Entry.
+- [x] Line total matches the Purchase Entry.
 
-Batch A: 5 pcs at 100
-Batch B: 5 pcs at 90
+### 5. PO Payment Card
 
-Customer buys 7:
-- 5 consumed from Batch A
-- 2 consumed from Batch B
-- cost snapshot = `(5x100) + (2x90) = 680`
+- [x] Payment card is default open.
+- [x] Payment card is collapsible.
+- [x] Method label reads `Payment Method`.
+- [x] Default view shows only `Update`.
+- [x] Click `Update`. Payment fields become editable.
+- [x] Buttons show `Save Payment` and `Cancel`.
+- [x] `Update` is not visible while editing.
 
-What to show in variant/admin:
-- Available stock: sum of remaining batches
-- Current FIFO cost: oldest batch with remaining stock
-- Average cost: optional informational
-- Last purchase cost: optional informational
-- Cost field: read-only or hidden from variant editor
+Validation:
 
-My recommendation:
-1. Rename current variant `costPrice` to `referenceCost` or stop using it for accounting.
-2. Create `InventoryBatch`.
-3. Create `InventoryMovement` later for audit history.
-4. Use FIFO batch consumption at order placement.
-5. Snapshot cost into order lines for profit reports.
+- [x] Set payment to Paid without Payment Method. Paid without Payment Method is blocked with a clear payment method error.
+- [x] Set payment to Partially Paid without Payment Method. Partially Paid without Payment Method is blocked with a clear payment method error.
+- [x] Partially Paid with amount `0` is blocked with a clear partial payment error.
+- [x] Set payment to Partially Paid with amount greater than 0 and less than total. Valid partial payment saves successfully.
+- [x] Valid partial payment keeps PO Open.
+- [x] Valid partial payment updates payable amount.
+- [x] Make a second partial payment with the same amount and method.
+- [x] Second partial payment adds to the paid total.
+- [x] Second partial payment updates payable amount.
 
-This matches normal retail/ecommerce practice without becoming too complex too early.
+- [x] Set payment to Paid with a Payment Method. Valid paid payment saves successfully.
+<!-- - [ ] Paid amount equals total cost. -->
+- [x] PO remains Open if goods are not fully received.
+- [x] While editing payment, change values and click `Cancel`.
+- [x] Payment values reset to the last saved values.
 
+### 6. PO Goods Receive Card
 
-- Discard Draft deletes the DB draft -> >>>Destructive<<<
-Discard Draft should only change the current changes made in a draft.
-Say yesterday I saved the draft form and now I made some changes. I can discard the latest changes only.
+- [x] Goods Receive card is always visible.
+- [x] Goods Receive card is not collapsible.
+- [x] Each line shows Batch Number.
+- [x] Default view shows only `Update`.
+- [x] Click `Update`. Receive quantities become editable.
+- [x] Buttons show `Save Receive` and `Cancel`.
+- [x] `Update` is not visible while editing.
+Remove: Full Receive functionality with button.
 
-- Returning to Purchase Entry loads the latest draft
-Not necessary. It should open a new Purchase entry form like always. The Draft list could save inside http://localhost:3000/admin/products/purchase-entry/drafts
+Validation:
+
+- [x] Save with all receive quantities as `0`. All-zero receive save is blocked with a clear receive quantity error.
+- [x] Enter a negative receive quantity. Negative receive quantity is blocked with a clear whole-number error.
+- [x] Enter a decimal receive quantity. Decimal receive quantity is blocked with a clear whole-number error.
+- [x] Enter receive quantity greater than remaining quantity. Over-receive is blocked with a clear over-receive error.
+- [x] Partially receive a line. Partial receive saves successfully.
+- [x] Batch number is created/shown.
+- [x] Received quantity updates.
+- [x] Left quantity updates.
+- [x] PO remains Open after partial receive.
+- [x] Fully receive all lines while payment is not fully paid.
+- [x] PO remains Open when fully received but not fully paid.
+- [x] While editing receiving, change quantities and click `Cancel`.
+- [x] Receive inputs reset to `0`.
+
+### 7. Close PO
+
+- Open an Open PO.
+- [x] Set payment status to Paid with Payment Method.
+- [x] Fully receive all goods.
+- [x] PO status becomes Closed.
+- [x] PO remains in Purchase Orders with Closed status.
+- [x] PO appears in Closed.
+- [x] Closed contains only POs with a closed lifecycle status.
+- [x] Closed does not show Open POs.
+
+### 8. Reopen Behavior
+
+- [x] Open a Closed PO.
+- [x] Change payment from Paid to Due.
+- [x] Save succeeds.
+- [x] Status becomes Open because the PO is no longer fully paid.
+- [x] PO still appears in Purchase Orders with Open status.
+- [x] PO no longer appears in Closed.
+
+- [x] Change payment from Paid to Partially Paid.
+- [x] Save succeeds.
+- [x] Status becomes Open because the PO is no longer fully paid.
+- [x] PO still appears in Purchase Orders with Open status.
+- [x] PO no longer appears in Closed.
+
+### 9. Inventory Check
+
+- [x] Before receiving, note the variant stock quantity.
+- [x] Receive a partial quantity.
+- [x] Variant stock increases only by the received quantity.
+- [x] Receive the remaining quantity.
+- [x] Variant stock increases by the remaining quantity only.
+- [x] Receiving the same quantity twice is not possible after it has already been received.
