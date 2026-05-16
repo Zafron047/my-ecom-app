@@ -26,9 +26,6 @@ type PurchaseVariantOption = {
 };
 
 type PurchaseEntryFormProps = {
-  discardDraftAction: (
-    formData: FormData,
-  ) => Promise<{ draftId?: string; error?: string; message?: string }>;
   initialDraft: PurchaseEntryDraft | null;
   recordAction: (
     previousState: { error?: string; message?: string },
@@ -61,9 +58,6 @@ type PurchaseEntryDraft = {
   lines: PurchaseEntryDraftLine[];
   notes: string;
   purchaseDate: string;
-  paymentMethod: string;
-  paymentReference: string;
-  paymentStatus: string;
   referenceNo: string;
   supplierName: string;
 };
@@ -78,10 +72,6 @@ type ProductOption = {
 type DraftSnapshotInput = {
   lines: DraftLine[];
   notes: string;
-  partialPaymentAmount: string;
-  paymentMethod: string;
-  paymentReference: string;
-  paymentStatus: string;
   purchaseDate: string;
   referenceNo: string;
   supplierName: string;
@@ -140,10 +130,6 @@ function TrashIcon() {
 function createDraftSnapshot({
   lines,
   notes,
-  partialPaymentAmount,
-  paymentMethod,
-  paymentReference,
-  paymentStatus,
   purchaseDate,
   referenceNo,
   supplierName,
@@ -156,18 +142,70 @@ function createDraftSnapshot({
       variantId: line.variantId,
     })),
     notes,
-    partialPaymentAmount,
-    paymentMethod,
-    paymentReference,
-    paymentStatus,
     purchaseDate,
     referenceNo,
     supplierName,
   });
 }
 
+function getRecordSubmitBlockReason(input: {
+  lines: DraftLine[];
+}) {
+  if (input.lines.length === 0) {
+    return 'Add at least one purchase line to submit a PO.';
+  }
+
+  for (const [index, line] of input.lines.entries()) {
+    const quantity = Number(line.quantity);
+    const unitCost = Number(line.unitCost);
+
+    if (!line.variantId) {
+      return `Line ${index + 1}: select a variant before submitting a PO.`;
+    }
+
+    if (
+      !line.quantity.trim() ||
+      !Number.isInteger(quantity) ||
+      quantity <= 0
+    ) {
+      return `Line ${index + 1}: quantity must be greater than 0.`;
+    }
+
+    if (!line.unitCost.trim() || !Number.isFinite(unitCost) || unitCost <= 0) {
+      return `Line ${index + 1}: unit cost must be greater than 0.`;
+    }
+  }
+
+  return '';
+}
+
+function getDraftSaveBlockReason(input: {
+  lines: DraftLine[];
+}) {
+  if (input.lines.length === 0) {
+    return 'Select at least one variant with quantity before saving a purchase entry.';
+  }
+
+  for (const [index, line] of input.lines.entries()) {
+    const quantity = Number(line.quantity);
+
+    if (!line.variantId) {
+      return `Line ${index + 1}: select a variant before saving a purchase entry.`;
+    }
+
+    if (
+      !line.quantity.trim() ||
+      !Number.isInteger(quantity) ||
+      quantity <= 0
+    ) {
+      return `Line ${index + 1}: quantity must be greater than 0.`;
+    }
+  }
+
+  return '';
+}
+
 export default function PurchaseEntryForm({
-  discardDraftAction,
   initialDraft,
   recordAction,
   saveDraftAction,
@@ -191,10 +229,6 @@ export default function PurchaseEntryForm({
       createDraftSnapshot({
         lines: [],
         notes: '',
-        partialPaymentAmount: '',
-        paymentMethod: '',
-        paymentReference: '',
-        paymentStatus: 'due',
         purchaseDate: defaultPurchaseDate,
         referenceNo: '',
         supplierName: '',
@@ -206,10 +240,6 @@ export default function PurchaseEntryForm({
       createDraftSnapshot({
         lines: initialLines,
         notes: initialDraft?.notes ?? '',
-        partialPaymentAmount: '',
-        paymentMethod: initialDraft?.paymentMethod ?? '',
-        paymentReference: initialDraft?.paymentReference ?? '',
-        paymentStatus: initialDraft?.paymentStatus ?? 'due',
         purchaseDate: initialDraft?.purchaseDate ?? defaultPurchaseDate,
         referenceNo: initialDraft?.referenceNo ?? '',
         supplierName: initialDraft?.supplierName ?? '',
@@ -225,21 +255,11 @@ export default function PurchaseEntryForm({
   const [purchaseDate, setPurchaseDate] = useState(
     initialDraft?.purchaseDate ?? defaultPurchaseDate,
   );
-  const [paymentStatus, setPaymentStatus] = useState(
-    initialDraft?.paymentStatus ?? 'due',
-  );
-  const [partialPaymentAmount, setPartialPaymentAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState(
-    initialDraft?.paymentMethod ?? '',
-  );
-  const [paymentReference, setPaymentReference] = useState(
-    initialDraft?.paymentReference ?? '',
-  );
   const [notes, setNotes] = useState(initialDraft?.notes ?? '');
   const [query, setQuery] = useState('');
   const [clientError, setClientError] = useState('');
   const [draftMessage, setDraftMessage] = useState(
-    initialDraft ? 'Draft loaded' : '',
+    initialDraft ? 'Purchase entry loaded' : '',
   );
   const [isProductListOpen, setIsProductListOpen] = useState(false);
   const [openVariantLineId, setOpenVariantLineId] = useState<string | null>(null);
@@ -305,38 +325,17 @@ export default function PurchaseEntryForm({
       sum + (Number(line.quantity) || 0) * (Number(line.unitCost) || 0),
     0,
   );
-  const partialPaidAmount = Number(partialPaymentAmount) || 0;
-  const payableAmount =
-    paymentStatus === 'paid'
-      ? 0
-      : Math.max(
-          0,
-          totalCost - (paymentStatus === 'partial_paid' ? partialPaidAmount : 0),
-        );
-  const isPartialPaymentValid =
-    paymentStatus !== 'partial_paid' ||
-    (partialPaidAmount > 0 && partialPaidAmount < totalCost);
-  const canSubmit = lines.every(
-    (line) =>
-      line.variantId &&
-      Number.isInteger(Number(line.quantity)) &&
-      Number(line.quantity) > 0 &&
-      Number.isFinite(Number(line.unitCost)) &&
-      Number(line.unitCost) > 0,
-  );
-  const canSave = lines.length > 0 && canSubmit;
-  const canRecord =
-    canSave &&
-    (paymentStatus === 'due' || Boolean(paymentMethod)) &&
-    isPartialPaymentValid;
+  const recordSubmitBlockReason = getRecordSubmitBlockReason({
+    lines,
+  });
+  const draftSaveBlockReason = getDraftSaveBlockReason({
+    lines,
+  });
+  const canSubmitRecord = !recordSubmitBlockReason;
   const hasDraftContent =
     lines.length > 0 ||
     supplierName.trim().length > 0 ||
     referenceNo.trim().length > 0 ||
-    partialPaymentAmount.trim().length > 0 ||
-    paymentMethod.trim().length > 0 ||
-    paymentReference.trim().length > 0 ||
-    paymentStatus !== 'due' ||
     notes.trim().length > 0 ||
     purchaseDate !== defaultPurchaseDate;
   const hasSaveableDraft = hasDraftContent || Boolean(draftId);
@@ -345,10 +344,6 @@ export default function PurchaseEntryForm({
       createDraftSnapshot({
         lines,
         notes,
-        partialPaymentAmount,
-        paymentMethod,
-        paymentReference,
-        paymentStatus,
         purchaseDate,
         referenceNo,
         supplierName,
@@ -356,16 +351,13 @@ export default function PurchaseEntryForm({
     [
       lines,
       notes,
-      partialPaymentAmount,
-      paymentMethod,
-      paymentReference,
-      paymentStatus,
       purchaseDate,
       referenceNo,
       supplierName,
     ],
   );
   const hasUnsavedDraftChanges = currentDraftSnapshot !== savedDraftSnapshot;
+  const canSaveDraft = hasSaveableDraft && hasUnsavedDraftChanges;
   const productLineGroups = useMemo(() => {
     const grouped = new Map<
       string,
@@ -403,10 +395,6 @@ export default function PurchaseEntryForm({
     setSupplierName('');
     setReferenceNo('');
     setPurchaseDate(defaultPurchaseDate);
-    setPaymentStatus('due');
-    setPartialPaymentAmount('');
-    setPaymentMethod('');
-    setPaymentReference('');
     setNotes('');
     setQuery('');
     setDraftMessage('');
@@ -442,10 +430,6 @@ export default function PurchaseEntryForm({
     formData.set('supplierName', supplierName);
     formData.set('referenceNo', referenceNo);
     formData.set('purchaseDate', purchaseDate);
-    formData.set('paymentStatus', paymentStatus);
-    formData.set('partialPaymentAmount', partialPaymentAmount);
-    formData.set('paymentMethod', paymentMethod);
-    formData.set('paymentReference', paymentReference);
     formData.set('notes', notes);
 
     for (const line of lines) {
@@ -460,17 +444,18 @@ export default function PurchaseEntryForm({
     draftId,
     lines,
     notes,
-    partialPaymentAmount,
-    paymentMethod,
-    paymentReference,
-    paymentStatus,
     purchaseDate,
     referenceNo,
     supplierName,
   ]);
 
   const saveDraft = useCallback(async (): Promise<GuardActionResult> => {
-    if (!hasSaveableDraft) return { ok: true };
+    if (!canSaveDraft) return { ok: true };
+    if (draftSaveBlockReason) {
+      setClientError(draftSaveBlockReason);
+      setDraftMessage('');
+      return { error: draftSaveBlockReason, ok: false };
+    }
 
     const requestId = draftRequestIdRef.current + 1;
     draftRequestIdRef.current = requestId;
@@ -478,12 +463,12 @@ export default function PurchaseEntryForm({
     const snapshot = currentDraftSnapshot;
 
     setIsDraftPending(true);
-    setDraftMessage('Saving draft...');
+    setDraftMessage('Saving purchase entry...');
 
     try {
       const result = await saveDraftAction(formData);
       if (draftRequestIdRef.current !== requestId) {
-        return { error: 'Another draft request is already in progress.', ok: false };
+        return { error: 'Another purchase entry request is already in progress.', ok: false };
       }
 
       if (result.error) {
@@ -495,14 +480,14 @@ export default function PurchaseEntryForm({
       if (result.draftId) setDraftId(result.draftId);
       setSavedDraftSnapshot(snapshot);
       setClientError('');
-      setDraftMessage(result.message ?? 'Draft saved.');
+      setDraftMessage(result.message ?? 'Purchase entry saved.');
       return { ok: true };
     } catch {
       if (draftRequestIdRef.current === requestId) {
-        setClientError('Failed to save draft.');
+        setClientError('Failed to save purchase entry.');
         setDraftMessage('');
       }
-      return { error: 'Failed to save draft.', ok: false };
+      return { error: 'Failed to save purchase entry.', ok: false };
     } finally {
       if (draftRequestIdRef.current === requestId) {
         setIsDraftPending(false);
@@ -510,8 +495,9 @@ export default function PurchaseEntryForm({
     }
   }, [
     buildPurchaseFormData,
+    canSaveDraft,
     currentDraftSnapshot,
-    hasSaveableDraft,
+    draftSaveBlockReason,
     saveDraftAction,
   ]);
 
@@ -561,69 +547,10 @@ export default function PurchaseEntryForm({
     setIsProductListOpen(false);
   }
 
-  const discardDraft = useCallback(async (): Promise<GuardActionResult> => {
-    if (!draftId) {
-      resetPurchaseEntryForm();
-      setDraftMessage('Draft discarded.');
-      return { ok: true };
-    }
-
-    const formData = new FormData();
-    formData.set('purchaseEntryId', draftId);
-    setIsDraftPending(true);
-    setDraftMessage('Discarding draft...');
-
-    try {
-      const result = await discardDraftAction(formData);
-      if (result.error) {
-        setClientError(result.error);
-        return { error: result.error, ok: false };
-      }
-
-      resetPurchaseEntryForm();
-      setDraftMessage(result.message ?? 'Draft discarded.');
-      return { ok: true };
-    } catch {
-      setClientError('Failed to discard draft.');
-      return { error: 'Failed to discard draft.', ok: false };
-    } finally {
-      setIsDraftPending(false);
-    }
-  }, [discardDraftAction, draftId, resetPurchaseEntryForm]);
-
   function validateBeforeSubmit(event: FormEvent<HTMLFormElement>) {
-    if (lines.length === 0) {
+    if (recordSubmitBlockReason) {
       event.preventDefault();
-      setClientError('Add at least one purchase line.');
-      return;
-    }
-
-    const invalidLineIndex = lines.findIndex(
-      (line) =>
-        !line.variantId ||
-        !Number.isInteger(Number(line.quantity)) ||
-        Number(line.quantity) <= 0 ||
-        !Number.isFinite(Number(line.unitCost)) ||
-        Number(line.unitCost) <= 0,
-    );
-
-    if (invalidLineIndex >= 0) {
-      event.preventDefault();
-      setClientError(
-        `Line ${invalidLineIndex + 1}: variant, qty, and unit cost are required.`,
-      );
-      return;
-    }
-
-    if (paymentStatus !== 'due' && !paymentMethod) {
-      event.preventDefault();
-      setClientError('Payment method is required when payment is paid or partially paid.');
-      return;
-    }
-
-    if (!isPartialPaymentValid) {
-      event.preventDefault();
-      setClientError('Partial payment must be greater than 0 and less than total cost.');
+      setClientError(recordSubmitBlockReason);
       return;
     }
 
@@ -633,23 +560,22 @@ export default function PurchaseEntryForm({
   useEffect(
     () =>
       registerNavigationGuard({
-        discardLabel: 'Discard',
         message:
-          'This purchase entry has unsaved changes. Save it as a draft or discard it before leaving.',
-        onDiscard: discardDraft,
+          'This purchase entry has unsaved changes. Save it before leaving.',
         onSave: saveDraft,
-        saveLabel: 'Save as Draft',
+        saveLabel: 'Save Purchase Entry',
         shouldBlock: () => hasUnsavedDraftChanges,
         stayLabel: 'Stay',
         title: 'Leave purchase entry?',
       }),
-    [discardDraft, hasUnsavedDraftChanges, registerNavigationGuard, saveDraft],
+    [hasUnsavedDraftChanges, registerNavigationGuard, saveDraft],
   );
 
   return (
     <form
       ref={formRef}
       action={formAction}
+      noValidate
       onSubmit={validateBeforeSubmit}
       className="space-y-5"
     >
@@ -688,74 +614,6 @@ export default function PurchaseEntryForm({
           </label>
         </div>
 
-        <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50/70 p-2 md:grid-cols-[150px_150px_minmax(160px,1fr)_150px_150px] md:items-end">
-          <label className="min-w-0 space-y-0.5 text-[11px] font-semibold text-slate-600">
-            <span>Payment</span>
-            <select
-              name="paymentStatus"
-              value={paymentStatus}
-              onChange={(event) => {
-                const nextStatus = event.target.value;
-                setPaymentStatus(nextStatus);
-                if (nextStatus !== 'partial_paid') setPartialPaymentAmount('');
-              }}
-              className="h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 py-0 text-[12px] leading-4 text-slate-900 outline-none transition focus:border-blue-300"
-            >
-              <option value="due">Due</option>
-              <option value="partial_paid">Partially Paid</option>
-              <option value="paid">Paid</option>
-            </select>
-          </label>
-          <label className="min-w-0 space-y-0.5 text-[11px] font-semibold text-slate-600">
-            <span>Method</span>
-            <select
-              name="paymentMethod"
-              value={paymentMethod}
-              onChange={(event) => setPaymentMethod(event.target.value)}
-              className="h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 py-0 text-[12px] leading-4 text-slate-900 outline-none transition focus:border-blue-300"
-            >
-              <option value="">Method</option>
-              <option value="cash">Cash</option>
-              <option value="bank">Bank</option>
-              <option value="bkash">bKash</option>
-            </select>
-          </label>
-          <label className="min-w-0 space-y-0.5 text-[11px] font-semibold text-slate-600">
-            <span>Reference</span>
-            <input
-              name="paymentReference"
-              placeholder="Txn / cheque ref"
-              value={paymentReference}
-              onChange={(event) => setPaymentReference(event.target.value)}
-              className="h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 py-0 text-[12px] leading-4 text-slate-900 outline-none transition focus:border-blue-300"
-            />
-          </label>
-          {paymentStatus === 'partial_paid' ? (
-            <label className="min-w-0 space-y-0.5 text-[11px] font-semibold text-slate-600">
-              <span>Paid Amount</span>
-              <input
-                name="partialPaymentAmount"
-                type="number"
-                min={0}
-                step="0.01"
-                placeholder="0.00"
-                value={partialPaymentAmount}
-                onChange={(event) => setPartialPaymentAmount(event.target.value)}
-                className="h-8 w-full rounded-lg border border-slate-300 bg-white px-1.5 py-0 text-[12px] leading-4 text-slate-900 outline-none transition focus:border-blue-300"
-              />
-            </label>
-          ) : (
-            <input type="hidden" name="partialPaymentAmount" value="" />
-          )}
-          <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Payable
-            </p>
-            <p className="truncate text-sm font-bold text-slate-900">
-              {payableAmount.toFixed(2)}
-            </p>
-          </div>
-        </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -995,8 +853,7 @@ export default function PurchaseEntryForm({
                             <span>Qty</span>
                             <input
                               name="quantity"
-                              type="number"
-                              min={1}
+                              inputMode="numeric"
                               required
                               value={line.quantity}
                               onChange={(event) =>
@@ -1009,9 +866,7 @@ export default function PurchaseEntryForm({
                             <span>Unit Cost</span>
                             <input
                               name="unitCost"
-                              type="number"
-                              min={0.01}
-                              step="0.01"
+                              inputMode="decimal"
                               required
                               value={line.unitCost}
                               onChange={(event) =>
@@ -1093,36 +948,32 @@ export default function PurchaseEntryForm({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {hasSaveableDraft ? (
-            <button
-              type="button"
-              onClick={() => {
-                void discardDraft();
-              }}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              Discard Draft
-            </button>
-          ) : null}
           <button
             type="button"
-            disabled={!hasSaveableDraft || isDraftPending || isPending}
+            disabled={!canSaveDraft || isDraftPending || isPending}
             onClick={() => {
               void saveDraft();
             }}
             className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
           >
-            {isDraftPending ? 'Saving Draft...' : 'Save Draft'}
+            {isDraftPending ? 'Saving Entry...' : 'Save Purchase Entry'}
           </button>
           <button
             type="submit"
-            disabled={!canRecord || isPending || isDraftPending}
+            disabled={!canSubmitRecord || isPending || isDraftPending}
+            title={recordSubmitBlockReason || undefined}
             className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
-            {isPending ? 'Recording...' : 'Submit Record'}
+            {isPending ? 'Submitting...' : 'Submit to PO'}
           </button>
         </div>
       </div>
+
+      {recordSubmitBlockReason ? (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+          {recordSubmitBlockReason}
+        </p>
+      ) : null}
 
       {clientError || state.error ? (
         <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">

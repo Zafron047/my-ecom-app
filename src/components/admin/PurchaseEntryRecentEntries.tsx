@@ -2,6 +2,11 @@
 
 import { useState } from 'react';
 import { Fragment } from 'react';
+import {
+  PURCHASE_ENTRY_STATUS,
+  formatPurchaseEntryStatusLabel,
+  formatPurchasePaymentStatus,
+} from '@/lib/purchase-order-status';
 
 type RecentPurchaseEntryLine = {
   batchNumber: string;
@@ -31,31 +36,22 @@ type PurchaseEntryRecentEntriesProps = {
 };
 
 function formatEntryStatus(status: string) {
-  const labels: Record<string, string> = {
-    cancelled: 'Cancelled',
-    closed_short: 'Closed Short',
-    draft: 'Draft',
-    full_received: 'Full Received',
-    partial_received: 'Partial Received',
-    received: 'Received',
-    recorded: 'Confirmed',
-  };
-  return labels[status] ?? status.replace(/_/g, ' ');
-}
-
-function formatPaymentStatus(status: string) {
-  const labels: Record<string, string> = {
-    due: 'Due',
-    paid: 'Paid',
-    partial_paid: 'Partially Paid',
-  };
-  return labels[status] ?? status.replace(/_/g, ' ');
+  return formatPurchaseEntryStatusLabel(status);
 }
 
 function getStatusTone(status: string) {
-  if (status === 'draft') return 'bg-amber-50 text-amber-700';
-  if (status === 'cancelled') return 'bg-rose-50 text-rose-700';
-  if (status === 'recorded' || status === 'partial_received') {
+  if (status === PURCHASE_ENTRY_STATUS.DRAFT) return 'bg-amber-50 text-amber-700';
+  if (
+    status === PURCHASE_ENTRY_STATUS.CANCELLED ||
+    status === PURCHASE_ENTRY_STATUS.CLOSED_SHORT
+  ) {
+    return 'bg-rose-50 text-rose-700';
+  }
+  if (
+    status === PURCHASE_ENTRY_STATUS.OPEN ||
+    status === PURCHASE_ENTRY_STATUS.LEGACY_RECORDED ||
+    status === PURCHASE_ENTRY_STATUS.LEGACY_PARTIAL_RECEIVED
+  ) {
     return 'bg-blue-50 text-blue-700';
   }
   return 'bg-emerald-50 text-emerald-700';
@@ -121,7 +117,7 @@ export default function PurchaseEntryRecentEntries({
                     </td>
                     <td className="px-3 py-3 text-slate-600">
                       <div className="font-semibold text-slate-800">
-                        {formatPaymentStatus(entry.paymentStatus)}
+                        {formatPurchasePaymentStatus(entry.paymentStatus)}
                       </div>
                       <div className="text-xs capitalize text-slate-500">
                         {entry.paymentMethod || '-'}

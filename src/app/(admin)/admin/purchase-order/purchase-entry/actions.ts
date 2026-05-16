@@ -1,9 +1,15 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { Prisma } from '@prisma/client';
 import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
+import {
+  PURCHASE_ENTRY_STATUS,
+  PURCHASE_PAYMENT_STATUS,
+  isPurchaseEntryDraft,
+} from '@/lib/purchase-order-status';
 
 type PurchaseEntryState = {
   draftId?: string;
@@ -28,10 +34,10 @@ type RecordedPurchaseEntryLine = {
 };
 
 const PURCHASE_ENTRY_PATH = '/admin/purchase-order/purchase-entry';
-const PAYMENT_METHODS = new Set(['bank', 'bkash', 'cash']);
-const PAYMENT_STATUSES = new Set(['due', 'partial_paid', 'paid']);
-const PURCHASE_DRAFTS_PATH = '/admin/purchase-order/drafts';
+const LEGACY_PURCHASE_ENTRIES_PATH = '/admin/purchase-order/entries';
+const LEGACY_PURCHASE_DRAFTS_PATH = '/admin/purchase-order/drafts';
 const PURCHASE_ORDERS_PATH = '/admin/purchase-order';
+const ZERO_MONEY = new Prisma.Decimal(0);
 
 function getString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -53,10 +59,6 @@ function parsePositiveInt(value: string, label: string) {
   return parsed;
 }
 
-function parseOptionalPositiveInt(value: string, label: string) {
-  return value ? parsePositiveInt(value, label) : null;
-}
-
 function parsePositiveMoney(value: string, label: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -75,22 +77,6 @@ function parsePurchaseDate(raw: string) {
     throw new Error('Purchase date is invalid.');
   }
   return purchaseDate;
-}
-
-function parsePaymentStatus(raw: string) {
-  const paymentStatus = raw || 'due';
-  if (!PAYMENT_STATUSES.has(paymentStatus)) {
-    throw new Error('Payment status is invalid.');
-  }
-  return paymentStatus;
-}
-
-function parsePaymentMethod(raw: string) {
-  if (!raw) return null;
-  if (!PAYMENT_METHODS.has(raw)) {
-    throw new Error('Payment method is invalid.');
-  }
-  return raw;
 }
 
 function createEntryNumber() {
@@ -144,8 +130,10 @@ async function parsePurchaseEntryLines(formData: FormData) {
       throw new Error(`Line ${index + 1}: product or variant is required.`);
     }
 
-    const quantity =
-      parseOptionalPositiveInt(quantityRaw, `Line ${index + 1}: quantity`) ?? 1;
+    const quantity = parsePositiveInt(
+      quantityRaw,
+      `Line ${index + 1}: quantity`,
+    );
     const unitCost = parseOptionalPositiveMoney(
       unitCostRaw,
       `Line ${index + 1}: unit cost`,
@@ -212,6 +200,21 @@ async function parsePurchaseEntryLines(formData: FormData) {
   return normalizedLines;
 }
 
+function requireDraftLines(lines: PurchaseEntryLineInput[]) {
+  if (lines.length === 0) {
+    throw new Error(
+      'Select at least one variant with quantity before saving a purchase entry.',
+    );
+  }
+
+  return lines.map((line, index) => {
+    if (!line.variantId) {
+      throw new Error(`Line ${index + 1}: variant is required.`);
+    }
+    return line;
+  });
+}
+
 function requireRecordedLines(lines: PurchaseEntryLineInput[]) {
   if (lines.length === 0) {
     throw new Error('Add at least one purchase line.');
@@ -254,10 +257,7 @@ export async function savePurchaseEntryDraft(
     const referenceNo = getString(formData, 'referenceNo') || null;
     const purchaseDate = parsePurchaseDate(getString(formData, 'purchaseDate'));
     const notes = getString(formData, 'notes') || null;
-    const paymentStatus = parsePaymentStatus(getString(formData, 'paymentStatus'));
-    const paymentMethod = parsePaymentMethod(getString(formData, 'paymentMethod'));
-    const paymentReference = getString(formData, 'paymentReference') || null;
-    const lines = await parsePurchaseEntryLines(formData);
+    const lines = requireDraftLines(await parsePurchaseEntryLines(formData));
     const totals = calculateTotals(lines);
 
     let entryNumber = '';
@@ -268,8 +268,8 @@ export async function savePurchaseEntryDraft(
           select: { id: true, status: true },
           where: { id: purchaseEntryId },
         });
-        if (!existing || existing.status !== 'draft') {
-          throw new Error('This draft is no longer available.');
+        if (!existing || !isPurchaseEntryDraft(existing.status)) {
+          throw new Error('This purchase entry is no longer available.');
         }
 
         await tx.purchaseEntryLine.deleteMany({
@@ -278,13 +278,14 @@ export async function savePurchaseEntryDraft(
         await tx.purchaseEntry.update({
           data: {
             notes,
-            paymentMethod,
-            paymentReference,
-            paymentStatus,
+            paidAmount: ZERO_MONEY,
+            paymentMethod: null,
+            paymentReference: null,
+            paymentStatus: PURCHASE_PAYMENT_STATUS.DUE,
             purchaseDate,
             receivedAt: null,
             referenceNo,
-            status: 'draft',
+            status: PURCHASE_ENTRY_STATUS.DRAFT,
             supplierName,
             totalCost: totals.totalCost,
             totalQuantity: totals.totalQuantity,
@@ -297,12 +298,13 @@ export async function savePurchaseEntryDraft(
           data: {
             entryNumber,
             notes,
-            paymentMethod,
-            paymentReference,
-            paymentStatus,
+            paidAmount: ZERO_MONEY,
+            paymentMethod: null,
+            paymentReference: null,
+            paymentStatus: PURCHASE_PAYMENT_STATUS.DUE,
             purchaseDate,
             referenceNo,
-            status: 'draft',
+            status: PURCHASE_ENTRY_STATUS.DRAFT,
             supplierName,
             totalCost: totals.totalCost,
             totalQuantity: totals.totalQuantity,
@@ -313,7 +315,7 @@ export async function savePurchaseEntryDraft(
       }
 
       if (!savedDraftId) {
-        throw new Error('Failed to save draft.');
+        throw new Error('Failed to save purchase entry.');
       }
 
       if (lines.length > 0) {
@@ -333,53 +335,20 @@ export async function savePurchaseEntryDraft(
     });
 
     revalidatePath(PURCHASE_ENTRY_PATH);
-    revalidatePath(PURCHASE_DRAFTS_PATH);
+    revalidatePath(LEGACY_PURCHASE_ENTRIES_PATH);
+    revalidatePath(LEGACY_PURCHASE_DRAFTS_PATH);
     return {
       draftId,
       message: entryNumber
-        ? `Draft ${entryNumber} saved.`
-        : 'Draft saved.',
+        ? `Purchase entry ${entryNumber} saved.`
+        : 'Purchase entry saved.',
     };
   } catch (error) {
     return {
       error:
         error instanceof Error && error.message
           ? error.message
-          : 'Failed to save draft.',
-    };
-  }
-}
-
-export async function discardPurchaseEntryDraft(
-  formData: FormData,
-): Promise<PurchaseEntryState> {
-  await requirePurchaseDraftWriteAccess();
-
-  try {
-    const purchaseEntryId = getString(formData, 'purchaseEntryId');
-    if (!purchaseEntryId) return { message: 'Draft discarded.' };
-
-    const draft = await prisma.purchaseEntry.findUnique({
-      select: { id: true, status: true },
-      where: { id: purchaseEntryId },
-    });
-    if (!draft || draft.status !== 'draft') {
-      throw new Error('This draft is no longer available.');
-    }
-
-    await prisma.purchaseEntry.delete({
-      where: { id: purchaseEntryId },
-    });
-
-    revalidatePath(PURCHASE_ENTRY_PATH);
-    revalidatePath(PURCHASE_DRAFTS_PATH);
-    return { message: 'Draft discarded.' };
-  } catch (error) {
-    return {
-      error:
-        error instanceof Error && error.message
-          ? error.message
-          : 'Failed to discard draft.',
+          : 'Failed to save purchase entry.',
     };
   }
 }
@@ -390,19 +359,13 @@ export async function recordPurchaseEntry(
 ): Promise<PurchaseEntryState> {
   await requirePurchaseOwnerAccess();
 
+  let recordedEntryId = '';
   try {
     const purchaseEntryId = getString(formData, 'purchaseEntryId');
     const supplierName = getString(formData, 'supplierName') || null;
     const referenceNo = getString(formData, 'referenceNo') || null;
     const purchaseDate = parsePurchaseDate(getString(formData, 'purchaseDate'));
     const notes = getString(formData, 'notes') || null;
-    const paymentStatus = parsePaymentStatus(getString(formData, 'paymentStatus'));
-    const paymentMethod = parsePaymentMethod(getString(formData, 'paymentMethod'));
-    const paymentReference = getString(formData, 'paymentReference') || null;
-    if (paymentStatus !== 'due' && !paymentMethod) {
-      throw new Error('Payment method is required when payment is paid or partially paid.');
-    }
-
     const lines = requireRecordedLines(await parsePurchaseEntryLines(formData));
     const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
     const totalCost = lines.reduce(
@@ -410,18 +373,16 @@ export async function recordPurchaseEntry(
       new Prisma.Decimal(0),
     );
 
-    let entryNumber = '';
-    await prisma.$transaction(async (tx) => {
+    recordedEntryId = await prisma.$transaction(async (tx) => {
       let entryId = purchaseEntryId;
       if (entryId) {
         const existing = await tx.purchaseEntry.findUnique({
           select: { entryNumber: true, id: true, status: true },
           where: { id: entryId },
         });
-        if (!existing || existing.status !== 'draft') {
-          throw new Error('Only draft purchase entries can be recorded.');
+        if (!existing || !isPurchaseEntryDraft(existing.status)) {
+          throw new Error('Only saved purchase entries can be submitted to PO.');
         }
-        entryNumber = existing.entryNumber;
 
         await tx.purchaseEntryLine.deleteMany({
           where: { purchaseEntryId: entryId },
@@ -429,13 +390,14 @@ export async function recordPurchaseEntry(
         await tx.purchaseEntry.update({
           data: {
             notes,
-            paymentMethod,
-            paymentReference,
-            paymentStatus,
+            paidAmount: ZERO_MONEY,
+            paymentMethod: null,
+            paymentReference: null,
+            paymentStatus: PURCHASE_PAYMENT_STATUS.DUE,
             purchaseDate,
             receivedAt: null,
             referenceNo,
-            status: 'recorded',
+            status: PURCHASE_ENTRY_STATUS.OPEN,
             supplierName,
             totalCost,
             totalQuantity,
@@ -443,18 +405,19 @@ export async function recordPurchaseEntry(
           where: { id: entryId },
         });
       } else {
-        entryNumber = await createUniqueEntryNumber(tx);
+        const entryNumber = await createUniqueEntryNumber(tx);
         const entry = await tx.purchaseEntry.create({
           data: {
             entryNumber,
             notes,
-            paymentMethod,
-            paymentReference,
-            paymentStatus,
+            paidAmount: ZERO_MONEY,
+            paymentMethod: null,
+            paymentReference: null,
+            paymentStatus: PURCHASE_PAYMENT_STATUS.DUE,
             purchaseDate,
             receivedAt: null,
             referenceNo,
-            status: 'recorded',
+            status: PURCHASE_ENTRY_STATUS.OPEN,
             supplierName,
             totalCost,
             totalQuantity,
@@ -476,20 +439,22 @@ export async function recordPurchaseEntry(
           },
         });
       }
+
+      return entryId;
     });
 
     revalidatePath(PURCHASE_ENTRY_PATH);
-    revalidatePath(PURCHASE_DRAFTS_PATH);
+    revalidatePath(LEGACY_PURCHASE_ENTRIES_PATH);
+    revalidatePath(LEGACY_PURCHASE_DRAFTS_PATH);
     revalidatePath(PURCHASE_ORDERS_PATH);
-    return {
-      message: `Purchase entry ${entryNumber} recorded. ${totalQuantity} unit(s) locked for receiving.`,
-    };
   } catch (error) {
     return {
       error:
         error instanceof Error && error.message
           ? error.message
-          : 'Failed to record purchase entry.',
+          : 'Failed to submit purchase entry to PO.',
     };
   }
+
+  redirect(`/admin/purchase-order/records/${recordedEntryId}`);
 }
