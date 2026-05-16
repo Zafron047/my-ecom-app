@@ -221,7 +221,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
           };
         }),
       }}
-      submitLabel="Save Product"
+      submitLabel="Update Product"
     />
   );
 }

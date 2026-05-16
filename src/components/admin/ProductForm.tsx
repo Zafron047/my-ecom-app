@@ -102,7 +102,6 @@ type ActivationRequirementsState = {
   variants: boolean;
 };
 
-type EditorSection = 'product' | 'variants' | 'bundles';
 type SubmitIntent = 'productMedia' | 'variants' | 'bundleOffers' | 'full' | '';
 type ProductProcessState = 'idle' | 'creating' | 'saving' | 'created' | 'saved';
 
@@ -284,7 +283,7 @@ function getActivationRequirementLabels(
   return [
     missing.media ? 'Image' : null,
     missing.categories ? 'Category' : null,
-    missing.variants ? 'Price' : null,
+    missing.variants ? 'Variant' : null,
   ].filter((label): label is string => Boolean(label));
 }
 
@@ -753,9 +752,7 @@ export default function ProductForm({
         value: getImageOrderKey(item),
       };
     });
-  const variantMediaOptions = isEditing
-    ? mediaOptions.filter((option) => option.value.startsWith('existing:'))
-    : mediaOptions;
+  const variantMediaOptions = mediaOptions;
   function getVariantImageAssignmentLabel(row: VariantFormRow, index: number) {
     const sku = generateSku(productName, row.color, row.size);
     const fallback = [row.size.trim(), row.color.trim()].filter(Boolean).join(' / ');
@@ -786,7 +783,7 @@ export default function ProductForm({
     });
   }
   const hasPersistedVariants = rows.some((row) => Boolean(row.id));
-  const isVariantSectionEnabled = isEditing;
+  const isVariantSectionEnabled = true;
   const isBundleSectionEnabled = isEditing && hasPersistedVariants;
   const visibleVariantIndexes = rows.map((_, index) => index);
   const bundleVariantOptions = rows
@@ -1081,25 +1078,15 @@ export default function ProductForm({
     setSavedBundleSnapshot(initialBundleSnapshot);
   }, [initialBundleSnapshot]);
   const hasBundleChanges = currentBundleSnapshot !== savedBundleSnapshot;
-  const activeEditorSection: EditorSection | null = hasProductChanges
-    ? 'product'
-    : hasVariantChanges
-      ? 'variants'
-      : hasBundleChanges
-        ? 'bundles'
-        : null;
-  const isProductEditorEnabled =
-    activeEditorSection === null || activeEditorSection === 'product';
-  const isVariantEditorEnabled =
-    isVariantSectionEnabled &&
-    (activeEditorSection === null || activeEditorSection === 'variants');
+  const hasUnifiedChanges =
+    hasProductChanges || hasVariantChanges || hasBundleChanges;
+  const hasPendingFormChanges = isEditing ? hasUnifiedChanges : hasChanges;
+  const isProductEditorEnabled = true;
+  const isVariantEditorEnabled = isVariantSectionEnabled;
   const isBundleEditorEnabled =
-    isBundleSectionEnabled &&
-    (activeEditorSection === null || activeEditorSection === 'bundles');
-  const isVariantError =
-    Boolean(submitError) && /variant/i.test(submitError ?? '');
+    isBundleSectionEnabled && !hasProductChanges && !hasVariantChanges;
   const isActivationReadinessError =
-    Boolean(submitError) && (submitError ?? '').startsWith('Cannot activate.');
+    Boolean(submitError) && (submitError ?? '').startsWith('Cannot save.');
   const productProcessMessage =
     productProcessState === 'creating'
       ? 'Creating, please wait.'
@@ -1558,13 +1545,6 @@ export default function ProductForm({
     });
   }
 
-  function resetVariantSection() {
-    setRows(initialVariantRows);
-    setOpenVariantIndexes(new Set([0]));
-    setRemovedVariantIds([]);
-    setSubmitError(null);
-  }
-
   function resetBundleSection() {
     setBundleOffers(
       initialProduct.bundleOffers.length > 0
@@ -1574,6 +1554,66 @@ export default function ProductForm({
     setOpenBundleIndexes(new Set([0]));
     setRemovedBundleOfferIds([]);
     setSubmitError(null);
+  }
+
+  function isBlankVariantRow(row: VariantFormRow) {
+    return (
+      !row.id &&
+      !row.color.trim() &&
+      !row.colorHex.trim() &&
+      !row.imageSelection.trim() &&
+      !row.size.trim() &&
+      !row.price.trim() &&
+      !row.compareAtPrice.trim()
+    );
+  }
+
+  function isRemovedVariant(row: VariantFormRow) {
+    return Boolean(row.id && removedVariantIds.includes(row.id));
+  }
+
+  function isCompleteVariantRow(row: VariantFormRow) {
+    const price = Number(row.price);
+
+    return (
+      !isRemovedVariant(row) &&
+      Boolean(row.color.trim()) &&
+      Boolean(normalizeColorHex(row.colorHex)) &&
+      row.price.trim().length > 0 &&
+      Number.isFinite(price) &&
+      price >= 0
+    );
+  }
+
+  function getVariantRequiredError() {
+    const keptRows = rows.filter((row) => !isRemovedVariant(row));
+    const rowsWithInput = keptRows.filter((row) => !isBlankVariantRow(row));
+
+    if (rowsWithInput.length === 0) {
+      return 'Add at least one variant with color name, color hex, and price.';
+    }
+
+    for (const [index, row] of rows.entries()) {
+      if (isRemovedVariant(row) || isBlankVariantRow(row)) continue;
+
+      if (!row.color.trim()) {
+        return `Variant ${index + 1} needs a color name.`;
+      }
+      if (!normalizeColorHex(row.colorHex)) {
+        return `Variant ${index + 1} needs a valid color hex.`;
+      }
+      if (!row.price.trim()) {
+        return `Variant ${index + 1} needs a price.`;
+      }
+      const price = Number(row.price);
+      if (!Number.isFinite(price) || price < 0) {
+        return `Variant ${index + 1} price must be a valid positive amount.`;
+      }
+    }
+
+    return keptRows.some(isCompleteVariantRow)
+      ? null
+      : 'Add at least one variant with color name, color hex, and price.';
   }
 
   function getActivationMissingRequirements(formData?: FormData) {
@@ -1587,16 +1627,6 @@ export default function ProductForm({
       .filter((value): value is string => typeof value === 'string')
       .map((value) => value.trim())
       .filter(Boolean);
-    const submittedVariantIds = formData
-      ?.getAll('variantId')
-      .filter((value): value is string => typeof value === 'string')
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const submittedVariantPrices = formData
-      ?.getAll('variantPrice')
-      .filter((value): value is string => typeof value === 'string')
-      .map((value) => value.trim())
-      .filter(Boolean);
 
     const hasMedia = formData
       ? (submittedImageOrder?.length ?? 0) > 0
@@ -1604,15 +1634,12 @@ export default function ProductForm({
     const hasCategories = formData
       ? (submittedCategories?.length ?? 0) > 0
       : selectedCategoryIds.length > 0;
-    const hasVariantWithPrice = formData
-      ? (submittedVariantIds?.length ?? 0) > 0 ||
-        (submittedVariantPrices?.length ?? 0) > 0
-      : rows.some((row) => Boolean(row.id) || row.price.trim().length > 0);
+    const hasCompleteVariant = rows.some(isCompleteVariantRow);
 
     return {
       categories: !hasCategories,
       media: !hasMedia,
-      variants: !hasVariantWithPrice,
+      variants: !hasCompleteVariant,
     };
   }
 
@@ -1649,49 +1676,47 @@ export default function ProductForm({
       submitIntent === '' ||
       submitIntent === 'full' ||
       submitIntent === 'productMedia';
-    const shouldValidateActivation =
-      submitIntent !== 'variants' && submitIntent !== 'bundleOffers';
-    const intendedStatus = String(formData.get('status') ?? selectedStatus)
-      .trim()
-      .toLowerCase();
     if (isProductSubmit) {
       setProductProcessState(isEditing ? 'saving' : 'creating');
     } else {
       setProductProcessState('idle');
     }
-    if (shouldValidateActivation && intendedStatus === 'active') {
-      const missing = getActivationMissingRequirements(formData);
-      setActivationRequirements(missing);
 
-      if (missing.categories || missing.media || missing.variants) {
-        const missingLabels = getActivationRequirementLabels(missing);
-        setSubmitError(
-          `Cannot activate. Missing fields: ${missingLabels.join(', ')}.`,
-        );
-        setProductProcessState('idle');
-        return;
-      }
-    } else if (shouldValidateActivation) {
-      setActivationRequirements({
-        categories: false,
-        media: false,
-        variants: false,
-      });
+    const missing = getActivationMissingRequirements(formData);
+    setActivationRequirements(missing);
+    if (missing.categories || missing.media || missing.variants) {
+      const missingLabels = getActivationRequirementLabels(missing);
+      const variantRequiredError = missing.variants
+        ? getVariantRequiredError()
+        : null;
+      setSubmitError(
+        variantRequiredError ??
+          `Cannot save. Missing fields: ${missingLabels.join(', ')}.`,
+      );
+      setProductProcessState('idle');
+      return;
     }
 
     if (imageItems.length > MAX_PRODUCT_IMAGE_FILES) {
       setSubmitError(
         `You can upload up to ${MAX_PRODUCT_IMAGE_FILES} images per product.`,
       );
+      setProductProcessState('idle');
       return;
     }
 
-    if (submitIntent === 'variants' || submitIntent === 'full') {
-      const duplicateVariantError = getVariantDuplicateError();
-      if (duplicateVariantError) {
-        setSubmitError(duplicateVariantError);
-        return;
-      }
+    const variantRequiredError = getVariantRequiredError();
+    if (variantRequiredError) {
+      setSubmitError(variantRequiredError);
+      setProductProcessState('idle');
+      return;
+    }
+
+    const duplicateVariantError = getVariantDuplicateError();
+    if (duplicateVariantError) {
+      setSubmitError(duplicateVariantError);
+      setProductProcessState('idle');
+      return;
     }
 
     let keepSaveLocked = false;
@@ -1944,11 +1969,6 @@ export default function ProductForm({
           ) : null}
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          {!isProductEditorEnabled && (
-            <p className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
-              Another section has pending changes. Save or reset it first.
-            </p>
-          )}
           <fieldset
             disabled={isSubmittingProduct || !isProductEditorEnabled}
             className="space-y-0 disabled:opacity-70"
@@ -1996,7 +2016,7 @@ export default function ProductForm({
                       media: false,
                       variants: false,
                     });
-                    if (submitError?.includes('Cannot set status to active')) {
+                    if (submitError?.startsWith('Cannot save.')) {
                       setSubmitError(null);
                     }
                     return;
@@ -2006,7 +2026,7 @@ export default function ProductForm({
                   setActivationRequirements(missing);
                   if (missing.categories || missing.media || missing.variants) {
                     setSubmitError(
-                      'Cannot set status to active yet. Complete required media, category, and variant/price fields highlighted below.',
+                      'Cannot save yet. Complete required media, category, and variant fields highlighted below.',
                     );
                   } else {
                     setSubmitError(null);
@@ -2189,6 +2209,7 @@ export default function ProductForm({
             <span>Description</span>
             <textarea
               name="description"
+              required
               value={description}
               rows={5}
               onChange={(event) => setDescription(event.target.value)}
@@ -2249,7 +2270,7 @@ export default function ProductForm({
           </p>
           {activationRequirements.media ? (
             <p className="mt-1 text-xs font-semibold text-amber-700">
-              At least one product image is required to set status to active.
+              At least one product image is required before saving.
             </p>
           ) : null}
           <input
@@ -2369,7 +2390,7 @@ export default function ProductForm({
             </div>
             {activationRequirements.categories ? (
               <p className="mb-2 text-xs font-semibold text-amber-700">
-                At least one category is required to set status to active.
+                At least one category is required before saving.
               </p>
             ) : null}
             {selectedCategoryIds.map((categoryId) => (
@@ -2445,74 +2466,6 @@ export default function ProductForm({
             </div>
           </div>
 
-          <div className="mt-5">
-            <div className="flex items-center gap-2">
-              <button
-                type="submit"
-                name="submitIntent"
-                value={isEditing ? 'productMedia' : 'full'}
-                disabled={
-                  isSubmittingProduct ||
-                  !isProductEditorEnabled ||
-                  (isEditing ? !hasProductChanges : !hasChanges)
-                }
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${
-                  isSubmittingProduct ||
-                  !isProductEditorEnabled ||
-                  (isEditing ? !hasProductChanges : !hasChanges)
-                    ? 'cursor-not-allowed bg-slate-300'
-                    : 'bg-blue-700 hover:bg-blue-600'
-                }`}
-              >
-                {isSubmittingProduct
-                  ? isEditing
-                    ? 'Saving...'
-                    : 'Creating...'
-                  : isEditing
-                    ? 'Save Product'
-                    : submitLabel}
-              </button>
-              {isEditing ? (
-                <button
-                  type="button"
-                  disabled={
-                    isSubmittingProduct || !isProductEditorEnabled || !hasProductChanges
-                  }
-                  onClick={resetProductSection}
-                  className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                    isSubmittingProduct || !isProductEditorEnabled || !hasProductChanges
-                      ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Cancel
-                </button>
-              ) : (
-                <Link
-                  href="/admin/products"
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  Cancel
-                </Link>
-              )}
-            </div>
-            {productProcessMessage ? (
-              <p className={`mt-2 text-xs font-medium ${productProcessMessageClass}`}>
-                {productProcessMessage}
-              </p>
-            ) : null}
-            {submitError && !isVariantError ? (
-              <p
-                className={`mt-3 rounded-lg border px-3 py-2 text-sm font-medium ${
-                  isActivationReadinessError
-                    ? 'border-amber-200 bg-amber-50 text-amber-800'
-                    : 'border-red-200 bg-red-50 text-red-700'
-                }`}
-              >
-                {submitError}
-              </p>
-            ) : null}
-          </div>
           </fieldset>
         </div>
       </section>
@@ -2521,7 +2474,7 @@ export default function ProductForm({
         <div>
           <h3 className="text-sm font-semibold text-slate-900">Variants</h3>
           <p className="mt-1 text-sm text-slate-600">
-            Variants are optional during product setup. Removing a variant deactivates
+            Add at least one variant with color name, color hex, and price. Removing a variant deactivates
             it safely, preserving order history and allowing future revival.
           </p>
         </div>
@@ -2535,19 +2488,9 @@ export default function ProductForm({
         >
           {activationRequirements.variants ? (
             <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-              At least one variant with price is required to set status to active.
+              At least one complete variant is required before saving.
             </p>
           ) : null}
-          {!isVariantSectionEnabled && (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-              Save product first. Variant section activates after product ID is created.
-            </p>
-          )}
-          {isVariantSectionEnabled && !isVariantEditorEnabled && (
-            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-              Another section has pending changes. Save or reset it first.
-            </p>
-          )}
           <fieldset
             disabled={isSubmittingProduct || !isVariantEditorEnabled}
             className="space-y-4 disabled:opacity-70"
@@ -2838,61 +2781,80 @@ export default function ProductForm({
               </p>
             ) : null}
           </fieldset>
+        </div>
+      </section>
 
-          {isEditing && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <div className="flex items-center gap-2">
-                <button
-                  type="submit"
-                  name="submitIntent"
-                  value="variants"
-                  disabled={
-                    isSubmittingProduct || !isVariantEditorEnabled || !hasVariantChanges
-                  }
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${
-                    !isSubmittingProduct && isVariantEditorEnabled && hasVariantChanges
-                      ? 'bg-slate-900 hover:bg-slate-800'
-                      : 'cursor-not-allowed bg-slate-300'
-                  }`}
-                >
-                  {isSubmittingProduct && activeSubmitIntent === 'variants'
-                    ? 'Saving...'
-                    : 'Save Variants'}
-                </button>
-                {isEditing ? (
-                  <button
-                    type="button"
-                    disabled={
-                      isSubmittingProduct || !isVariantEditorEnabled || !hasVariantChanges
-                    }
-                    onClick={resetVariantSection}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                      isSubmittingProduct || !isVariantEditorEnabled || !hasVariantChanges
-                        ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    Cancel
-                  </button>
-                ) : (
-                  <Link
-                    href="/admin/products"
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Cancel
-                  </Link>
-                )}
-              </div>
-              {isSubmittingProduct && activeSubmitIntent === 'variants' ? (
-                <p className="text-xs font-medium text-slate-600">
-                  Variant save in progress... please wait.
-                </p>
-              ) : null}
-              {submitError && isVariantError ? (
-                <p className="text-xs font-semibold text-red-700">{submitError}</p>
-              ) : null}
-            </div>
-          )}
+      <section className="sticky bottom-0 z-30 border-t border-slate-200 bg-white/95 py-4 backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            {productProcessMessage ? (
+              <p className={`text-xs font-medium ${productProcessMessageClass}`}>
+                {productProcessMessage}
+              </p>
+            ) : hasPendingFormChanges ? (
+              <p className="text-xs font-medium text-slate-600">
+                Unsaved changes
+              </p>
+            ) : null}
+            {submitError ? (
+              <p
+                className={`mt-2 rounded-lg border px-3 py-2 text-sm font-medium ${
+                  isActivationReadinessError
+                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : 'border-red-200 bg-red-50 text-red-700'
+                }`}
+              >
+                {submitError}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            {isEditing ? (
+              <button
+                type="button"
+                disabled={isSubmittingProduct || !hasUnifiedChanges}
+                onClick={() => {
+                  resetProductSection();
+                  setRows(initialVariantRows);
+                  setOpenVariantIndexes(new Set([0]));
+                  setRemovedVariantIds([]);
+                }}
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                  isSubmittingProduct || !hasUnifiedChanges
+                    ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Cancel
+              </button>
+            ) : (
+              <Link
+                href="/admin/products"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </Link>
+            )}
+            <button
+              type="submit"
+              name="submitIntent"
+              value="full"
+              disabled={isSubmittingProduct || !hasPendingFormChanges}
+              className={`rounded-lg px-4 py-2 text-xs font-semibold text-white transition ${
+                isSubmittingProduct || !hasPendingFormChanges
+                  ? 'cursor-not-allowed bg-slate-300'
+                  : 'bg-blue-700 hover:bg-blue-600'
+              }`}
+            >
+              {isSubmittingProduct
+                ? isEditing
+                  ? 'Updating...'
+                  : 'Creating...'
+                : isEditing
+                  ? 'Update Product'
+                  : submitLabel}
+            </button>
+          </div>
         </div>
       </section>
 
