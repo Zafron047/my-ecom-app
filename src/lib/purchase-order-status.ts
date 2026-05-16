@@ -1,4 +1,4 @@
-export const PURCHASE_ENTRY_STATUS = {
+export const PURCHASE_ORDER_STATUS = {
   CANCELLED: 'cancelled',
   CLOSED: 'closed',
   CLOSED_SHORT: 'closed_short',
@@ -19,38 +19,38 @@ export const PURCHASE_PAYMENT_STATUS = {
 export const PURCHASE_PAYMENT_METHODS = ['bank', 'bkash', 'cash'] as const;
 export const PURCHASE_PAYMENT_STATUSES = Object.values(PURCHASE_PAYMENT_STATUS);
 
-export const LOCKED_CLOSED_PURCHASE_ENTRY_STATUSES = [
-  PURCHASE_ENTRY_STATUS.CANCELLED,
-  PURCHASE_ENTRY_STATUS.CLOSED_SHORT,
+export const LOCKED_CLOSED_PURCHASE_ORDER_STATUSES = [
+  PURCHASE_ORDER_STATUS.CANCELLED,
+  PURCHASE_ORDER_STATUS.CLOSED_SHORT,
 ] as const;
 
-export const CLOSED_PURCHASE_ENTRY_STATUSES = [
-  PURCHASE_ENTRY_STATUS.CLOSED,
-  ...LOCKED_CLOSED_PURCHASE_ENTRY_STATUSES,
+export const CLOSED_PURCHASE_ORDER_STATUSES = [
+  PURCHASE_ORDER_STATUS.CLOSED,
+  ...LOCKED_CLOSED_PURCHASE_ORDER_STATUSES,
 ] as const;
 
-type PurchaseEntryLifecycleInput = {
+type PurchaseOrderLifecycleInput = {
   paymentStatus: string;
   receivedQuantity: number;
   status: string;
   totalQuantity: number;
 };
 
-const CLOSED_PURCHASE_ENTRY_STATUS_SET = new Set<string>(
-  CLOSED_PURCHASE_ENTRY_STATUSES,
+const CLOSED_PURCHASE_ORDER_STATUS_SET = new Set<string>(
+  CLOSED_PURCHASE_ORDER_STATUSES,
 );
-const LOCKED_CLOSED_PURCHASE_ENTRY_STATUS_SET = new Set<string>(
-  LOCKED_CLOSED_PURCHASE_ENTRY_STATUSES,
+const LOCKED_CLOSED_PURCHASE_ORDER_STATUS_SET = new Set<string>(
+  LOCKED_CLOSED_PURCHASE_ORDER_STATUSES,
 );
 const PURCHASE_PAYMENT_METHOD_SET = new Set<string>(PURCHASE_PAYMENT_METHODS);
 const PURCHASE_PAYMENT_STATUS_SET = new Set<string>(PURCHASE_PAYMENT_STATUSES);
 
-export function isPurchaseEntryDraft(status: string) {
-  return status === PURCHASE_ENTRY_STATUS.DRAFT;
+export function isPurchaseOrderDraft(status: string) {
+  return status === PURCHASE_ORDER_STATUS.DRAFT;
 }
 
-export function isPurchaseEntryLockedClosed(status: string) {
-  return LOCKED_CLOSED_PURCHASE_ENTRY_STATUS_SET.has(status);
+export function isPurchaseOrderLockedClosed(status: string) {
+  return LOCKED_CLOSED_PURCHASE_ORDER_STATUS_SET.has(status);
 }
 
 export function isPurchasePaymentMethod(method: string) {
@@ -61,7 +61,7 @@ export function isPurchasePaymentStatus(status: string) {
   return PURCHASE_PAYMENT_STATUS_SET.has(status);
 }
 
-export function isPurchaseEntryFullySettled(input: {
+export function isPurchaseOrderFullySettled(input: {
   paymentStatus: string;
   receivedQuantity: number;
   totalQuantity: number;
@@ -73,67 +73,67 @@ export function isPurchaseEntryFullySettled(input: {
   );
 }
 
-export function isPurchaseEntryLifecycleClosed(
-  input: PurchaseEntryLifecycleInput,
+export function isPurchaseOrderLifecycleClosed(
+  input: PurchaseOrderLifecycleInput,
 ) {
-  if (CLOSED_PURCHASE_ENTRY_STATUS_SET.has(input.status)) return true;
-  return isPurchaseEntryFullySettled(input);
+  if (CLOSED_PURCHASE_ORDER_STATUS_SET.has(input.status)) return true;
+  return isPurchaseOrderFullySettled(input);
 }
 
 export function shouldShowInOpenPurchaseOrderList(
-  input: PurchaseEntryLifecycleInput,
+  input: PurchaseOrderLifecycleInput,
 ) {
   return (
-    !isPurchaseEntryDraft(input.status) &&
-    !isPurchaseEntryLifecycleClosed(input)
+    !isPurchaseOrderDraft(input.status) &&
+    !isPurchaseOrderLifecycleClosed(input)
   );
 }
 
 export function shouldShowInClosedPurchaseOrderList(
-  input: PurchaseEntryLifecycleInput,
+  input: PurchaseOrderLifecycleInput,
 ) {
   return (
-    !isPurchaseEntryDraft(input.status) &&
-    isPurchaseEntryLifecycleClosed(input)
+    !isPurchaseOrderDraft(input.status) &&
+    isPurchaseOrderLifecycleClosed(input)
   );
 }
 
-export function derivePurchaseEntryStatus(input: {
+export function derivePurchaseOrderStatus(input: {
   paymentStatus: string;
   receivedQuantity: number;
   totalQuantity: number;
 }) {
-  return isPurchaseEntryFullySettled(input)
-    ? PURCHASE_ENTRY_STATUS.CLOSED
-    : PURCHASE_ENTRY_STATUS.OPEN;
+  return isPurchaseOrderFullySettled(input)
+    ? PURCHASE_ORDER_STATUS.CLOSED
+    : PURCHASE_ORDER_STATUS.OPEN;
 }
 
-export function getPurchaseEntryLifecycleLabel(
-  input: PurchaseEntryLifecycleInput,
+export function getPurchaseOrderLifecycleLabel(
+  input: PurchaseOrderLifecycleInput,
 ) {
-  if (isPurchaseEntryDraft(input.status)) return 'Purchase Entry';
-  if (input.status === PURCHASE_ENTRY_STATUS.CANCELLED) return 'Cancelled';
-  if (input.status === PURCHASE_ENTRY_STATUS.CLOSED_SHORT) return 'Closed Short';
-  if (isPurchaseEntryLifecycleClosed(input)) return 'Closed';
+  if (isPurchaseOrderDraft(input.status)) return 'PO Draft';
+  if (input.status === PURCHASE_ORDER_STATUS.CANCELLED) return 'Cancelled';
+  if (input.status === PURCHASE_ORDER_STATUS.CLOSED_SHORT) return 'Closed Short';
+  if (isPurchaseOrderLifecycleClosed(input)) return 'Closed';
   return 'Open';
 }
 
-export function formatPurchaseEntryStatusLabel(status: string) {
+export function formatPurchaseOrderStatusLabel(status: string) {
   const labels: Record<string, string> = {
-    [PURCHASE_ENTRY_STATUS.CANCELLED]: 'Cancelled',
-    [PURCHASE_ENTRY_STATUS.CLOSED]: 'Closed',
-    [PURCHASE_ENTRY_STATUS.CLOSED_SHORT]: 'Closed Short',
-    [PURCHASE_ENTRY_STATUS.DRAFT]: 'Purchase Entry',
-    [PURCHASE_ENTRY_STATUS.LEGACY_FULL_RECEIVED]: 'Full Received',
-    [PURCHASE_ENTRY_STATUS.LEGACY_PARTIAL_RECEIVED]: 'Partial Received',
-    [PURCHASE_ENTRY_STATUS.LEGACY_RECEIVED]: 'Received',
-    [PURCHASE_ENTRY_STATUS.LEGACY_RECORDED]: 'Confirmed',
-    [PURCHASE_ENTRY_STATUS.OPEN]: 'Open',
+    [PURCHASE_ORDER_STATUS.CANCELLED]: 'Cancelled',
+    [PURCHASE_ORDER_STATUS.CLOSED]: 'Closed',
+    [PURCHASE_ORDER_STATUS.CLOSED_SHORT]: 'Closed Short',
+    [PURCHASE_ORDER_STATUS.DRAFT]: 'PO Draft',
+    [PURCHASE_ORDER_STATUS.LEGACY_FULL_RECEIVED]: 'Full Received',
+    [PURCHASE_ORDER_STATUS.LEGACY_PARTIAL_RECEIVED]: 'Partial Received',
+    [PURCHASE_ORDER_STATUS.LEGACY_RECEIVED]: 'Received',
+    [PURCHASE_ORDER_STATUS.LEGACY_RECORDED]: 'Confirmed',
+    [PURCHASE_ORDER_STATUS.OPEN]: 'Open',
   };
   return labels[status] ?? status.replace(/_/g, ' ');
 }
 
-export function getPurchaseEntryReceivingStatus(
+export function getPurchaseOrderReceivingStatus(
   totalQuantity: number,
   receivedQuantity: number,
 ) {

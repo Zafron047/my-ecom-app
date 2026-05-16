@@ -2,22 +2,22 @@ import Link from 'next/link';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import {
-  CLOSED_PURCHASE_ENTRY_STATUSES,
-  PURCHASE_ENTRY_STATUS,
+  CLOSED_PURCHASE_ORDER_STATUSES,
+  PURCHASE_ORDER_STATUS,
   PURCHASE_PAYMENT_STATUS,
   formatPurchasePaymentStatus,
-  getPurchaseEntryLifecycleLabel,
-  getPurchaseEntryReceivingStatus,
+  getPurchaseOrderLifecycleLabel,
+  getPurchaseOrderReceivingStatus,
   shouldShowInClosedPurchaseOrderList,
   shouldShowInOpenPurchaseOrderList,
 } from '@/lib/purchase-order-status';
 
-type PurchaseEntryListPageProps = {
+type PurchaseOrderListPageProps = {
   createHref?: string;
   createLabel?: string;
   description: string;
   pathname: string;
-  view: 'closed' | 'entry' | 'po';
+  view: 'closed' | 'draft' | 'po';
   title: string;
 };
 
@@ -50,8 +50,12 @@ function formatDate(value: Date) {
   });
 }
 
+function getPurchaseOrderNumber(orderNumber: string) {
+  return orderNumber.replace(/^PE-/, 'PO-');
+}
+
 function getStatusTone(statusLabel: string) {
-  if (statusLabel === 'Purchase Entry') return 'bg-amber-50 text-amber-700';
+  if (statusLabel === 'PO Draft') return 'bg-amber-50 text-amber-700';
   if (statusLabel === 'Cancelled' || statusLabel === 'Closed Short') {
     return 'bg-rose-50 text-rose-700';
   }
@@ -63,17 +67,17 @@ function isUntouchedForThirtyDays(updatedAt: Date) {
   return Date.now() - updatedAt.getTime() >= THIRTY_DAYS_MS;
 }
 
-function getEntryWhere(view: PurchaseEntryListPageProps['view']) {
-  if (view === 'entry') {
+function getOrderWhere(view: PurchaseOrderListPageProps['view']) {
+  if (view === 'draft') {
     return {
-      status: PURCHASE_ENTRY_STATUS.DRAFT,
+      status: PURCHASE_ORDER_STATUS.DRAFT,
     };
   }
 
   if (view === 'closed') {
     return {
       OR: [
-        { status: { in: [...CLOSED_PURCHASE_ENTRY_STATUSES] } },
+        { status: { in: [...CLOSED_PURCHASE_ORDER_STATUSES] } },
         { paymentStatus: PURCHASE_PAYMENT_STATUS.PAID },
       ],
     };
@@ -81,35 +85,35 @@ function getEntryWhere(view: PurchaseEntryListPageProps['view']) {
 
   return {
     status: {
-      not: PURCHASE_ENTRY_STATUS.DRAFT,
+      not: PURCHASE_ORDER_STATUS.DRAFT,
     },
   };
 }
 
-function getEmptyMessage(view: PurchaseEntryListPageProps['view']) {
-  if (view === 'entry') return 'No purchase entries found.';
+function getEmptyMessage(view: PurchaseOrderListPageProps['view']) {
+  if (view === 'draft') return 'No PO drafts found.';
   if (view === 'closed') return 'No closed POs found.';
   return 'No POs found.';
 }
 
-export default async function PurchaseEntryListPage({
+export default async function PurchaseOrderListPage({
   createHref,
-  createLabel = 'New Purchase Entry',
+  createLabel = 'New PO Draft',
   description,
   pathname,
   title,
   view,
-}: PurchaseEntryListPageProps) {
+}: PurchaseOrderListPageProps) {
   await requireAdminPermission(pathname, 'products.read');
-  const isPurchaseEntryView = view === 'entry';
+  const isDraftView = view === 'draft';
 
-  const entries = await prisma.purchaseEntry.findMany({
-    orderBy: isPurchaseEntryView
+  const orders = await prisma.purchaseOrder.findMany({
+    orderBy: isDraftView
       ? [{ updatedAt: 'desc' }, { id: 'desc' }]
       : [{ createdAt: 'desc' }, { id: 'desc' }],
     select: {
       createdAt: true,
-      entryNumber: true,
+      orderNumber: true,
       id: true,
       lines: {
         select: {
@@ -131,9 +135,9 @@ export default async function PurchaseEntryListPage({
       totalQuantity: true,
       updatedAt: true,
     },
-    where: getEntryWhere(view),
+    where: getOrderWhere(view),
   });
-  const visibleEntries = entries.filter((entry) => {
+  const visibleOrders = orders.filter((entry) => {
     const receivedQuantity = entry.lines.reduce(
       (sum, line) => sum + (line.batch?.receivedQuantity ?? 0),
       0,
@@ -178,7 +182,9 @@ export default async function PurchaseEntryListPage({
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th className="px-4 py-3">Entry</th>
+                <th className="px-4 py-3">
+                  {isDraftView ? 'Draft' : 'PO'}
+                </th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Supplier</th>
                 <th className="px-4 py-3">Payment</th>
@@ -189,38 +195,38 @@ export default async function PurchaseEntryListPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {visibleEntries.length === 0 ? (
+              {visibleOrders.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                     {getEmptyMessage(view)}
                   </td>
                 </tr>
               ) : (
-                visibleEntries.map((entry) => {
+                visibleOrders.map((entry) => {
                   const receivedQuantity = entry.lines.reduce(
                     (sum, line) => sum + (line.batch?.receivedQuantity ?? 0),
                     0,
                   );
                   const isStale = isUntouchedForThirtyDays(entry.updatedAt);
-                  const statusLabel = getPurchaseEntryLifecycleLabel({
+                  const statusLabel = getPurchaseOrderLifecycleLabel({
                     paymentStatus: entry.paymentStatus,
                     receivedQuantity,
                     status: entry.status,
                     totalQuantity: entry.totalQuantity,
                   });
                   const actionHref =
-                    isPurchaseEntryView
-                      ? `/admin/purchase-order/purchase-entry?entryId=${entry.id}`
+                    isDraftView
+                      ? `/admin/purchase-order/draft?draftId=${entry.id}`
                       : `/admin/purchase-order/records/${entry.id}`;
 
                   return (
                     <tr key={entry.id} className="align-top transition hover:bg-slate-50">
                       <td className="px-4 py-4">
                         <div className="font-mono text-xs font-semibold text-slate-900">
-                          {entry.entryNumber}
+                          {getPurchaseOrderNumber(entry.orderNumber)}
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          {isPurchaseEntryView
+                          {isDraftView
                             ? `Updated ${formatDate(entry.updatedAt)}`
                             : formatDate(entry.purchaseDate)}
                         </div>
@@ -251,7 +257,7 @@ export default async function PurchaseEntryListPage({
                         </div>
                       </td>
                       <td className="px-4 py-4 text-slate-700">
-                        {getPurchaseEntryReceivingStatus(
+                        {getPurchaseOrderReceivingStatus(
                           entry.totalQuantity,
                           receivedQuantity,
                         )}
@@ -282,7 +288,7 @@ export default async function PurchaseEntryListPage({
                           href={actionHref}
                           className="inline-flex h-9 items-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                         >
-                          {isPurchaseEntryView ? 'Open Entry' : 'Open PO'}
+                          {isDraftView ? 'Open Draft' : 'Open PO'}
                         </Link>
                       </td>
                     </tr>

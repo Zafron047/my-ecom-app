@@ -6,18 +6,18 @@ import { Prisma } from '@prisma/client';
 import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import {
-  PURCHASE_ENTRY_STATUS,
+  PURCHASE_ORDER_STATUS,
   PURCHASE_PAYMENT_STATUS,
-  isPurchaseEntryDraft,
+  isPurchaseOrderDraft,
 } from '@/lib/purchase-order-status';
 
-type PurchaseEntryState = {
+type PurchaseOrderState = {
   draftId?: string;
   error?: string;
   message?: string;
 };
 
-type PurchaseEntryLineInput = {
+type PurchaseOrderLineInput = {
   lineTotal: Prisma.Decimal | null;
   productId: string;
   quantity: number;
@@ -25,7 +25,7 @@ type PurchaseEntryLineInput = {
   variantId: string | null;
 };
 
-type RecordedPurchaseEntryLine = {
+type RecordedPurchaseOrderLine = {
   lineTotal: Prisma.Decimal;
   productId: string;
   quantity: number;
@@ -33,8 +33,8 @@ type RecordedPurchaseEntryLine = {
   variantId: string;
 };
 
-const PURCHASE_ENTRY_PATH = '/admin/purchase-order/purchase-entry';
-const LEGACY_PURCHASE_ENTRIES_PATH = '/admin/purchase-order/entries';
+const PURCHASE_ORDER_DRAFT_PATH = '/admin/purchase-order/draft';
+const LEGACY_PURCHASE_ORDERS_PATH = '/admin/purchase-order/entries';
 const LEGACY_PURCHASE_DRAFTS_PATH = '/admin/purchase-order/drafts';
 const PURCHASE_ORDERS_PATH = '/admin/purchase-order';
 const ZERO_MONEY = new Prisma.Decimal(0);
@@ -79,13 +79,13 @@ function parsePurchaseDate(raw: string) {
   return purchaseDate;
 }
 
-function createEntryNumber() {
+function createOrderNumber() {
   const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const nonce = Math.floor(Math.random() * 9000 + 1000);
-  return `PE-${datePart}-${nonce}`;
+  return `PO-${datePart}-${nonce}`;
 }
 
-function calculateTotals(lines: PurchaseEntryLineInput[]) {
+function calculateTotals(lines: PurchaseOrderLineInput[]) {
   return {
     totalCost: lines.reduce(
       (sum, line) => sum.add(line.lineTotal ?? new Prisma.Decimal(0)),
@@ -95,19 +95,27 @@ function calculateTotals(lines: PurchaseEntryLineInput[]) {
   };
 }
 
-async function createUniqueEntryNumber(tx: Prisma.TransactionClient) {
+async function createUniqueOrderNumber(tx: Prisma.TransactionClient) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const entryNumber = createEntryNumber();
-    const existing = await tx.purchaseEntry.findUnique({
+    const orderNumber = createOrderNumber();
+    const existing = await tx.purchaseOrder.findUnique({
       select: { id: true },
-      where: { entryNumber },
+      where: { orderNumber },
     });
-    if (!existing) return entryNumber;
+    if (!existing) return orderNumber;
   }
-  return createEntryNumber();
+  return createOrderNumber();
 }
 
-async function parsePurchaseEntryLines(formData: FormData) {
+async function createUniqueDraftNumber(tx: Prisma.TransactionClient) {
+  return createUniqueOrderNumber(tx);
+}
+
+function normalizeOrderNumber(orderNumber: string) {
+  return orderNumber.replace(/^PE-/, 'PO-');
+}
+
+async function parsePurchaseOrderLines(formData: FormData) {
   const productIds = getStringList(formData, 'productId');
   const variantIds = getStringList(formData, 'variantId');
   const quantities = getStringList(formData, 'quantity');
@@ -146,7 +154,7 @@ async function parsePurchaseEntryLines(formData: FormData) {
       unitCost,
       variantId: variantId || null,
     };
-  }).filter((line): line is PurchaseEntryLineInput => line !== null);
+  }).filter((line): line is PurchaseOrderLineInput => line !== null);
 
   const variantIdsToValidate = lines
     .map((line) => line.variantId)
@@ -200,10 +208,10 @@ async function parsePurchaseEntryLines(formData: FormData) {
   return normalizedLines;
 }
 
-function requireDraftLines(lines: PurchaseEntryLineInput[]) {
+function requireDraftLines(lines: PurchaseOrderLineInput[]) {
   if (lines.length === 0) {
     throw new Error(
-      'Select at least one variant with quantity before saving a purchase entry.',
+      'Select at least one variant with quantity before saving a PO Draft.',
     );
   }
 
@@ -215,12 +223,12 @@ function requireDraftLines(lines: PurchaseEntryLineInput[]) {
   });
 }
 
-function requireRecordedLines(lines: PurchaseEntryLineInput[]) {
+function requireRecordedLines(lines: PurchaseOrderLineInput[]) {
   if (lines.length === 0) {
     throw new Error('Add at least one purchase line.');
   }
 
-  return lines.map((line, index): RecordedPurchaseEntryLine => {
+  return lines.map((line, index): RecordedPurchaseOrderLine => {
     if (!line.variantId) {
       throw new Error(`Line ${index + 1}: variant is required.`);
     }
@@ -238,44 +246,44 @@ function requireRecordedLines(lines: PurchaseEntryLineInput[]) {
 }
 
 async function requirePurchaseDraftWriteAccess() {
-  await requireAdminPermission(PURCHASE_ENTRY_PATH, 'products.write');
+  await requireAdminPermission(PURCHASE_ORDER_DRAFT_PATH, 'products.write');
 }
 
 async function requirePurchaseOwnerAccess() {
   await requirePurchaseDraftWriteAccess();
-  await requireAdminRole(PURCHASE_ENTRY_PATH, ['admin']);
+  await requireAdminRole(PURCHASE_ORDER_DRAFT_PATH, ['admin']);
 }
 
-export async function savePurchaseEntryDraft(
+export async function savePurchaseOrderDraft(
   formData: FormData,
-): Promise<PurchaseEntryState> {
+): Promise<PurchaseOrderState> {
   await requirePurchaseDraftWriteAccess();
 
   try {
-    const purchaseEntryId = getString(formData, 'purchaseEntryId');
+    const purchaseOrderId = getString(formData, 'purchaseOrderId');
     const supplierName = getString(formData, 'supplierName') || null;
     const referenceNo = getString(formData, 'referenceNo') || null;
     const purchaseDate = parsePurchaseDate(getString(formData, 'purchaseDate'));
     const notes = getString(formData, 'notes') || null;
-    const lines = requireDraftLines(await parsePurchaseEntryLines(formData));
+    const lines = requireDraftLines(await parsePurchaseOrderLines(formData));
     const totals = calculateTotals(lines);
 
-    let entryNumber = '';
+    let orderNumber = '';
     const draftId = await prisma.$transaction(async (tx) => {
-      let savedDraftId = purchaseEntryId;
-      if (purchaseEntryId) {
-        const existing = await tx.purchaseEntry.findUnique({
+      let savedDraftId = purchaseOrderId;
+      if (purchaseOrderId) {
+        const existing = await tx.purchaseOrder.findUnique({
           select: { id: true, status: true },
-          where: { id: purchaseEntryId },
+          where: { id: purchaseOrderId },
         });
-        if (!existing || !isPurchaseEntryDraft(existing.status)) {
-          throw new Error('This purchase entry is no longer available.');
+        if (!existing || !isPurchaseOrderDraft(existing.status)) {
+          throw new Error('This PO Draft is no longer available.');
         }
 
-        await tx.purchaseEntryLine.deleteMany({
-          where: { purchaseEntryId },
+        await tx.purchaseOrderLine.deleteMany({
+          where: { purchaseOrderId },
         });
-        await tx.purchaseEntry.update({
+        await tx.purchaseOrder.update({
           data: {
             notes,
             paidAmount: ZERO_MONEY,
@@ -285,18 +293,18 @@ export async function savePurchaseEntryDraft(
             purchaseDate,
             receivedAt: null,
             referenceNo,
-            status: PURCHASE_ENTRY_STATUS.DRAFT,
+            status: PURCHASE_ORDER_STATUS.DRAFT,
             supplierName,
             totalCost: totals.totalCost,
             totalQuantity: totals.totalQuantity,
           },
-          where: { id: purchaseEntryId },
+          where: { id: purchaseOrderId },
         });
       } else {
-        entryNumber = await createUniqueEntryNumber(tx);
-        const entry = await tx.purchaseEntry.create({
+        orderNumber = await createUniqueDraftNumber(tx);
+        const order = await tx.purchaseOrder.create({
           data: {
-            entryNumber,
+            orderNumber,
             notes,
             paidAmount: ZERO_MONEY,
             paymentMethod: null,
@@ -304,26 +312,26 @@ export async function savePurchaseEntryDraft(
             paymentStatus: PURCHASE_PAYMENT_STATUS.DUE,
             purchaseDate,
             referenceNo,
-            status: PURCHASE_ENTRY_STATUS.DRAFT,
+            status: PURCHASE_ORDER_STATUS.DRAFT,
             supplierName,
             totalCost: totals.totalCost,
             totalQuantity: totals.totalQuantity,
           },
           select: { id: true },
         });
-        savedDraftId = entry.id;
+        savedDraftId = order.id;
       }
 
       if (!savedDraftId) {
-        throw new Error('Failed to save purchase entry.');
+        throw new Error('Failed to save PO Draft.');
       }
 
       if (lines.length > 0) {
-        await tx.purchaseEntryLine.createMany({
+        await tx.purchaseOrderLine.createMany({
           data: lines.map((line) => ({
             lineTotal: line.lineTotal,
             productId: line.productId,
-            purchaseEntryId: savedDraftId,
+            purchaseOrderId: savedDraftId,
             quantity: line.quantity,
             unitCost: line.unitCost,
             variantId: line.variantId,
@@ -334,61 +342,63 @@ export async function savePurchaseEntryDraft(
       return savedDraftId;
     });
 
-    revalidatePath(PURCHASE_ENTRY_PATH);
-    revalidatePath(LEGACY_PURCHASE_ENTRIES_PATH);
+    revalidatePath(PURCHASE_ORDER_DRAFT_PATH);
+    revalidatePath(LEGACY_PURCHASE_ORDERS_PATH);
     revalidatePath(LEGACY_PURCHASE_DRAFTS_PATH);
     return {
       draftId,
-      message: entryNumber
-        ? `Purchase entry ${entryNumber} saved.`
-        : 'Purchase entry saved.',
+      message: orderNumber
+        ? `PO Draft ${orderNumber} saved.`
+        : 'PO Draft saved.',
     };
   } catch (error) {
     return {
       error:
         error instanceof Error && error.message
           ? error.message
-          : 'Failed to save purchase entry.',
+          : 'Failed to save PO Draft.',
     };
   }
 }
 
-export async function recordPurchaseEntry(
-  _previousState: PurchaseEntryState,
+export async function submitPurchaseOrder(
+  _previousState: PurchaseOrderState,
   formData: FormData,
-): Promise<PurchaseEntryState> {
+): Promise<PurchaseOrderState> {
   await requirePurchaseOwnerAccess();
 
-  let recordedEntryId = '';
+  let submittedOrderId = '';
   try {
-    const purchaseEntryId = getString(formData, 'purchaseEntryId');
+    const purchaseOrderId = getString(formData, 'purchaseOrderId');
     const supplierName = getString(formData, 'supplierName') || null;
     const referenceNo = getString(formData, 'referenceNo') || null;
     const purchaseDate = parsePurchaseDate(getString(formData, 'purchaseDate'));
     const notes = getString(formData, 'notes') || null;
-    const lines = requireRecordedLines(await parsePurchaseEntryLines(formData));
+    const lines = requireRecordedLines(await parsePurchaseOrderLines(formData));
     const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
     const totalCost = lines.reduce(
       (sum, line) => sum.add(line.lineTotal),
       new Prisma.Decimal(0),
     );
 
-    recordedEntryId = await prisma.$transaction(async (tx) => {
-      let entryId = purchaseEntryId;
-      if (entryId) {
-        const existing = await tx.purchaseEntry.findUnique({
-          select: { entryNumber: true, id: true, status: true },
-          where: { id: entryId },
+    submittedOrderId = await prisma.$transaction(async (tx) => {
+      let orderId = purchaseOrderId;
+      if (orderId) {
+        const existing = await tx.purchaseOrder.findUnique({
+          select: { orderNumber: true, id: true, status: true },
+          where: { id: orderId },
         });
-        if (!existing || !isPurchaseEntryDraft(existing.status)) {
-          throw new Error('Only saved purchase entries can be submitted to PO.');
+        if (!existing || !isPurchaseOrderDraft(existing.status)) {
+          throw new Error('Only saved PO drafts can be submitted as purchase orders.');
         }
 
-        await tx.purchaseEntryLine.deleteMany({
-          where: { purchaseEntryId: entryId },
+        const orderNumber = normalizeOrderNumber(existing.orderNumber);
+        await tx.purchaseOrderLine.deleteMany({
+          where: { purchaseOrderId: orderId },
         });
-        await tx.purchaseEntry.update({
+        await tx.purchaseOrder.update({
           data: {
+            orderNumber: orderNumber,
             notes,
             paidAmount: ZERO_MONEY,
             paymentMethod: null,
@@ -397,18 +407,18 @@ export async function recordPurchaseEntry(
             purchaseDate,
             receivedAt: null,
             referenceNo,
-            status: PURCHASE_ENTRY_STATUS.OPEN,
+            status: PURCHASE_ORDER_STATUS.OPEN,
             supplierName,
             totalCost,
             totalQuantity,
           },
-          where: { id: entryId },
+          where: { id: orderId },
         });
       } else {
-        const entryNumber = await createUniqueEntryNumber(tx);
-        const entry = await tx.purchaseEntry.create({
+        const orderNumber = await createUniqueOrderNumber(tx);
+        const order = await tx.purchaseOrder.create({
           data: {
-            entryNumber,
+            orderNumber: orderNumber,
             notes,
             paidAmount: ZERO_MONEY,
             paymentMethod: null,
@@ -417,22 +427,22 @@ export async function recordPurchaseEntry(
             purchaseDate,
             receivedAt: null,
             referenceNo,
-            status: PURCHASE_ENTRY_STATUS.OPEN,
+            status: PURCHASE_ORDER_STATUS.OPEN,
             supplierName,
             totalCost,
             totalQuantity,
           },
           select: { id: true },
         });
-        entryId = entry.id;
+        orderId = order.id;
       }
 
       for (const line of lines) {
-        await tx.purchaseEntryLine.create({
+        await tx.purchaseOrderLine.create({
           data: {
             lineTotal: line.lineTotal,
             productId: line.productId,
-            purchaseEntryId: entryId,
+            purchaseOrderId: orderId,
             quantity: line.quantity,
             unitCost: line.unitCost,
             variantId: line.variantId,
@@ -440,21 +450,21 @@ export async function recordPurchaseEntry(
         });
       }
 
-      return entryId;
+      return orderId;
     });
 
-    revalidatePath(PURCHASE_ENTRY_PATH);
-    revalidatePath(LEGACY_PURCHASE_ENTRIES_PATH);
+    revalidatePath(PURCHASE_ORDER_DRAFT_PATH);
+    revalidatePath(LEGACY_PURCHASE_ORDERS_PATH);
     revalidatePath(LEGACY_PURCHASE_DRAFTS_PATH);
     revalidatePath(PURCHASE_ORDERS_PATH);
   } catch (error) {
     return {
       error:
         error instanceof Error && error.message
-          ? error.message
-          : 'Failed to submit purchase entry to PO.',
+              ? error.message
+              : 'Failed to submit purchase order.',
     };
   }
 
-  redirect(`/admin/purchase-order/records/${recordedEntryId}`);
+  redirect(`/admin/purchase-order/records/${submittedOrderId}`);
 }

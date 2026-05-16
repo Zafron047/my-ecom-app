@@ -1,8 +1,8 @@
-import PurchaseEntryListPage from '../_components/PurchaseEntryListPage';
+import PurchaseOrderListPage from '../_components/PurchaseOrderListPage';
 
 export default function AdminPurchaseOrderClosedPage() {
   return (
-    <PurchaseEntryListPage
+    <PurchaseOrderListPage
       description="Showing all closed POs."
       pathname="/admin/purchase-order/closed"
       title="Closed POs"

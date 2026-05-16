@@ -5,23 +5,29 @@ import { Prisma } from '@prisma/client';
 import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import {
+  PURCHASE_ORDER_STATUS,
   PURCHASE_PAYMENT_STATUS,
-  derivePurchaseEntryStatus,
-  isPurchaseEntryDraft,
-  isPurchaseEntryLockedClosed,
+  derivePurchaseOrderStatus,
+  isPurchaseOrderDraft,
+  isPurchaseOrderLockedClosed,
   isPurchasePaymentMethod,
   isPurchasePaymentStatus,
 } from '@/lib/purchase-order-status';
 
 type PurchaseRecordActionState = {
+  batchNumberByLine?: Array<[string, string]>;
   error?: string;
   message?: string;
+  notes?: string;
   paidAmount?: number;
   paymentMethod?: string;
   paymentReference?: string;
   paymentStatus?: string;
+  purchaseDate?: string;
   receivedByLine?: Array<[string, number]>;
+  referenceNo?: string;
   status?: string;
+  supplierName?: string;
 };
 
 const PURCHASE_ORDERS_PATH = '/admin/purchase-order';
@@ -64,15 +70,39 @@ function parsePositiveMoney(value: string, label: string) {
   return new Prisma.Decimal(parsed.toFixed(2));
 }
 
+function parsePurchaseDate(raw: string) {
+  const purchaseDate = raw ? new Date(raw) : new Date();
+  if (Number.isNaN(purchaseDate.getTime())) {
+    throw new Error('Purchase date is invalid.');
+  }
+  return purchaseDate;
+}
+
+function formatDateInput(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
 function decimalToNumber(value: Prisma.Decimal) {
   return value.toNumber();
 }
 
-function assertRecordIsEditable(status: string) {
-  if (isPurchaseEntryDraft(status)) {
-    throw new Error('Purchase entries must be submitted to PO before receiving or payment.');
+function getBatchDatePart(purchaseDate: Date) {
+  return purchaseDate.toISOString().slice(0, 10).replace(/\D/g, '');
+}
+
+function getStableFourDigitCode(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
   }
-  if (isPurchaseEntryLockedClosed(status)) {
+  return String(1000 + (hash % 9000)).padStart(4, '0');
+}
+
+function assertRecordIsEditable(status: string) {
+  if (isPurchaseOrderDraft(status)) {
+    throw new Error('Purchase orders must be submitted before receiving or payment.');
+  }
+  if (isPurchaseOrderLockedClosed(status)) {
     throw new Error('This PO is closed.');
   }
 }
@@ -107,20 +137,124 @@ function parseReceiveQuantities(formData: FormData) {
 
 async function createUniqueBatchNumber(
   tx: Prisma.TransactionClient,
-  entryNumber: string,
+  purchaseDate: Date,
+  lineId: string,
   lineIndex: number,
 ) {
-  const base = `${entryNumber}-B${String(lineIndex + 1).padStart(2, '0')}`;
+  const datePart = getBatchDatePart(purchaseDate);
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const batchNumber = attempt === 0 ? base : `${base}-${attempt + 1}`;
-    const existing = await tx.inventoryBatch.findUnique({
+    const batchNumber = `${datePart}-${getStableFourDigitCode(
+      attempt === 0 ? `${lineId}-${lineIndex}` : `${lineId}-${lineIndex}-${attempt}`,
+    )}`;
+    const existingBatch = await tx.inventoryBatch.findUnique({
       select: { id: true },
       where: { batchNumber },
     });
-    if (!existing) return batchNumber;
+    if (existingBatch) continue;
+
+    const existingLine = await tx.purchaseOrderLine.findUnique({
+      select: { id: true },
+      where: { batchNumber },
+    });
+    if (!existingLine || existingLine.id === lineId) return batchNumber;
   }
 
-  return `${base}-${Date.now()}`;
+  return `${datePart}-${String(Date.now()).slice(-4)}`;
+}
+
+export async function updatePurchaseRecordDetails(
+  formData: FormData,
+): Promise<PurchaseRecordActionState> {
+  await requirePurchaseRecordWriteAccess();
+
+  try {
+    const recordId = getString(formData, 'recordId');
+    const supplierName = getString(formData, 'supplierName') || null;
+    const referenceNo = getString(formData, 'referenceNo') || null;
+    const purchaseDate = parsePurchaseDate(getString(formData, 'purchaseDate'));
+    const notes = getString(formData, 'notes') || null;
+
+    const record = await prisma.purchaseOrder.findUnique({
+      select: {
+        id: true,
+        status: true,
+      },
+      where: { id: recordId },
+    });
+
+    if (!record) throw new Error('PO not found.');
+    assertRecordIsEditable(record.status);
+
+    await prisma.purchaseOrder.update({
+      data: {
+        notes,
+        purchaseDate,
+        referenceNo,
+        supplierName,
+      },
+      where: { id: record.id },
+    });
+
+    revalidatePath(PURCHASE_ORDERS_PATH);
+    revalidatePath(PURCHASE_CLOSED_PATH);
+    revalidatePath(`/admin/purchase-order/records/${recordId}`);
+    return {
+      message: 'PO details saved.',
+      notes: notes ?? '',
+      purchaseDate: formatDateInput(purchaseDate),
+      referenceNo: referenceNo ?? '',
+      supplierName: supplierName ?? '',
+    };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to save PO details.',
+    };
+  }
+}
+
+export async function cancelPurchaseRecord(
+  formData: FormData,
+): Promise<PurchaseRecordActionState> {
+  await requirePurchaseRecordWriteAccess();
+
+  try {
+    const recordId = getString(formData, 'recordId');
+    const record = await prisma.purchaseOrder.findUnique({
+      select: {
+        id: true,
+        status: true,
+      },
+      where: { id: recordId },
+    });
+
+    if (!record) throw new Error('PO not found.');
+    assertRecordIsEditable(record.status);
+
+    await prisma.purchaseOrder.update({
+      data: {
+        status: PURCHASE_ORDER_STATUS.CANCELLED,
+      },
+      where: { id: record.id },
+    });
+
+    revalidatePath(PURCHASE_ORDERS_PATH);
+    revalidatePath(PURCHASE_CLOSED_PATH);
+    revalidatePath(`/admin/purchase-order/records/${recordId}`);
+    return {
+      message: 'PO cancelled.',
+      status: PURCHASE_ORDER_STATUS.CANCELLED,
+    };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to cancel PO.',
+    };
+  }
 }
 
 export async function receivePurchaseRecord(
@@ -132,11 +266,12 @@ export async function receivePurchaseRecord(
     const recordId = getString(formData, 'recordId');
     const requested = parseReceiveQuantities(formData);
     const result = await prisma.$transaction(async (tx) => {
-      const record = await tx.purchaseEntry.findUnique({
+      const record = await tx.purchaseOrder.findUnique({
         select: {
-          entryNumber: true,
+          orderNumber: true,
           id: true,
           paymentStatus: true,
+          purchaseDate: true,
           receivedAt: true,
           status: true,
           totalQuantity: true,
@@ -145,6 +280,7 @@ export async function receivePurchaseRecord(
             select: {
               batch: {
                 select: {
+                  batchNumber: true,
                   id: true,
                   receivedQuantity: true,
                 },
@@ -166,6 +302,12 @@ export async function receivePurchaseRecord(
       const lineById = new Map(record.lines.map((line) => [line.id, line]));
       const receivedByLine = new Map(
         record.lines.map((line) => [line.id, line.batch?.receivedQuantity ?? 0]),
+      );
+      const batchNumberByLine = new Map(
+        record.lines.map((line) => [
+          line.id,
+          line.batch?.batchNumber ?? line.batchNumber ?? '-',
+        ]),
       );
 
       for (const [lineId, receiveQuantity] of requested) {
@@ -192,16 +334,25 @@ export async function receivePurchaseRecord(
             },
             where: { id: line.batch.id },
           });
+          batchNumberByLine.set(
+            line.id,
+            line.batch.batchNumber ?? line.batchNumber ?? '-',
+          );
         } else {
           const lineIndex = record.lines.findIndex(
             (candidate) => candidate.id === line.id,
           );
           const batchNumber =
             line.batchNumber ??
-            (await createUniqueBatchNumber(tx, record.entryNumber, lineIndex));
+            (await createUniqueBatchNumber(
+              tx,
+              record.purchaseDate,
+              line.id,
+              lineIndex,
+            ));
 
           if (!line.batchNumber) {
-            await tx.purchaseEntryLine.update({
+            await tx.purchaseOrderLine.update({
               data: { batchNumber },
               where: { id: line.id },
             });
@@ -210,13 +361,14 @@ export async function receivePurchaseRecord(
           await tx.inventoryBatch.create({
             data: {
               batchNumber,
-              purchaseEntryLineId: line.id,
+              purchaseOrderLineId: line.id,
               receivedQuantity: receiveQuantity,
               remainingQuantity: receiveQuantity,
               unitCost: line.unitCost,
               variantId: line.variantId,
             },
           });
+          batchNumberByLine.set(line.id, batchNumber);
         }
 
         await tx.productVariant.update({
@@ -233,13 +385,13 @@ export async function receivePurchaseRecord(
         (sum, quantity) => sum + quantity,
         0,
       );
-      const status = derivePurchaseEntryStatus({
+      const status = derivePurchaseOrderStatus({
         paymentStatus: record.paymentStatus,
         receivedQuantity,
         totalQuantity: record.totalQuantity,
       });
 
-      await tx.purchaseEntry.update({
+      await tx.purchaseOrder.update({
         data: {
           receivedAt:
             receivedQuantity >= record.totalQuantity
@@ -251,6 +403,7 @@ export async function receivePurchaseRecord(
       });
 
       return {
+        batchNumberByLine: [...batchNumberByLine.entries()],
         receivedByLine: [...receivedByLine.entries()],
         status,
       };
@@ -290,7 +443,7 @@ export async function updatePurchaseRecordPayment(
       getString(formData, 'paymentReference') || null;
 
     const result = await prisma.$transaction(async (tx) => {
-      const record = await tx.purchaseEntry.findUnique({
+      const record = await tx.purchaseOrder.findUnique({
         select: {
           id: true,
           paidAmount: true,
@@ -355,13 +508,13 @@ export async function updatePurchaseRecordPayment(
         (sum, line) => sum + (line.batch?.receivedQuantity ?? 0),
         0,
       );
-      const status = derivePurchaseEntryStatus({
+      const status = derivePurchaseOrderStatus({
         paymentStatus: requestedPaymentStatus,
         receivedQuantity,
         totalQuantity: record.totalQuantity,
       });
 
-      await tx.purchaseEntry.update({
+      await tx.purchaseOrder.update({
         data: {
           paidAmount,
           paymentMethod,

@@ -102,8 +102,8 @@ const adminNavGroups: AdminNavGroup[] = [
     },
     children: [
       {
-        href: '/admin/purchase-order/purchase-entry',
-        label: 'Purchase Entry',
+        href: '/admin/purchase-order/draft',
+        label: 'PO Draft',
         allowedRoles: ['manager', 'admin'],
       },
       {

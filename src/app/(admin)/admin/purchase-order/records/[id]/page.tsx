@@ -2,9 +2,11 @@ import { notFound } from 'next/navigation';
 import PurchaseRecordForm from '../../_components/PurchaseRecordForm';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
-import { PURCHASE_ENTRY_STATUS } from '@/lib/purchase-order-status';
+import { PURCHASE_ORDER_STATUS } from '@/lib/purchase-order-status';
 import {
+  cancelPurchaseRecord,
   receivePurchaseRecord,
+  updatePurchaseRecordDetails,
   updatePurchaseRecordPayment,
 } from './actions';
 
@@ -27,15 +29,19 @@ function decimalToNumber(value: { toNumber: () => number } | null | undefined) {
   return value?.toNumber() ?? 0;
 }
 
+function getPurchaseOrderNumber(orderNumber: string) {
+  return orderNumber.replace(/^PE-/, 'PO-');
+}
+
 export default async function AdminPurchaseOrderRecordPage({
   params,
 }: PurchaseRecordPageProps) {
   await requireAdminPermission('/admin/purchase-order/records', 'products.read');
 
   const { id } = await params;
-  const record = await prisma.purchaseEntry.findFirst({
+  const record = await prisma.purchaseOrder.findFirst({
     select: {
-      entryNumber: true,
+      orderNumber: true,
       id: true,
       lines: {
         orderBy: {
@@ -109,7 +115,7 @@ export default async function AdminPurchaseOrderRecordPage({
     where: {
       id,
       status: {
-        not: PURCHASE_ENTRY_STATUS.DRAFT,
+        not: PURCHASE_ORDER_STATUS.DRAFT,
       },
     },
   });
@@ -119,10 +125,11 @@ export default async function AdminPurchaseOrderRecordPage({
   return (
     <PurchaseRecordForm
       key={record.updatedAt.toISOString()}
+      cancelAction={cancelPurchaseRecord}
       payAction={updatePurchaseRecordPayment}
       receiveAction={receivePurchaseRecord}
+      updateDetailsAction={updatePurchaseRecordDetails}
       record={{
-        entryNumber: record.entryNumber,
         id: record.id,
         lines: record.lines.map((line) => ({
           imagePath:
@@ -141,6 +148,7 @@ export default async function AdminPurchaseOrderRecordPage({
           variantLabel: line.variant ? formatVariantLabel(line.variant) : 'Select variant',
         })),
         notes: record.notes ?? '',
+        orderNumber: getPurchaseOrderNumber(record.orderNumber),
         paidAmount: decimalToNumber(record.paidAmount),
         paymentMethod: record.paymentMethod ?? '',
         paymentReference: record.paymentReference ?? '',

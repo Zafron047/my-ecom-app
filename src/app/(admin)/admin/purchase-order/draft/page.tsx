@@ -1,11 +1,11 @@
-import PurchaseEntryForm from '@/components/admin/PurchaseEntryForm';
+import PurchaseOrderForm from '@/components/admin/PurchaseOrderForm';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
-import { PURCHASE_ENTRY_STATUS } from '@/lib/purchase-order-status';
-import PurchaseEntryListPage from '../_components/PurchaseEntryListPage';
+import { PURCHASE_ORDER_STATUS } from '@/lib/purchase-order-status';
+import PurchaseOrderListPage from '../_components/PurchaseOrderListPage';
 import {
-  recordPurchaseEntry,
-  savePurchaseEntryDraft,
+  savePurchaseOrderDraft,
+  submitPurchaseOrder,
 } from './actions';
 
 function formatMoney(value: { toNumber: () => number } | null | undefined) {
@@ -25,43 +25,37 @@ function formatDecimalInput(value: { toString: () => string } | null | undefined
   return value?.toString() ?? null;
 }
 
-type PurchaseEntryPageProps = {
+type PurchaseOrderPageProps = {
   searchParams: Promise<{
     draftId?: string | string[];
-    entryId?: string | string[];
     new?: string | string[];
   }>;
 };
 
-export default async function AdminPurchaseOrderPurchaseEntryPage({
+export default async function AdminPurchaseOrderDraftPage({
   searchParams,
-}: PurchaseEntryPageProps) {
+}: PurchaseOrderPageProps) {
   const query = await searchParams;
-  const selectedEntryId =
-    typeof query.entryId === 'string'
-      ? query.entryId
-      : typeof query.draftId === 'string'
-        ? query.draftId
-        : null;
-  const isNewEntry =
+  const selectedDraftId = typeof query.draftId === 'string' ? query.draftId : null;
+  const isNewDraft =
     typeof query.new === 'string' &&
     ['1', 'true', 'yes'].includes(query.new.toLowerCase());
 
-  if (!selectedEntryId && !isNewEntry) {
+  if (!selectedDraftId && !isNewDraft) {
     return (
-      <PurchaseEntryListPage
-        createHref="/admin/purchase-order/purchase-entry?new=1"
-        createLabel="New Purchase Entry"
-        description="Review saved purchase entries before they become POs."
-        pathname="/admin/purchase-order/purchase-entry"
-        title="Purchase Entry"
-        view="entry"
+      <PurchaseOrderListPage
+        createHref="/admin/purchase-order/draft?new=1"
+        createLabel="New PO Draft"
+        description="Review saved PO drafts before they become purchase orders."
+        pathname="/admin/purchase-order/draft"
+        title="PO Draft"
+        view="draft"
       />
     );
   }
 
   await requireAdminPermission(
-    '/admin/purchase-order/purchase-entry',
+    '/admin/purchase-order/draft',
     'products.read',
   );
 
@@ -116,8 +110,8 @@ export default async function AdminPurchaseOrderPurchaseEntryPage({
         },
       },
     }),
-    selectedEntryId
-      ? prisma.purchaseEntry.findFirst({
+    selectedDraftId
+      ? prisma.purchaseOrder.findFirst({
           select: {
             id: true,
             lines: {
@@ -138,8 +132,8 @@ export default async function AdminPurchaseOrderPurchaseEntryPage({
             supplierName: true,
           },
           where: {
-            id: selectedEntryId,
-            status: PURCHASE_ENTRY_STATUS.DRAFT,
+            id: selectedDraftId,
+            status: PURCHASE_ORDER_STATUS.DRAFT,
           },
         })
       : Promise.resolve(null),
@@ -149,7 +143,7 @@ export default async function AdminPurchaseOrderPurchaseEntryPage({
     <section className="space-y-5">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-xl font-semibold text-slate-900">
-          {selectedEntryId ? 'Edit Purchase Entry' : 'New Purchase Entry'}
+          {selectedDraftId ? 'Edit PO Draft' : 'New PO Draft'}
         </h2>
         <p className="mt-1 text-sm text-slate-600">
           Build the product list here, then submit it to a PO for payment and receiving.
@@ -157,8 +151,8 @@ export default async function AdminPurchaseOrderPurchaseEntryPage({
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <PurchaseEntryForm
-          key={initialDraft?.id ?? 'new-purchase-entry'}
+        <PurchaseOrderForm
+          key={initialDraft?.id ?? 'new-purchase-order-draft'}
           initialDraft={
             initialDraft
               ? {
@@ -177,8 +171,8 @@ export default async function AdminPurchaseOrderPurchaseEntryPage({
                 }
               : null
           }
-          recordAction={recordPurchaseEntry}
-          saveDraftAction={savePurchaseEntryDraft}
+          recordAction={submitPurchaseOrder}
+          saveDraftAction={savePurchaseOrderDraft}
           variants={variants.map((variant) => ({
             color: variant.color,
             currentFifoCost: formatMoney(variant.inventoryBatches[0]?.unitCost),

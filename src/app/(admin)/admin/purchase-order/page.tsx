@@ -1,11 +1,11 @@
-import PurchaseEntryListPage from './_components/PurchaseEntryListPage';
+import PurchaseOrderListPage from './_components/PurchaseOrderListPage';
 
 export default function AdminPurchaseOrderPage() {
   return (
-    <PurchaseEntryListPage
-      createHref="/admin/purchase-order/purchase-entry?new=1"
-      createLabel="New Purchase Entry"
-      description="Showing all POs after purchase entries are submitted."
+    <PurchaseOrderListPage
+      createHref="/admin/purchase-order/draft?new=1"
+      createLabel="New PO Draft"
+      description="Showing all submitted purchase orders."
       pathname="/admin/purchase-order"
       title="Purchase Orders"
       view="po"

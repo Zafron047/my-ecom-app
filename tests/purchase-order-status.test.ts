@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PURCHASE_ENTRY_STATUS,
+  PURCHASE_ORDER_STATUS,
   PURCHASE_PAYMENT_STATUS,
-  derivePurchaseEntryStatus,
-  getPurchaseEntryLifecycleLabel,
+  derivePurchaseOrderStatus,
+  getPurchaseOrderLifecycleLabel,
   shouldShowInClosedPurchaseOrderList,
   shouldShowInOpenPurchaseOrderList,
 } from '@/lib/purchase-order-status';
@@ -13,20 +13,20 @@ describe('purchase order lifecycle status', () => {
     const reportedClosedPo = {
       paymentStatus: PURCHASE_PAYMENT_STATUS.PAID,
       receivedQuantity: 100,
-      status: PURCHASE_ENTRY_STATUS.CLOSED,
+      status: PURCHASE_ORDER_STATUS.CLOSED,
       totalQuantity: 100,
     };
 
     expect(shouldShowInOpenPurchaseOrderList(reportedClosedPo)).toBe(false);
     expect(shouldShowInClosedPurchaseOrderList(reportedClosedPo)).toBe(true);
-    expect(getPurchaseEntryLifecycleLabel(reportedClosedPo)).toBe('Closed');
+    expect(getPurchaseOrderLifecycleLabel(reportedClosedPo)).toBe('Closed');
   });
 
   it('treats legacy paid and fully received records as closed', () => {
     const legacyClosedPo = {
       paymentStatus: PURCHASE_PAYMENT_STATUS.PAID,
       receivedQuantity: 12,
-      status: PURCHASE_ENTRY_STATUS.LEGACY_RECEIVED,
+      status: PURCHASE_ORDER_STATUS.LEGACY_RECEIVED,
       totalQuantity: 12,
     };
 
@@ -39,7 +39,7 @@ describe('purchase order lifecycle status', () => {
       shouldShowInOpenPurchaseOrderList({
         paymentStatus: PURCHASE_PAYMENT_STATUS.PAID,
         receivedQuantity: 99,
-        status: PURCHASE_ENTRY_STATUS.OPEN,
+        status: PURCHASE_ORDER_STATUS.OPEN,
         totalQuantity: 100,
       }),
     ).toBe(true);
@@ -47,38 +47,38 @@ describe('purchase order lifecycle status', () => {
       shouldShowInOpenPurchaseOrderList({
         paymentStatus: PURCHASE_PAYMENT_STATUS.PARTIAL_PAID,
         receivedQuantity: 100,
-        status: PURCHASE_ENTRY_STATUS.OPEN,
+        status: PURCHASE_ORDER_STATUS.OPEN,
         totalQuantity: 100,
       }),
     ).toBe(true);
   });
 
-  it('does not show purchase entries in PO lists until submitted', () => {
-    const draftEntry = {
+  it('does not show PO drafts in PO lists until submitted', () => {
+    const draftOrder = {
       paymentStatus: PURCHASE_PAYMENT_STATUS.DUE,
       receivedQuantity: 0,
-      status: PURCHASE_ENTRY_STATUS.DRAFT,
+      status: PURCHASE_ORDER_STATUS.DRAFT,
       totalQuantity: 10,
     };
 
-    expect(shouldShowInOpenPurchaseOrderList(draftEntry)).toBe(false);
-    expect(shouldShowInClosedPurchaseOrderList(draftEntry)).toBe(false);
+    expect(shouldShowInOpenPurchaseOrderList(draftOrder)).toBe(false);
+    expect(shouldShowInClosedPurchaseOrderList(draftOrder)).toBe(false);
   });
 
   it('derives stored PO status from payment and receiving state', () => {
     expect(
-      derivePurchaseEntryStatus({
+      derivePurchaseOrderStatus({
         paymentStatus: PURCHASE_PAYMENT_STATUS.PAID,
         receivedQuantity: 5,
         totalQuantity: 5,
       }),
-    ).toBe(PURCHASE_ENTRY_STATUS.CLOSED);
+    ).toBe(PURCHASE_ORDER_STATUS.CLOSED);
     expect(
-      derivePurchaseEntryStatus({
+      derivePurchaseOrderStatus({
         paymentStatus: PURCHASE_PAYMENT_STATUS.PAID,
         receivedQuantity: 4,
         totalQuantity: 5,
       }),
-    ).toBe(PURCHASE_ENTRY_STATUS.OPEN);
+    ).toBe(PURCHASE_ORDER_STATUS.OPEN);
   });
 });

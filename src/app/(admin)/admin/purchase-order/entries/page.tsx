@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
 export default function AdminPurchaseOrderEntriesPage() {
-  redirect('/admin/purchase-order/purchase-entry');
+  redirect('/admin/purchase-order/draft');
 }
