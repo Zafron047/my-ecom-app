@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import AdminTimelinePanel from '@/components/admin/AdminTimelinePanel';
 import {
   PURCHASE_ORDER_STATUS,
   PURCHASE_PAYMENT_STATUS,
@@ -39,10 +40,14 @@ type PurchaseRecord = {
   supplierName: string;
   totalCost: number;
   totalQuantity: number;
+  timeline: PurchaseRecordTimelineEntry[];
 };
 
 type PurchaseRecordFormProps = {
   cancelAction: (formData: FormData) => Promise<PurchaseRecordActionState>;
+  deleteNoteAction: (formData: FormData) => Promise<PurchaseRecordActionState>;
+  editNoteAction: (formData: FormData) => Promise<PurchaseRecordActionState>;
+  noteAction: (formData: FormData) => Promise<PurchaseRecordActionState>;
   payAction: (formData: FormData) => Promise<PurchaseRecordActionState>;
   receiveAction: (formData: FormData) => Promise<PurchaseRecordActionState>;
   record: PurchaseRecord;
@@ -63,6 +68,15 @@ type PurchaseRecordActionState = {
   referenceNo?: string;
   status?: string;
   supplierName?: string;
+  timeline?: PurchaseRecordTimelineEntry[];
+};
+
+type PurchaseRecordTimelineEntry = {
+  createdAt: string;
+  createdByName: string;
+  id: string;
+  kind: 'event' | 'note';
+  note: string;
 };
 
 type PaymentSnapshot = {
@@ -105,16 +119,37 @@ function PencilIcon() {
   );
 }
 
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={`h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
 function getInitialPaidAmount(record: PurchaseRecord) {
   return record.paidAmount;
 }
 
 function createPaymentSnapshot(record: PurchaseRecord): PaymentSnapshot {
+  const paymentStatus = record.paymentStatus || PURCHASE_PAYMENT_STATUS.DUE;
+
   return {
     paidAmount: getInitialPaidAmount(record),
-    paymentMethod: record.paymentMethod,
-    paymentReference: record.paymentReference,
-    paymentStatus: record.paymentStatus || PURCHASE_PAYMENT_STATUS.DUE,
+    paymentMethod:
+      paymentStatus === PURCHASE_PAYMENT_STATUS.DUE ? '' : record.paymentMethod,
+    paymentReference:
+      paymentStatus === PURCHASE_PAYMENT_STATUS.DUE ? '' : record.paymentReference,
+    paymentStatus,
   };
 }
 
@@ -229,6 +264,9 @@ function getPreviewPaidAmountForStatus(input: {
 
 export default function PurchaseRecordForm({
   cancelAction,
+  deleteNoteAction,
+  editNoteAction,
+  noteAction,
   payAction,
   receiveAction,
   record,
@@ -247,7 +285,7 @@ export default function PurchaseRecordForm({
   const [supplierName, setSupplierName] = useState(initialDetails.supplierName);
   const [referenceNo, setReferenceNo] = useState(initialDetails.referenceNo);
   const [purchaseDate, setPurchaseDate] = useState(initialDetails.purchaseDate);
-  const [notes, setNotes] = useState(initialDetails.notes);
+  const [timeline, setTimeline] = useState(record.timeline);
   const [savedPayment, setSavedPayment] = useState(initialPayment);
   const [paymentStatus, setPaymentStatus] = useState(initialPayment.paymentStatus);
   const [paymentMethod, setPaymentMethod] = useState(initialPayment.paymentMethod);
@@ -282,7 +320,7 @@ export default function PurchaseRecordForm({
     ),
   );
   const [receiveNowByLine, setReceiveNowByLine] = useState(() =>
-    new Map(record.lines.map((line) => [line.id, '0'])),
+    new Map(record.lines.map((line) => [line.id, ''])),
   );
 
   const displayPayment = isEditingPayment
@@ -309,6 +347,60 @@ export default function PurchaseRecordForm({
     totalCost: record.totalCost,
   });
   const payableAmount = Math.max(0, record.totalCost - displayPayment.paidAmount);
+  const paymentCompletionAmount = getPaymentCompletionAmount({
+    savedPayment,
+    totalCost: record.totalCost,
+  });
+  const trimmedPaymentAmount = paymentAmount.trim();
+  const numericPaymentAmount = Number(paymentAmount);
+  const hasPartialPaymentAmount = trimmedPaymentAmount.length > 0;
+  const isPartialPaymentSelected =
+    paymentStatus === PURCHASE_PAYMENT_STATUS.PARTIAL_PAID;
+  const isSettingPartialPaidAmount =
+    isPartialPaymentSelected &&
+    savedPayment.paymentStatus === PURCHASE_PAYMENT_STATUS.PAID;
+  const nextPartialPaidAmount =
+    isPartialPaymentSelected
+      ? getPaymentBaseAmount({
+          requestedPaymentStatus: paymentStatus,
+          savedPayment,
+        }) + (Number.isFinite(numericPaymentAmount) ? numericPaymentAmount : 0)
+      : 0;
+  const hasPaymentAmountInputError =
+    isPartialPaymentSelected &&
+    hasPartialPaymentAmount &&
+    (!Number.isFinite(numericPaymentAmount) ||
+      numericPaymentAmount < 0 ||
+      numericPaymentAmount >
+        (isSettingPartialPaidAmount ? record.totalCost : paymentCompletionAmount));
+  const isPartialPaymentAmountIncomplete =
+    isPartialPaymentSelected &&
+    (!hasPartialPaymentAmount ||
+      !Number.isFinite(numericPaymentAmount) ||
+      numericPaymentAmount <= 0 ||
+      nextPartialPaidAmount >= record.totalCost);
+  const isPaymentAmountInvalid =
+    isEditingPayment && hasPaymentAmountInputError;
+  const isPaymentMethodDisabled =
+    !isEditingPayment || paymentStatus === PURCHASE_PAYMENT_STATUS.DUE;
+  const paymentAmountLabel = isSettingPartialPaidAmount
+    ? 'Paid Amount'
+    : 'Payment Amount';
+  const hasPaymentChanges =
+    paymentStatus !== savedPayment.paymentStatus ||
+    paymentMethod !== savedPayment.paymentMethod ||
+    paymentReference !== savedPayment.paymentReference ||
+    (paymentStatus === PURCHASE_PAYMENT_STATUS.PARTIAL_PAID &&
+      paymentAmount.trim().length > 0);
+  const paymentSaveBlockReason = !isEditingPayment
+    ? 'Open payment edit mode first.'
+    : !hasPaymentChanges
+      ? 'Change payment fields before saving.'
+    : paymentStatus !== PURCHASE_PAYMENT_STATUS.DUE && !paymentMethod
+      ? 'Payment method is required.'
+      : isPartialPaymentAmountIncomplete || isPaymentAmountInvalid
+        ? 'Invalid paid amount.'
+        : '';
   const receivedTotal = useMemo(
     () =>
       record.lines.reduce(
@@ -355,6 +447,34 @@ export default function PurchaseRecordForm({
     !isSavingReceive &&
     !isCancellingPo &&
     !isRecordLocked;
+  const receiveSaveBlockReason = (() => {
+    if (!isEditingReceive) return 'Open receive edit mode first.';
+    if (remainingTotal === 0) return 'No quantity left to receive.';
+
+    let hasReceiveQuantity = false;
+    for (const line of record.lines) {
+      const rawReceiveQuantity = receiveNowByLine.get(line.id) ?? '';
+      const receiveQuantity = Number(rawReceiveQuantity);
+      const alreadyReceived = receivedByLine.get(line.id) ?? line.receivedQuantity;
+      const remainingQuantity = Math.max(0, line.orderedQuantity - alreadyReceived);
+
+      if (
+        !rawReceiveQuantity.trim() ||
+        !Number.isInteger(receiveQuantity) ||
+        receiveQuantity < 0
+      ) {
+        return 'Received Now must be a whole number.';
+      }
+      if (receiveQuantity > remainingQuantity) {
+        return `Cannot receive more than ${remainingQuantity} unit(s).`;
+      }
+      if (receiveQuantity > 0) hasReceiveQuantity = true;
+    }
+
+    return hasReceiveQuantity ? '' : 'Enter at least one received quantity.';
+  })();
+  const canSavePayment = !paymentSaveBlockReason && !isSavingPayment;
+  const canSaveReceive = !receiveSaveBlockReason && !isSavingReceive;
 
   function updateReceiveNow(lineId: string, rawValue: string) {
     setReceiveNowByLine((current) => {
@@ -374,7 +494,6 @@ export default function PurchaseRecordForm({
     setSupplierName(savedDetails.supplierName);
     setReferenceNo(savedDetails.referenceNo);
     setPurchaseDate(savedDetails.purchaseDate);
-    setNotes(savedDetails.notes);
     setIsEditingDetails(true);
   }
 
@@ -382,7 +501,6 @@ export default function PurchaseRecordForm({
     setSupplierName(savedDetails.supplierName);
     setReferenceNo(savedDetails.referenceNo);
     setPurchaseDate(savedDetails.purchaseDate);
-    setNotes(savedDetails.notes);
     setIsEditingDetails(false);
     clearActionState();
   }
@@ -414,16 +532,8 @@ export default function PurchaseRecordForm({
     clearActionState();
   }
 
-  function togglePaymentEdit() {
-    if (isEditingPayment) {
-      cancelPaymentEdit();
-      return;
-    }
-    beginPaymentEdit();
-  }
-
   function cancelReceiveEdit() {
-    setReceiveNowByLine(new Map(record.lines.map((line) => [line.id, '0'])));
+    setReceiveNowByLine(new Map(record.lines.map((line) => [line.id, ''])));
     setBatchNumberByLine(
       new Map(
         record.lines.map((line, index) => [
@@ -435,17 +545,6 @@ export default function PurchaseRecordForm({
     );
     setIsEditingReceive(false);
     clearActionState();
-  }
-
-  function fillFullReceive() {
-    setReceiveNowByLine(
-      new Map(
-        record.lines.map((line) => {
-          const alreadyReceived = receivedByLine.get(line.id) ?? line.receivedQuantity;
-          return [line.id, String(Math.max(0, line.orderedQuantity - alreadyReceived))];
-        }),
-      ),
-    );
   }
 
   function applyDetailsPreview() {
@@ -461,7 +560,7 @@ export default function PurchaseRecordForm({
     formData.set('supplierName', supplierName);
     formData.set('referenceNo', referenceNo);
     formData.set('purchaseDate', purchaseDate);
-    formData.set('notes', notes);
+    formData.set('notes', savedDetails.notes);
 
     setIsSavingDetails(true);
     void updateDetailsAction(formData)
@@ -473,7 +572,8 @@ export default function PurchaseRecordForm({
         }
 
         const nextDetails = {
-          notes: typeof result.notes === 'string' ? result.notes : notes,
+          notes:
+            typeof result.notes === 'string' ? result.notes : savedDetails.notes,
           purchaseDate:
             typeof result.purchaseDate === 'string'
               ? result.purchaseDate
@@ -487,7 +587,7 @@ export default function PurchaseRecordForm({
         setSupplierName(nextDetails.supplierName);
         setReferenceNo(nextDetails.referenceNo);
         setPurchaseDate(nextDetails.purchaseDate);
-        setNotes(nextDetails.notes);
+        if (result.timeline) setTimeline(result.timeline);
         setActionError('');
         setActionMessage(result.message ?? 'PO details saved.');
         setIsEditingDetails(false);
@@ -518,6 +618,7 @@ export default function PurchaseRecordForm({
         }
 
         setRecordStatus(result.status ?? PURCHASE_ORDER_STATUS.CANCELLED);
+        if (result.timeline) setTimeline(result.timeline);
         setIsCancelModalOpen(false);
         setActionError('');
         setActionMessage(result.message ?? 'PO cancelled.');
@@ -540,7 +641,7 @@ export default function PurchaseRecordForm({
     let hasReceiveQuantity = false;
 
     for (const line of record.lines) {
-      const rawReceiveQuantity = receiveNowByLine.get(line.id) ?? '0';
+      const rawReceiveQuantity = receiveNowByLine.get(line.id) ?? '';
       const receiveQuantity = Number(rawReceiveQuantity) || 0;
       const alreadyReceived = receivedByLine.get(line.id) ?? line.receivedQuantity;
       const remainingQuantity = Math.max(0, line.orderedQuantity - alreadyReceived);
@@ -599,7 +700,8 @@ export default function PurchaseRecordForm({
           );
         }
         if (result.status) setRecordStatus(result.status);
-        setReceiveNowByLine(new Map(record.lines.map((line) => [line.id, '0'])));
+        if (result.timeline) setTimeline(result.timeline);
+        setReceiveNowByLine(new Map(record.lines.map((line) => [line.id, ''])));
         setActionError('');
         setActionMessage(result.message ?? 'Received quantities saved.');
         setIsEditingReceive(false);
@@ -623,13 +725,6 @@ export default function PurchaseRecordForm({
         : paymentStatus === PURCHASE_PAYMENT_STATUS.PARTIAL_PAID
           ? Number(paymentAmount)
           : 0;
-    const nextPaidAmount =
-      paymentStatus === PURCHASE_PAYMENT_STATUS.PARTIAL_PAID
-        ? getPaymentBaseAmount({
-            requestedPaymentStatus: paymentStatus,
-            savedPayment,
-          }) + numericPaymentAmount
-        : numericPaymentAmount;
 
     if (paymentStatus !== PURCHASE_PAYMENT_STATUS.DUE && !paymentMethod) {
       setActionError('Payment method is required when payment is paid or partially paid.');
@@ -637,13 +732,9 @@ export default function PurchaseRecordForm({
     }
     if (
       paymentStatus === PURCHASE_PAYMENT_STATUS.PARTIAL_PAID &&
-      (!Number.isFinite(numericPaymentAmount) ||
-        numericPaymentAmount <= 0 ||
-        nextPaidAmount >= record.totalCost)
+      (isPartialPaymentAmountIncomplete || isPaymentAmountInvalid)
     ) {
-      setActionError(
-        'Partial payment must be greater than 0 and leave payable amount due.',
-      );
+      setActionError('Invalid paid amount.');
       return;
     }
 
@@ -684,6 +775,7 @@ export default function PurchaseRecordForm({
         setPaymentReference(nextPayment.paymentReference);
         setPaymentAmount('');
         if (result.status) setRecordStatus(result.status);
+        if (result.timeline) setTimeline(result.timeline);
         setActionError('');
         setActionMessage(result.message ?? 'Payment saved.');
         setIsEditingPayment(false);
@@ -815,8 +907,8 @@ export default function PurchaseRecordForm({
               {record.totalQuantity} units / {formatMoney(record.totalCost)}
             </p>
           </div>
-          <span className="text-lg font-semibold text-slate-500">
-            {isProductListOpen ? '-' : '+'}
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500">
+            <ChevronIcon open={isProductListOpen} />
           </span>
         </button>
 
@@ -893,18 +985,39 @@ export default function PurchaseRecordForm({
                 {formatMoney(displayPayment.paidAmount)} paid / {formatMoney(payableAmount)} due
               </p>
             </div>
-            <span className="text-lg font-semibold text-slate-500">
-              {isPaymentOpen ? '-' : '+'}
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500">
+              <ChevronIcon open={isPaymentOpen} />
             </span>
           </button>
-          <div className="flex items-center pr-5">
+          <div className="flex items-center gap-2 pr-5">
+            {isEditingPayment ? (
+              <>
+                <button
+                  type="button"
+                  disabled={!canSavePayment}
+                  title={paymentSaveBlockReason || undefined}
+                  onClick={applyPaymentPreview}
+                  className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {isSavingPayment ? 'Saving Payment...' : 'Save Payment'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingPayment}
+                  onClick={cancelPaymentEdit}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
-              aria-label={isEditingPayment ? 'Close payment edit mode' : 'Edit payment'}
+              aria-label="Edit payment"
               aria-pressed={isEditingPayment}
               disabled={!canTogglePaymentEdit}
-              onClick={togglePaymentEdit}
-              title={isEditingPayment ? 'Close payment edit mode' : 'Edit payment'}
+              onClick={beginPaymentEdit}
+              title="Edit payment"
               className={`flex h-10 w-10 items-center justify-center rounded-xl border text-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${
                 isEditingPayment
                   ? 'border-blue-200 bg-blue-50 text-blue-700'
@@ -927,9 +1040,12 @@ export default function PurchaseRecordForm({
                   onChange={(event) => {
                     const nextStatus = event.target.value;
                     setPaymentStatus(nextStatus);
+                    if (nextStatus === PURCHASE_PAYMENT_STATUS.DUE) {
+                      setPaymentMethod('');
+                    }
                     setPaymentAmount('');
                   }}
-                  className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-300 disabled:bg-slate-100 disabled:text-slate-500"
+                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 py-0 text-sm text-slate-900 outline-none transition focus:border-blue-300 disabled:bg-slate-100 disabled:text-slate-500"
                 >
                   <option value={PURCHASE_PAYMENT_STATUS.DUE}>Due</option>
                   <option value={PURCHASE_PAYMENT_STATUS.PARTIAL_PAID}>
@@ -941,10 +1057,10 @@ export default function PurchaseRecordForm({
               <label className="space-y-1.5 text-xs font-semibold text-slate-600">
                 <span>Payment Method</span>
                 <select
-                  disabled={!isEditingPayment}
+                  disabled={isPaymentMethodDisabled}
                   value={paymentMethod}
                   onChange={(event) => setPaymentMethod(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-300 disabled:bg-slate-100 disabled:text-slate-500"
+                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 py-0 text-sm text-slate-900 outline-none transition focus:border-blue-300 disabled:bg-slate-100 disabled:text-slate-500"
                 >
                   <option value="">Payment Method</option>
                   <option value="cash">Cash</option>
@@ -958,7 +1074,7 @@ export default function PurchaseRecordForm({
                   readOnly={!isEditingPayment}
                   value={paymentReference}
                   onChange={(event) => setPaymentReference(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-300 read-only:bg-slate-100 read-only:text-slate-500"
+                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900 outline-none transition focus:border-blue-300 read-only:bg-slate-100 read-only:text-slate-500"
                 />
               </label>
               <label className="space-y-1.5 text-xs font-semibold text-slate-600">
@@ -966,11 +1082,11 @@ export default function PurchaseRecordForm({
                 <input
                   readOnly
                   value={savedPaidAmount}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-slate-100 px-3 text-sm font-semibold text-slate-700 outline-none"
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-slate-100 px-2 text-sm font-semibold text-slate-700 outline-none"
                 />
               </label>
               <label className="space-y-1.5 text-xs font-semibold text-slate-600">
-                <span>Payment Amount</span>
+                <span>{paymentAmountLabel}</span>
                 <input
                   readOnly={
                     !isEditingPayment ||
@@ -988,29 +1104,27 @@ export default function PurchaseRecordForm({
                         : displayPayment.paidAmount
                   }
                   onChange={(event) => setPaymentAmount(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-300 read-only:bg-slate-100 read-only:text-slate-500"
+                  className={`h-9 w-full rounded-lg border bg-white px-2 text-sm text-slate-900 outline-none transition focus:border-blue-300 read-only:bg-slate-100 read-only:text-slate-500 ${
+                    isPaymentAmountInvalid ? 'border-rose-400' : 'border-slate-300'
+                  }`}
                 />
               </label>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-[11px] font-semibold text-slate-500">Payable</p>
+              <div
+                className={`rounded-lg border bg-slate-50 px-3 py-1.5 ${
+                  isPaymentAmountInvalid ? 'border-rose-300' : 'border-slate-200'
+                }`}
+              >
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold">
+                  {isPaymentAmountInvalid ? (
+                    <span className="text-rose-600">Invalid Amount</span>
+                  ) : null}
+                  <span className="text-slate-500">Payable</span>
+                </p>
                 <p className="truncate text-sm font-bold text-slate-900">
                   {formatMoney(payableAmount)}
                 </p>
               </div>
             </div>
-
-            {isEditingPayment ? (
-              <div className="mt-4 flex flex-wrap justify-end gap-2">
-                <button
-                  type="button"
-                  disabled={isSavingPayment}
-                  onClick={applyPaymentPreview}
-                  className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
-                >
-                  {isSavingPayment ? 'Saving Payment...' : 'Save Payment'}
-                </button>
-              </div>
-            ) : null}
           </div>
         ) : null}
       </section>
@@ -1035,15 +1149,8 @@ export default function PurchaseRecordForm({
               </button>
               <button
                 type="button"
-                disabled={isSavingReceive || remainingTotal === 0}
-                onClick={fillFullReceive}
-                className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-              >
-                Full Receive
-              </button>
-              <button
-                type="button"
-                disabled={isSavingReceive || remainingTotal === 0}
+                disabled={!canSaveReceive}
+                title={receiveSaveBlockReason || undefined}
                 onClick={applyReceivePreview}
                 className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
@@ -1149,7 +1256,7 @@ export default function PurchaseRecordForm({
                       readOnly={!isEditingReceive}
                       inputMode="numeric"
                       max={Math.max(0, line.orderedQuantity - alreadyReceived)}
-                      value={isEditingReceive ? receiveNowByLine.get(line.id) ?? '0' : '0'}
+                      value={isEditingReceive ? receiveNowByLine.get(line.id) ?? '' : '0'}
                       onChange={(event) => updateReceiveNow(line.id, event.target.value)}
                       className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-300 read-only:border-slate-200 read-only:bg-slate-100 read-only:font-semibold read-only:text-slate-700"
                     />
@@ -1161,19 +1268,16 @@ export default function PurchaseRecordForm({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <label className="block space-y-1.5 text-sm font-medium text-slate-700">
-          <span>Notes</span>
-          <textarea
-            readOnly={!isEditingDetails}
-            rows={3}
-            placeholder="Optional purchase note"
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-300 read-only:border-slate-200 read-only:bg-slate-100 read-only:text-slate-700"
-          />
-        </label>
-      </section>
+      <AdminTimelinePanel
+        addNoteAction={noteAction}
+        deleteNoteAction={deleteNoteAction}
+        editNoteAction={editNoteAction}
+        noteAddedMessage="PO note added."
+        notePlaceholder="Add a new PO note"
+        noteUpdatedMessage="PO note updated."
+        recordId={record.id}
+        timeline={timeline}
+      />
 
       {isCancelModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">

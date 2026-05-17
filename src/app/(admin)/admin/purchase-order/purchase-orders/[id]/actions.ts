@@ -13,11 +13,25 @@ import {
   isPurchasePaymentMethod,
   isPurchasePaymentStatus,
 } from '@/lib/purchase-order-status';
+import {
+  addPurchaseOrderNote,
+  createPurchaseOrderEvent,
+  deletePurchaseOrderNote,
+  getPurchaseOrderTimeline,
+  updatePurchaseOrderNote,
+} from '../../_lib/purchase-order-timeline';
 
 type PurchaseRecordActionState = {
   batchNumberByLine?: Array<[string, string]>;
   error?: string;
   message?: string;
+  timeline?: Array<{
+    createdAt: string;
+    createdByName: string;
+    id: string;
+    kind: 'event' | 'note';
+    note: string;
+  }>;
   notes?: string;
   paidAmount?: number;
   paymentMethod?: string;
@@ -32,7 +46,7 @@ type PurchaseRecordActionState = {
 
 const PURCHASE_ORDERS_PATH = '/admin/purchase-order';
 const PURCHASE_CLOSED_PATH = '/admin/purchase-order/closed';
-const RECORDS_PERMISSION_PATH = '/admin/purchase-order/records';
+const PURCHASE_ORDERS_PERMISSION_PATH = '/admin/purchase-order/purchase-orders';
 
 function getString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -108,8 +122,9 @@ function assertRecordIsEditable(status: string) {
 }
 
 async function requirePurchaseRecordWriteAccess() {
-  await requireAdminPermission(RECORDS_PERMISSION_PATH, 'products.write');
-  await requireAdminRole(RECORDS_PERMISSION_PATH, ['admin']);
+  const session = await requireAdminPermission(PURCHASE_ORDERS_PERMISSION_PATH, 'products.write');
+  await requireAdminRole(PURCHASE_ORDERS_PERMISSION_PATH, ['admin']);
+  return session;
 }
 
 function parseReceiveQuantities(formData: FormData) {
@@ -165,7 +180,7 @@ async function createUniqueBatchNumber(
 export async function updatePurchaseRecordDetails(
   formData: FormData,
 ): Promise<PurchaseRecordActionState> {
-  await requirePurchaseRecordWriteAccess();
+  const adminSession = await requirePurchaseRecordWriteAccess();
 
   try {
     const recordId = getString(formData, 'recordId');
@@ -185,25 +200,36 @@ export async function updatePurchaseRecordDetails(
     if (!record) throw new Error('PO not found.');
     assertRecordIsEditable(record.status);
 
-    await prisma.purchaseOrder.update({
-      data: {
-        notes,
-        purchaseDate,
-        referenceNo,
-        supplierName,
-      },
-      where: { id: record.id },
+    await prisma.$transaction(async (tx) => {
+      await tx.purchaseOrder.update({
+        data: {
+          notes,
+          purchaseDate,
+          referenceNo,
+          supplierName,
+        },
+        where: { id: record.id },
+      });
+      await createPurchaseOrderEvent(tx, {
+        eventType: 'po_details_updated',
+        message: 'updated PO details',
+        purchaseOrderId: record.id,
+        session: adminSession,
+      });
     });
+
+    const timeline = await getPurchaseOrderTimeline(record.id);
 
     revalidatePath(PURCHASE_ORDERS_PATH);
     revalidatePath(PURCHASE_CLOSED_PATH);
-    revalidatePath(`/admin/purchase-order/records/${recordId}`);
+    revalidatePath(`/admin/purchase-order/purchase-orders/${recordId}`);
     return {
       message: 'PO details saved.',
       notes: notes ?? '',
       purchaseDate: formatDateInput(purchaseDate),
       referenceNo: referenceNo ?? '',
       supplierName: supplierName ?? '',
+      timeline,
     };
   } catch (error) {
     return {
@@ -215,10 +241,55 @@ export async function updatePurchaseRecordDetails(
   }
 }
 
+export async function addPurchaseRecordNote(
+  formData: FormData,
+): Promise<PurchaseRecordActionState> {
+  const adminSession = await requirePurchaseRecordWriteAccess();
+  return addPurchaseOrderNote(formData, {
+    failureMessage: 'Failed to add PO note.',
+    mode: 'submitted',
+    revalidatePaths: [PURCHASE_ORDERS_PATH, PURCHASE_CLOSED_PATH],
+    revalidateRecordPath: (purchaseOrderId) =>
+      `/admin/purchase-order/purchase-orders/${purchaseOrderId}`,
+    session: adminSession,
+    successMessage: 'PO note added.',
+  });
+}
+
+export async function updatePurchaseRecordNote(
+  formData: FormData,
+): Promise<PurchaseRecordActionState> {
+  const adminSession = await requirePurchaseRecordWriteAccess();
+  return updatePurchaseOrderNote(formData, {
+    failureMessage: 'Failed to update PO note.',
+    mode: 'submitted',
+    revalidatePaths: [PURCHASE_ORDERS_PATH, PURCHASE_CLOSED_PATH],
+    revalidateRecordPath: (purchaseOrderId) =>
+      `/admin/purchase-order/purchase-orders/${purchaseOrderId}`,
+    session: adminSession,
+    successMessage: 'PO note updated.',
+  });
+}
+
+export async function deletePurchaseRecordNote(
+  formData: FormData,
+): Promise<PurchaseRecordActionState> {
+  const adminSession = await requirePurchaseRecordWriteAccess();
+  return deletePurchaseOrderNote(formData, {
+    failureMessage: 'Failed to delete PO note.',
+    mode: 'submitted',
+    revalidatePaths: [PURCHASE_ORDERS_PATH, PURCHASE_CLOSED_PATH],
+    revalidateRecordPath: (purchaseOrderId) =>
+      `/admin/purchase-order/purchase-orders/${purchaseOrderId}`,
+    session: adminSession,
+    successMessage: 'PO note deleted.',
+  });
+}
+
 export async function cancelPurchaseRecord(
   formData: FormData,
 ): Promise<PurchaseRecordActionState> {
-  await requirePurchaseRecordWriteAccess();
+  const adminSession = await requirePurchaseRecordWriteAccess();
 
   try {
     const recordId = getString(formData, 'recordId');
@@ -233,19 +304,28 @@ export async function cancelPurchaseRecord(
     if (!record) throw new Error('PO not found.');
     assertRecordIsEditable(record.status);
 
-    await prisma.purchaseOrder.update({
-      data: {
-        status: PURCHASE_ORDER_STATUS.CANCELLED,
-      },
-      where: { id: record.id },
+    await prisma.$transaction(async (tx) => {
+      await tx.purchaseOrder.update({
+        data: {
+          status: PURCHASE_ORDER_STATUS.CANCELLED,
+        },
+        where: { id: record.id },
+      });
+      await createPurchaseOrderEvent(tx, {
+        eventType: 'po_cancelled',
+        message: 'cancelled the PO',
+        purchaseOrderId: record.id,
+        session: adminSession,
+      });
     });
 
     revalidatePath(PURCHASE_ORDERS_PATH);
     revalidatePath(PURCHASE_CLOSED_PATH);
-    revalidatePath(`/admin/purchase-order/records/${recordId}`);
+    revalidatePath(`/admin/purchase-order/purchase-orders/${recordId}`);
     return {
       message: 'PO cancelled.',
       status: PURCHASE_ORDER_STATUS.CANCELLED,
+      timeline: await getPurchaseOrderTimeline(record.id),
     };
   } catch (error) {
     return {
@@ -260,7 +340,7 @@ export async function cancelPurchaseRecord(
 export async function receivePurchaseRecord(
   formData: FormData,
 ): Promise<PurchaseRecordActionState> {
-  await requirePurchaseRecordWriteAccess();
+  const adminSession = await requirePurchaseRecordWriteAccess();
 
   try {
     const recordId = getString(formData, 'recordId');
@@ -402,6 +482,25 @@ export async function receivePurchaseRecord(
         where: { id: record.id },
       });
 
+      const receivedNow = [...requested.values()].reduce(
+        (sum, quantity) => sum + quantity,
+        0,
+      );
+      await createPurchaseOrderEvent(tx, {
+        eventType: 'goods_received',
+        message: `received ${receivedNow} goods`,
+        purchaseOrderId: record.id,
+        session: adminSession,
+      });
+      if (status === PURCHASE_ORDER_STATUS.CLOSED && record.status !== PURCHASE_ORDER_STATUS.CLOSED) {
+        await createPurchaseOrderEvent(tx, {
+          eventType: 'po_closed',
+          message: 'closed the PO',
+          purchaseOrderId: record.id,
+          session: adminSession,
+        });
+      }
+
       return {
         batchNumberByLine: [...batchNumberByLine.entries()],
         receivedByLine: [...receivedByLine.entries()],
@@ -411,10 +510,11 @@ export async function receivePurchaseRecord(
 
     revalidatePath(PURCHASE_ORDERS_PATH);
     revalidatePath(PURCHASE_CLOSED_PATH);
-    revalidatePath(`/admin/purchase-order/records/${recordId}`);
+    revalidatePath(`/admin/purchase-order/purchase-orders/${recordId}`);
     return {
       ...result,
       message: 'Received quantities saved.',
+      timeline: await getPurchaseOrderTimeline(recordId),
     };
   } catch (error) {
     return {
@@ -429,7 +529,7 @@ export async function receivePurchaseRecord(
 export async function updatePurchaseRecordPayment(
   formData: FormData,
 ): Promise<PurchaseRecordActionState> {
-  await requirePurchaseRecordWriteAccess();
+  const adminSession = await requirePurchaseRecordWriteAccess();
 
   try {
     const recordId = getString(formData, 'recordId');
@@ -525,6 +625,21 @@ export async function updatePurchaseRecordPayment(
         where: { id: record.id },
       });
 
+      await createPurchaseOrderEvent(tx, {
+        eventType: 'payment_updated',
+        message: 'updated PO payment',
+        purchaseOrderId: record.id,
+        session: adminSession,
+      });
+      if (status === PURCHASE_ORDER_STATUS.CLOSED && record.status !== PURCHASE_ORDER_STATUS.CLOSED) {
+        await createPurchaseOrderEvent(tx, {
+          eventType: 'po_closed',
+          message: 'closed the PO',
+          purchaseOrderId: record.id,
+          session: adminSession,
+        });
+      }
+
       return {
         paidAmount: paidAmount.toNumber(),
         paymentMethod: paymentMethod ?? '',
@@ -536,10 +651,11 @@ export async function updatePurchaseRecordPayment(
 
     revalidatePath(PURCHASE_ORDERS_PATH);
     revalidatePath(PURCHASE_CLOSED_PATH);
-    revalidatePath(`/admin/purchase-order/records/${recordId}`);
+    revalidatePath(`/admin/purchase-order/purchase-orders/${recordId}`);
     return {
       ...result,
       message: 'Payment saved.',
+      timeline: await getPurchaseOrderTimeline(recordId),
     };
   } catch (error) {
     return {

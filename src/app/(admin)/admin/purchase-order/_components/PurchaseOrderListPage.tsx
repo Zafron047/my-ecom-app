@@ -217,7 +217,7 @@ export default async function PurchaseOrderListPage({
                   const actionHref =
                     isDraftView
                       ? `/admin/purchase-order/draft?draftId=${entry.id}`
-                      : `/admin/purchase-order/records/${entry.id}`;
+                      : `/admin/purchase-order/purchase-orders/${entry.id}`;
 
                   return (
                     <tr key={entry.id} className="align-top transition hover:bg-slate-50">

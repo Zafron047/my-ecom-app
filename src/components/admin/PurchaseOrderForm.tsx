@@ -33,7 +33,18 @@ type PurchaseOrderFormProps = {
   ) => Promise<{ error?: string; message?: string }>;
   saveDraftAction: (
     formData: FormData,
-  ) => Promise<{ draftId?: string; error?: string; message?: string }>;
+  ) => Promise<{
+    draftId?: string;
+    error?: string;
+    message?: string;
+    timeline?: Array<{
+      createdAt: string;
+      createdByName: string;
+      id: string;
+      kind: 'event' | 'note';
+      note: string;
+    }>;
+  }>;
   variants: PurchaseVariantOption[];
 };
 
@@ -56,7 +67,6 @@ type PurchaseOrderDraftLine = {
 type PurchaseOrderDraft = {
   id: string;
   lines: PurchaseOrderDraftLine[];
-  notes: string;
   purchaseDate: string;
   referenceNo: string;
   supplierName: string;
@@ -71,7 +81,6 @@ type ProductOption = {
 
 type DraftSnapshotInput = {
   lines: DraftLine[];
-  notes: string;
   purchaseDate: string;
   referenceNo: string;
   supplierName: string;
@@ -82,6 +91,8 @@ type GuardActionResult = {
   ok: boolean;
 };
 
+type DraftPrimaryAction = 'save' | 'submit';
+
 function getDefaultPurchaseDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -90,7 +101,7 @@ function newLine(productId = '', variantId = ''): DraftLine {
   return {
     id: crypto.randomUUID(),
     productId,
-    quantity: '1',
+    quantity: '',
     unitCost: '',
     variantId,
   };
@@ -127,9 +138,25 @@ function TrashIcon() {
   );
 }
 
+function ChevronDownIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="block h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2.25"
+      viewBox="0 0 24 24"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
 function createDraftSnapshot({
   lines,
-  notes,
   purchaseDate,
   referenceNo,
   supplierName,
@@ -141,7 +168,6 @@ function createDraftSnapshot({
       unitCost: line.unitCost,
       variantId: line.variantId,
     })),
-    notes,
     purchaseDate,
     referenceNo,
     supplierName,
@@ -218,7 +244,7 @@ export default function PurchaseOrderForm({
       initialDraft?.lines.map((line) => ({
         id: line.id || crypto.randomUUID(),
         productId: line.productId ?? '',
-        quantity: String(line.quantity || 1),
+        quantity: String(line.quantity ?? 0),
         unitCost: line.unitCost ?? '',
         variantId: line.variantId ?? '',
       })) ?? [],
@@ -228,7 +254,6 @@ export default function PurchaseOrderForm({
     () =>
       createDraftSnapshot({
         lines: [],
-        notes: '',
         purchaseDate: defaultPurchaseDate,
         referenceNo: '',
         supplierName: '',
@@ -239,7 +264,6 @@ export default function PurchaseOrderForm({
     () =>
       createDraftSnapshot({
         lines: initialLines,
-        notes: initialDraft?.notes ?? '',
         purchaseDate: initialDraft?.purchaseDate ?? defaultPurchaseDate,
         referenceNo: initialDraft?.referenceNo ?? '',
         supplierName: initialDraft?.supplierName ?? '',
@@ -248,6 +272,9 @@ export default function PurchaseOrderForm({
   );
   const [state, formAction, isPending] = useActionState(recordAction, {});
   const [isDraftPending, setIsDraftPending] = useState(false);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const [primaryAction, setPrimaryAction] =
+    useState<DraftPrimaryAction>('save');
   const [draftId, setDraftId] = useState(initialDraft?.id ?? '');
   const [lines, setLines] = useState<DraftLine[]>(() => initialLines);
   const [supplierName, setSupplierName] = useState(initialDraft?.supplierName ?? '');
@@ -255,7 +282,6 @@ export default function PurchaseOrderForm({
   const [purchaseDate, setPurchaseDate] = useState(
     initialDraft?.purchaseDate ?? defaultPurchaseDate,
   );
-  const [notes, setNotes] = useState(initialDraft?.notes ?? '');
   const [query, setQuery] = useState('');
   const [clientError, setClientError] = useState('');
   const [draftMessage, setDraftMessage] = useState(
@@ -269,6 +295,8 @@ export default function PurchaseOrderForm({
   const formRef = useRef<HTMLFormElement>(null);
   const draftRequestIdRef = useRef(0);
   const handledSuccessMessageRef = useRef('');
+  const actionMenuRef = useRef<HTMLDivElement>(null);
+  const primaryActionButtonRef = useRef<HTMLButtonElement>(null);
   const productSearchRef = useRef<HTMLDivElement>(null);
   const productSearchInputRef = useRef<HTMLInputElement>(null);
 
@@ -334,32 +362,31 @@ export default function PurchaseOrderForm({
     lines,
   });
   const canSubmitRecord = !recordSubmitBlockReason;
+  const isSubmitPrimary = primaryAction === 'submit';
   const hasDraftContent =
     lines.length > 0 ||
     supplierName.trim().length > 0 ||
     referenceNo.trim().length > 0 ||
-    notes.trim().length > 0 ||
     purchaseDate !== defaultPurchaseDate;
   const hasSaveableDraft = hasDraftContent || Boolean(draftId);
   const currentDraftSnapshot = useMemo(
     () =>
       createDraftSnapshot({
         lines,
-        notes,
         purchaseDate,
         referenceNo,
         supplierName,
       }),
     [
       lines,
-      notes,
       purchaseDate,
       referenceNo,
       supplierName,
     ],
   );
   const hasUnsavedDraftChanges = currentDraftSnapshot !== savedDraftSnapshot;
-  const canSaveDraft = hasSaveableDraft && hasUnsavedDraftChanges;
+  const canSaveDraft =
+    hasSaveableDraft && hasUnsavedDraftChanges && !draftSaveBlockReason;
   const productLineGroups = useMemo(() => {
     const grouped = new Map<
       string,
@@ -397,12 +424,12 @@ export default function PurchaseOrderForm({
     setSupplierName('');
     setReferenceNo('');
     setPurchaseDate(defaultPurchaseDate);
-    setNotes('');
     setQuery('');
     setIsAddingProduct(false);
     setDraftMessage('');
     setIsProductListOpen(false);
     setOpenVariantLineId(null);
+    setIsActionMenuOpen(false);
     setClientError('');
     setSavedDraftSnapshot(emptyDraftSnapshot);
   }, [defaultPurchaseDate, emptyDraftSnapshot]);
@@ -433,7 +460,6 @@ export default function PurchaseOrderForm({
     formData.set('supplierName', supplierName);
     formData.set('referenceNo', referenceNo);
     formData.set('purchaseDate', purchaseDate);
-    formData.set('notes', notes);
 
     for (const line of lines) {
       formData.append('productId', line.productId);
@@ -446,19 +472,18 @@ export default function PurchaseOrderForm({
   }, [
     draftId,
     lines,
-    notes,
     purchaseDate,
     referenceNo,
     supplierName,
   ]);
 
   const saveDraft = useCallback(async (): Promise<GuardActionResult> => {
-    if (!canSaveDraft) return { ok: true };
     if (draftSaveBlockReason) {
       setClientError(draftSaveBlockReason);
       setDraftMessage('');
       return { error: draftSaveBlockReason, ok: false };
     }
+    if (!canSaveDraft) return { ok: true };
 
     const requestId = draftRequestIdRef.current + 1;
     draftRequestIdRef.current = requestId;
@@ -480,7 +505,14 @@ export default function PurchaseOrderForm({
         return { error: result.error, ok: false };
       }
 
-      if (result.draftId) setDraftId(result.draftId);
+      if (result.draftId) {
+        setDraftId(result.draftId);
+        window.dispatchEvent(
+          new CustomEvent('purchase-order-draft-saved', {
+            detail: { draftId: result.draftId, timeline: result.timeline },
+          }),
+        );
+      }
       setSavedDraftSnapshot(snapshot);
       setClientError('');
       setDraftMessage(result.message ?? 'PO Draft saved.');
@@ -649,9 +681,24 @@ export default function PurchaseOrderForm({
     setClientError('');
   }
 
+  useEffect(() => {
+    if (!isActionMenuOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (actionMenuRef.current?.contains(target)) return;
+      setIsActionMenuOpen(false);
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isActionMenuOpen]);
+
   useEffect(
     () =>
       registerNavigationGuard({
+        cancelLabel: 'Cancel',
         message:
           'This PO Draft has unsaved changes. Save it before leaving.',
         onSave: saveDraft,
@@ -672,7 +719,7 @@ export default function PurchaseOrderForm({
       className="space-y-5"
     >
       {draftId ? <input type="hidden" name="purchaseOrderId" value={draftId} /> : null}
-      <div className="space-y-0">
+      <div className="rounded-xl border border-slate-200 bg-white p-3">
         <div className="grid gap-4 md:grid-cols-3">
           <label className="space-y-1.5 text-sm font-medium text-slate-700">
             <span>Supplier</span>
@@ -705,7 +752,6 @@ export default function PurchaseOrderForm({
             />
           </label>
         </div>
-
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -974,18 +1020,6 @@ export default function PurchaseOrderForm({
         )}
       </div>
 
-      <label className="block space-y-1.5 text-sm font-medium text-slate-700">
-        <span>Notes</span>
-        <textarea
-          name="notes"
-          rows={3}
-          placeholder="Optional purchase note"
-          value={notes}
-          onChange={(event) => setNotes(event.target.value)}
-          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-300"
-        />
-      </label>
-
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3">
         <div className="text-sm text-slate-600">
           <span className="font-semibold text-slate-900">{totalQuantity}</span> units /
@@ -999,25 +1033,86 @@ export default function PurchaseOrderForm({
             </span>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          ref={actionMenuRef}
+          className="relative inline-flex items-stretch rounded-xl shadow-sm"
+        >
+          <button
+            ref={primaryActionButtonRef}
+            type={isSubmitPrimary ? 'submit' : 'button'}
+            disabled={
+              isSubmitPrimary
+                ? !canSubmitRecord || isPending || isDraftPending
+                : !canSaveDraft || isPending || isDraftPending
+            }
+            title={
+              isSubmitPrimary
+                ? recordSubmitBlockReason || undefined
+                : draftSaveBlockReason || undefined
+            }
+            onClick={
+              isSubmitPrimary
+                ? undefined
+                : () => {
+                    void saveDraft();
+                  }
+            }
+            className="min-h-10 rounded-l-xl bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {isSubmitPrimary
+              ? isPending
+                ? 'Submitting...'
+                : 'Submit to PO'
+              : isDraftPending
+                ? 'Saving Draft...'
+                : 'Save PO Draft'}
+          </button>
           <button
             type="button"
-            disabled={!canSaveDraft || isDraftPending || isPending}
-            onClick={() => {
-              void saveDraft();
-            }}
-            className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            aria-expanded={isActionMenuOpen}
+            aria-haspopup="menu"
+            aria-label="Show PO Draft actions"
+            disabled={isDraftPending || isPending}
+            onClick={() => setIsActionMenuOpen((current) => !current)}
+            className="flex min-h-10 w-10 items-center justify-center rounded-r-xl border-l border-blue-500 bg-blue-700 text-white transition hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300"
           >
-            {isDraftPending ? 'Saving Draft...' : 'Save PO Draft'}
+            <span
+              className={`transition-transform duration-150 ${
+                isActionMenuOpen ? 'rotate-180' : ''
+              }`}
+            >
+              <ChevronDownIcon />
+            </span>
           </button>
-          <button
-            type="submit"
-            disabled={!canSubmitRecord || isPending || isDraftPending}
-            title={recordSubmitBlockReason || undefined}
-            className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            {isPending ? 'Submitting...' : 'Submit to PO'}
-          </button>
+          {isActionMenuOpen ? (
+            <div
+              role="menu"
+              className="absolute bottom-[calc(100%+8px)] left-0 z-20 rounded-xl shadow-sm"
+              style={{ width: primaryActionButtonRef.current?.offsetWidth }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                disabled={
+                  isSubmitPrimary
+                    ? !canSaveDraft || isPending || isDraftPending
+                    : !canSubmitRecord || isPending || isDraftPending
+                }
+                title={
+                  isSubmitPrimary
+                    ? draftSaveBlockReason || undefined
+                    : recordSubmitBlockReason || undefined
+                }
+                onClick={() => {
+                  setPrimaryAction(isSubmitPrimary ? 'save' : 'submit');
+                  setIsActionMenuOpen(false);
+                }}
+                className="flex min-h-10 w-full items-center justify-center whitespace-nowrap rounded-l-xl bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {isSubmitPrimary ? 'Save PO Draft' : 'Submit to PO'}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 

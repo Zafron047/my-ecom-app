@@ -10,11 +10,25 @@ import {
   PURCHASE_PAYMENT_STATUS,
   isPurchaseOrderDraft,
 } from '@/lib/purchase-order-status';
+import {
+  addPurchaseOrderNote,
+  createPurchaseOrderEvent,
+  deletePurchaseOrderNote,
+  getPurchaseOrderTimeline,
+  updatePurchaseOrderNote,
+} from '../_lib/purchase-order-timeline';
 
 type PurchaseOrderState = {
   draftId?: string;
   error?: string;
   message?: string;
+  timeline?: Array<{
+    createdAt: string;
+    createdByName: string;
+    id: string;
+    kind: 'event' | 'note';
+    note: string;
+  }>;
 };
 
 type PurchaseOrderLineInput = {
@@ -34,8 +48,6 @@ type RecordedPurchaseOrderLine = {
 };
 
 const PURCHASE_ORDER_DRAFT_PATH = '/admin/purchase-order/draft';
-const LEGACY_PURCHASE_ORDERS_PATH = '/admin/purchase-order/entries';
-const LEGACY_PURCHASE_DRAFTS_PATH = '/admin/purchase-order/drafts';
 const PURCHASE_ORDERS_PATH = '/admin/purchase-order';
 const ZERO_MONEY = new Prisma.Decimal(0);
 
@@ -62,7 +74,7 @@ function parsePositiveInt(value: string, label: string) {
 function parsePositiveMoney(value: string, label: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`${label} must be a positive amount.`);
+    throw new Error(`${label} must be greater than 0.`);
   }
   return new Prisma.Decimal(parsed.toFixed(2));
 }
@@ -246,31 +258,72 @@ function requireRecordedLines(lines: PurchaseOrderLineInput[]) {
 }
 
 async function requirePurchaseDraftWriteAccess() {
-  await requireAdminPermission(PURCHASE_ORDER_DRAFT_PATH, 'products.write');
+  return requireAdminPermission(PURCHASE_ORDER_DRAFT_PATH, 'products.write');
 }
 
 async function requirePurchaseOwnerAccess() {
-  await requirePurchaseDraftWriteAccess();
+  const session = await requirePurchaseDraftWriteAccess();
   await requireAdminRole(PURCHASE_ORDER_DRAFT_PATH, ['admin']);
+  return session;
+}
+
+export async function addPurchaseOrderDraftNote(
+  formData: FormData,
+): Promise<PurchaseOrderState> {
+  const adminSession = await requirePurchaseOwnerAccess();
+  return addPurchaseOrderNote(formData, {
+    failureMessage: 'Failed to add PO Draft note.',
+    mode: 'draft',
+    revalidatePaths: [PURCHASE_ORDER_DRAFT_PATH],
+    session: adminSession,
+    successMessage: 'PO Draft note added.',
+  });
+}
+
+export async function updatePurchaseOrderDraftNote(
+  formData: FormData,
+): Promise<PurchaseOrderState> {
+  const adminSession = await requirePurchaseOwnerAccess();
+  return updatePurchaseOrderNote(formData, {
+    failureMessage: 'Failed to update PO Draft note.',
+    mode: 'draft',
+    revalidatePaths: [PURCHASE_ORDER_DRAFT_PATH],
+    session: adminSession,
+    successMessage: 'PO Draft note updated.',
+  });
+}
+
+export async function deletePurchaseOrderDraftNote(
+  formData: FormData,
+): Promise<PurchaseOrderState> {
+  const adminSession = await requirePurchaseOwnerAccess();
+  return deletePurchaseOrderNote(formData, {
+    failureMessage: 'Failed to delete PO Draft note.',
+    mode: 'draft',
+    revalidatePaths: [PURCHASE_ORDER_DRAFT_PATH],
+    session: adminSession,
+    successMessage: 'PO Draft note deleted.',
+  });
 }
 
 export async function savePurchaseOrderDraft(
   formData: FormData,
 ): Promise<PurchaseOrderState> {
-  await requirePurchaseDraftWriteAccess();
+  const adminSession = await requirePurchaseDraftWriteAccess();
 
   try {
     const purchaseOrderId = getString(formData, 'purchaseOrderId');
     const supplierName = getString(formData, 'supplierName') || null;
     const referenceNo = getString(formData, 'referenceNo') || null;
     const purchaseDate = parsePurchaseDate(getString(formData, 'purchaseDate'));
-    const notes = getString(formData, 'notes') || null;
+    const notes = formData.has('notes') ? getString(formData, 'notes') || null : undefined;
     const lines = requireDraftLines(await parsePurchaseOrderLines(formData));
     const totals = calculateTotals(lines);
 
     let orderNumber = '';
     const draftId = await prisma.$transaction(async (tx) => {
       let savedDraftId = purchaseOrderId;
+      const isNewDraft = !purchaseOrderId;
       if (purchaseOrderId) {
         const existing = await tx.purchaseOrder.findUnique({
           select: { id: true, status: true },
@@ -285,7 +338,7 @@ export async function savePurchaseOrderDraft(
         });
         await tx.purchaseOrder.update({
           data: {
-            notes,
+            ...(notes !== undefined ? { notes } : {}),
             paidAmount: ZERO_MONEY,
             paymentMethod: null,
             paymentReference: null,
@@ -305,7 +358,7 @@ export async function savePurchaseOrderDraft(
         const order = await tx.purchaseOrder.create({
           data: {
             orderNumber,
-            notes,
+            notes: notes ?? null,
             paidAmount: ZERO_MONEY,
             paymentMethod: null,
             paymentReference: null,
@@ -320,6 +373,12 @@ export async function savePurchaseOrderDraft(
           select: { id: true },
         });
         savedDraftId = order.id;
+        await createPurchaseOrderEvent(tx, {
+          eventType: 'draft_created',
+          message: 'created the PO Draft',
+          purchaseOrderId: savedDraftId,
+          session: adminSession,
+        });
       }
 
       if (!savedDraftId) {
@@ -339,17 +398,25 @@ export async function savePurchaseOrderDraft(
         });
       }
 
+      if (!isNewDraft) {
+        await createPurchaseOrderEvent(tx, {
+          eventType: 'draft_updated',
+          message: 'updated the PO Draft',
+          purchaseOrderId: savedDraftId,
+          session: adminSession,
+        });
+      }
+
       return savedDraftId;
     });
 
     revalidatePath(PURCHASE_ORDER_DRAFT_PATH);
-    revalidatePath(LEGACY_PURCHASE_ORDERS_PATH);
-    revalidatePath(LEGACY_PURCHASE_DRAFTS_PATH);
     return {
       draftId,
       message: orderNumber
         ? `PO Draft ${orderNumber} saved.`
-        : 'PO Draft saved.',
+        : 'PO Draft updated.',
+      timeline: await getPurchaseOrderTimeline(draftId),
     };
   } catch (error) {
     return {
@@ -361,19 +428,54 @@ export async function savePurchaseOrderDraft(
   }
 }
 
-export async function submitPurchaseOrder(
-  _previousState: PurchaseOrderState,
+export async function deletePurchaseOrderDraft(
   formData: FormData,
 ): Promise<PurchaseOrderState> {
   await requirePurchaseOwnerAccess();
 
-  let submittedOrderId = '';
+  try {
+    const purchaseOrderId = getString(formData, 'purchaseOrderId');
+    if (!purchaseOrderId) throw new Error('PO Draft is required.');
+
+    const existing = await prisma.purchaseOrder.findUnique({
+      select: { id: true, status: true },
+      where: { id: purchaseOrderId },
+    });
+    if (!existing || !isPurchaseOrderDraft(existing.status)) {
+      throw new Error('This PO Draft is no longer available.');
+    }
+
+    await prisma.purchaseOrder.delete({
+      where: { id: existing.id },
+    });
+
+    revalidatePath(PURCHASE_ORDER_DRAFT_PATH);
+    return {
+      message: 'PO Draft deleted.',
+    };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to delete PO Draft.',
+    };
+  }
+}
+
+export async function submitPurchaseOrder(
+  _previousState: PurchaseOrderState,
+  formData: FormData,
+): Promise<PurchaseOrderState> {
+  const adminSession = await requirePurchaseOwnerAccess();
+
+  let submittedPurchaseOrderId = '';
   try {
     const purchaseOrderId = getString(formData, 'purchaseOrderId');
     const supplierName = getString(formData, 'supplierName') || null;
     const referenceNo = getString(formData, 'referenceNo') || null;
     const purchaseDate = parsePurchaseDate(getString(formData, 'purchaseDate'));
-    const notes = getString(formData, 'notes') || null;
+    const notes = formData.has('notes') ? getString(formData, 'notes') || null : undefined;
     const lines = requireRecordedLines(await parsePurchaseOrderLines(formData));
     const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
     const totalCost = lines.reduce(
@@ -381,7 +483,7 @@ export async function submitPurchaseOrder(
       new Prisma.Decimal(0),
     );
 
-    submittedOrderId = await prisma.$transaction(async (tx) => {
+    submittedPurchaseOrderId = await prisma.$transaction(async (tx) => {
       let orderId = purchaseOrderId;
       if (orderId) {
         const existing = await tx.purchaseOrder.findUnique({
@@ -399,7 +501,7 @@ export async function submitPurchaseOrder(
         await tx.purchaseOrder.update({
           data: {
             orderNumber: orderNumber,
-            notes,
+            ...(notes !== undefined ? { notes } : {}),
             paidAmount: ZERO_MONEY,
             paymentMethod: null,
             paymentReference: null,
@@ -414,12 +516,18 @@ export async function submitPurchaseOrder(
           },
           where: { id: orderId },
         });
+        await createPurchaseOrderEvent(tx, {
+          eventType: 'po_submitted',
+          message: 'submitted the PO Draft to PO',
+          purchaseOrderId: orderId,
+          session: adminSession,
+        });
       } else {
         const orderNumber = await createUniqueOrderNumber(tx);
         const order = await tx.purchaseOrder.create({
           data: {
             orderNumber: orderNumber,
-            notes,
+            notes: notes ?? null,
             paidAmount: ZERO_MONEY,
             paymentMethod: null,
             paymentReference: null,
@@ -435,6 +543,18 @@ export async function submitPurchaseOrder(
           select: { id: true },
         });
         orderId = order.id;
+        await createPurchaseOrderEvent(tx, {
+          eventType: 'draft_created',
+          message: 'created the PO Draft',
+          purchaseOrderId: orderId,
+          session: adminSession,
+        });
+        await createPurchaseOrderEvent(tx, {
+          eventType: 'po_submitted',
+          message: 'submitted the PO Draft to PO',
+          purchaseOrderId: orderId,
+          session: adminSession,
+        });
       }
 
       for (const line of lines) {
@@ -454,8 +574,6 @@ export async function submitPurchaseOrder(
     });
 
     revalidatePath(PURCHASE_ORDER_DRAFT_PATH);
-    revalidatePath(LEGACY_PURCHASE_ORDERS_PATH);
-    revalidatePath(LEGACY_PURCHASE_DRAFTS_PATH);
     revalidatePath(PURCHASE_ORDERS_PATH);
   } catch (error) {
     return {
@@ -466,5 +584,5 @@ export async function submitPurchaseOrder(
     };
   }
 
-  redirect(`/admin/purchase-order/records/${submittedOrderId}`);
+  redirect(`/admin/purchase-order/purchase-orders/${submittedPurchaseOrderId}`);
 }

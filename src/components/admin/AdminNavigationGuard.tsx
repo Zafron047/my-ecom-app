@@ -17,6 +17,7 @@ type GuardResult = {
 };
 
 type NavigationGuard = {
+  cancelLabel?: string;
   message?: string;
   onSave: () => Promise<GuardResult>;
   saveLabel?: string;
@@ -158,16 +159,34 @@ export function AdminNavigationGuardProvider({
     proceed();
   }
 
+  function cancelPendingNavigation() {
+    if (!pendingNavigation || action) return;
+
+    const proceed = pendingNavigation.proceed;
+    setPendingNavigation(null);
+    setAction(null);
+    setActionError('');
+    proceed();
+  }
+
   return (
     <AdminNavigationGuardContext.Provider value={value}>
       {children}
 
       {pendingNavigation ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 px-4">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 px-4"
+          onClick={() => {
+            if (action) return;
+            setPendingNavigation(null);
+            setActionError('');
+          }}
+        >
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-navigation-guard-title"
+            onClick={(event) => event.stopPropagation()}
             className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
           >
             <h2
@@ -196,6 +215,14 @@ export function AdminNavigationGuardProvider({
                 className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {pendingNavigation.guard.stayLabel ?? 'Stay'}
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(action)}
+                onClick={cancelPendingNavigation}
+                className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {pendingNavigation.guard.cancelLabel ?? 'Cancel'}
               </button>
               <button
                 type="button"

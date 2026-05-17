@@ -109,6 +109,8 @@ model AdminUser {
   sessions                   AdminSession[]
   auditLogs                  AuditLog[]                @relation("AuditLogActorAdmin")
   orderNotes                 OrderNote[]
+  purchaseOrderEvents        PurchaseOrderEvent[]
+  purchaseOrderNotes         PurchaseOrderNote[]
   passwordResetTokens        AdminPasswordResetToken[] @relation("AdminPasswordResetTarget")
   createdPasswordResetTokens AdminPasswordResetToken[] @relation("AdminPasswordResetCreator")
 }
@@ -613,10 +615,42 @@ model PurchaseOrder {
   updatedAt        DateTime  @updatedAt
 
   lines PurchaseOrderLine[]
+  lifecycleEvents PurchaseOrderEvent[]
+  noteHistory PurchaseOrderNote[]
 
   @@index([purchaseDate])
   @@index([status, createdAt])
   @@index([paymentStatus, createdAt])
+}
+
+model PurchaseOrderEvent {
+  id               String        @id @default(cuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  eventType        String
+  message          String
+  createdByAdminId String?
+  createdByAdmin   AdminUser?    @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  createdByName    String
+  createdAt        DateTime      @default(now())
+
+  @@index([purchaseOrderId, createdAt])
+  @@index([createdByAdminId])
+  @@index([eventType, createdAt])
+}
+
+model PurchaseOrderNote {
+  id               String        @id @default(cuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  note             String
+  createdByAdminId String?
+  createdByAdmin   AdminUser?    @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  createdByName    String
+  createdAt        DateTime      @default(now())
+
+  @@index([purchaseOrderId, createdAt])
+  @@index([createdByAdminId])
 }
 
 model PurchaseOrderLine {

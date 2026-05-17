@@ -1,12 +1,19 @@
 import PurchaseOrderForm from '@/components/admin/PurchaseOrderForm';
+import PurchaseOrderDraftDeleteButton from '@/components/admin/PurchaseOrderDraftDeleteButton';
+import AdminTimelinePanel from '@/components/admin/AdminTimelinePanel';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import { PURCHASE_ORDER_STATUS } from '@/lib/purchase-order-status';
 import PurchaseOrderListPage from '../_components/PurchaseOrderListPage';
 import {
+  addPurchaseOrderDraftNote,
+  deletePurchaseOrderDraftNote,
+  deletePurchaseOrderDraft,
   savePurchaseOrderDraft,
   submitPurchaseOrder,
+  updatePurchaseOrderDraftNote,
 } from './actions';
+import { getPurchaseOrderTimeline } from '../_lib/purchase-order-timeline';
 
 function formatMoney(value: { toNumber: () => number } | null | undefined) {
   if (!value) return null;
@@ -126,7 +133,6 @@ export default async function AdminPurchaseOrderDraftPage({
                 variantId: true,
               },
             },
-            notes: true,
             purchaseDate: true,
             referenceNo: true,
             supplierName: true,
@@ -139,15 +145,31 @@ export default async function AdminPurchaseOrderDraftPage({
       : Promise.resolve(null),
   ]);
 
+  const timeline = initialDraft
+    ? await getPurchaseOrderTimeline(initialDraft.id)
+    : [];
+
   return (
     <section className="space-y-5">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-xl font-semibold text-slate-900">
-          {selectedDraftId ? 'Edit PO Draft' : 'New PO Draft'}
-        </h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Build the product list here, then submit it to a PO for payment and receiving.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-semibold text-slate-900">
+                {selectedDraftId ? 'Edit PO Draft' : 'New PO Draft'}
+              </h2>
+              {initialDraft ? (
+                <PurchaseOrderDraftDeleteButton
+                  action={deletePurchaseOrderDraft}
+                  draftId={initialDraft.id}
+                />
+              ) : null}
+            </div>
+            <p className="mt-1 text-sm text-slate-600">
+              Build the product list here, then submit it to a PO for payment and receiving.
+            </p>
+          </div>
+        </div>
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -164,7 +186,6 @@ export default async function AdminPurchaseOrderDraftPage({
                     unitCost: formatDecimalInput(line.unitCost),
                     variantId: line.variantId,
                   })),
-                  notes: initialDraft.notes ?? '',
                   purchaseDate: formatDateInput(initialDraft.purchaseDate),
                   referenceNo: initialDraft.referenceNo ?? '',
                   supplierName: initialDraft.supplierName ?? '',
@@ -187,6 +208,17 @@ export default async function AdminPurchaseOrderDraftPage({
           }))}
         />
       </section>
+      <AdminTimelinePanel
+        addNoteAction={addPurchaseOrderDraftNote}
+        deleteNoteAction={deletePurchaseOrderDraftNote}
+        disabledMessage="Save this PO Draft before adding notes."
+        editNoteAction={updatePurchaseOrderDraftNote}
+        noteAddedMessage="PO Draft note added."
+        notePlaceholder="Add a new PO note"
+        noteUpdatedMessage="PO Draft note updated."
+        recordId={initialDraft?.id ?? null}
+        timeline={timeline}
+      />
     </section>
   );
 }

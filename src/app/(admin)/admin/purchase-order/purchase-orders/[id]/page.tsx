@@ -4,11 +4,15 @@ import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import { PURCHASE_ORDER_STATUS } from '@/lib/purchase-order-status';
 import {
+  addPurchaseRecordNote,
   cancelPurchaseRecord,
+  deletePurchaseRecordNote,
   receivePurchaseRecord,
   updatePurchaseRecordDetails,
+  updatePurchaseRecordNote,
   updatePurchaseRecordPayment,
 } from './actions';
+import { getPurchaseOrderTimeline } from '../../_lib/purchase-order-timeline';
 
 type PurchaseRecordPageProps = {
   params: Promise<{ id: string }>;
@@ -33,10 +37,10 @@ function getPurchaseOrderNumber(orderNumber: string) {
   return orderNumber.replace(/^PE-/, 'PO-');
 }
 
-export default async function AdminPurchaseOrderRecordPage({
+export default async function AdminPurchaseOrderDetailsPage({
   params,
 }: PurchaseRecordPageProps) {
-  await requireAdminPermission('/admin/purchase-order/records', 'products.read');
+  await requireAdminPermission('/admin/purchase-order/purchase-orders', 'products.read');
 
   const { id } = await params;
   const record = await prisma.purchaseOrder.findFirst({
@@ -122,10 +126,15 @@ export default async function AdminPurchaseOrderRecordPage({
 
   if (!record) notFound();
 
+  const timeline = await getPurchaseOrderTimeline(record.id);
+
   return (
     <PurchaseRecordForm
       key={record.updatedAt.toISOString()}
+      noteAction={addPurchaseRecordNote}
       cancelAction={cancelPurchaseRecord}
+      deleteNoteAction={deletePurchaseRecordNote}
+      editNoteAction={updatePurchaseRecordNote}
       payAction={updatePurchaseRecordPayment}
       receiveAction={receivePurchaseRecord}
       updateDetailsAction={updatePurchaseRecordDetails}
@@ -148,6 +157,7 @@ export default async function AdminPurchaseOrderRecordPage({
           variantLabel: line.variant ? formatVariantLabel(line.variant) : 'Select variant',
         })),
         notes: record.notes ?? '',
+        timeline,
         orderNumber: getPurchaseOrderNumber(record.orderNumber),
         paidAmount: decimalToNumber(record.paidAmount),
         paymentMethod: record.paymentMethod ?? '',
