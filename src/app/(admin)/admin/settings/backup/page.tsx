@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { requireAdminRole } from '@/lib/admin-session';
 import BackupRestoreForm from '@/components/admin/BackupRestoreForm';
 import CatalogQaForm from '@/components/admin/CatalogQaForm';
+import InventoryBatchRestoreForm from '@/components/admin/InventoryBatchRestoreForm';
+import StockBatchRepairForm from '@/components/admin/StockBatchRepairForm';
 
 export default async function AdminBackupSettingsPage() {
   await requireAdminRole('/admin/settings/backup', ['admin']);
@@ -30,12 +32,45 @@ export default async function AdminBackupSettingsPage() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <h3 className="text-base font-semibold text-slate-900">Inventory Batch Snapshot</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          Exports one row per inventory batch with PO number, batch number, costs,
+          and remaining stock.
+        </p>
+        <Link
+          href="/api/admin/inventory-batches/export"
+          className="mt-3 inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+        >
+          Download Inventory Batch CSV
+        </Link>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
         <h3 className="text-base font-semibold text-slate-900">Restore from CSV</h3>
         <p className="mt-1 text-sm text-slate-600">
           Upload full catalog CSV and restore parent products plus variants by
-          variant SKU.
+          variant SKU. Restored stock is written as opening PO batches when the
+          variant does not already have batch history.
         </p>
         <BackupRestoreForm />
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <h3 className="text-base font-semibold text-slate-900">Restore Inventory Batches</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          Restore inventory batch CSV after restoring the product catalog. Existing
+          batch numbers are skipped when they match and rejected when values differ.
+        </p>
+        <InventoryBatchRestoreForm />
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <h3 className="text-base font-semibold text-slate-900">Stock Batch Repair</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          After a CSV restore, check for variants that have stock but no batch
+          rows, then create repair PO batches for those units.
+        </p>
+        <StockBatchRepairForm />
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">

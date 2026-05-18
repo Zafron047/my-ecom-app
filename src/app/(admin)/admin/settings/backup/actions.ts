@@ -1,7 +1,12 @@
 'use server';
 
-import { ProductStatus } from '@prisma/client';
+import { revalidatePath } from 'next/cache';
+import { Prisma, ProductStatus } from '@prisma/client';
 import { requireAdminRole } from '@/lib/admin-session';
+import {
+  createOpeningStockBatches,
+  type OpeningStockBatchInput,
+} from '@/lib/opening-stock-batches';
 import { prisma } from '@/lib/prisma';
 
 type RestoreMode = 'dry-run' | 'apply';
@@ -10,6 +15,8 @@ export type BackupRestoreState = {
   error: string | null;
   message: string | null;
   processed: number;
+  stockBatchesCreated: number;
+  stockBatchesToCreate: number;
   toCreate: number;
   toUpdate: number;
   errors: string[];
@@ -21,6 +28,8 @@ const INITIAL_STATE: BackupRestoreState = {
   error: null,
   message: null,
   processed: 0,
+  stockBatchesCreated: 0,
+  stockBatchesToCreate: 0,
   toCreate: 0,
   toUpdate: 0,
   errors: [],
@@ -61,6 +70,55 @@ export type CatalogQaState = {
   totalIssues: number;
   issueCounts: Record<CatalogQaIssue['code'], number>;
   issues: CatalogQaIssue[];
+};
+
+export type InventoryBatchRestoreState = {
+  error: string | null;
+  message: string | null;
+  processed: number;
+  toCreate: number;
+  skipped: number;
+  errors: string[];
+  errorCsv: string | null;
+  preview: InventoryBatchRestorePreviewItem[];
+};
+
+const INVENTORY_BATCH_RESTORE_INITIAL_STATE: InventoryBatchRestoreState = {
+  error: null,
+  message: null,
+  processed: 0,
+  toCreate: 0,
+  skipped: 0,
+  errors: [],
+  errorCsv: null,
+  preview: [],
+};
+
+export type InventoryBatchRestorePreviewItem = {
+  row: number;
+  batchNumber: string;
+  action: 'create' | 'skip' | 'no-change';
+  changes: Array<{
+    field: string;
+    from: string;
+    to: string;
+  }>;
+};
+
+export type StockBatchRepairState = {
+  error: string | null;
+  message: string | null;
+  stockBatchesCreated: number;
+  stockBatchesToCreate: number;
+  totalQuantity: number;
+};
+
+const STOCK_BATCH_REPAIR_INITIAL_STATE: StockBatchRepairState = {
+  error: null,
+  message: null,
+  stockBatchesCreated: 0,
+  stockBatchesToCreate: 0,
+  totalQuantity: 0,
 };
 
 type ParsedRow = Record<string, string>;
@@ -176,6 +234,35 @@ function parseDecimal(value: string) {
   return parsed.toFixed(2);
 }
 
+function parseRequiredDecimal(value: string) {
+  const parsed = parseDecimal(value);
+  if (parsed === null) return null;
+  return new Prisma.Decimal(parsed);
+}
+
+function parseRequiredPositiveInt(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function parseRequiredNonNegativeInt(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isInteger(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
+function parseBackupDate(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return new Date();
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function parseStock(value: string) {
   const normalized = value.trim();
   if (!normalized) return 0;
@@ -232,10 +319,14 @@ function normalizeCurrency(
 function normalizeCategories(value: string) {
   return value
     .split('|')
-    .map((item) => item.trim())
+    .map((item) => normalizeCategoryName(item))
     .filter(Boolean)
     .sort()
     .join(' | ');
+}
+
+function normalizeCategoryName(value: string) {
+  return normalizeComparableText(value).replace(/"/g, '');
 }
 
 function asDisplayValue(value: string | null | undefined) {
@@ -290,6 +381,598 @@ function isProbablyHttpUrl(value: string) {
   }
 }
 
+function buildErrorCsv(errorRows: Array<{ row: number; error: string }>) {
+  return [
+    'row,error',
+    ...errorRows.map((item) =>
+      `${item.row},"${item.error.replace(/"/g, '""')}"`,
+    ),
+  ].join('\n');
+}
+
+function isBatchManagedVariant(
+  variant:
+    | {
+        _count?: {
+          inventoryAllocations: number;
+          inventoryBatches: number;
+        };
+      }
+    | null,
+) {
+  return Boolean(
+    variant &&
+      ((variant._count?.inventoryBatches ?? 0) > 0 ||
+        (variant._count?.inventoryAllocations ?? 0) > 0),
+  );
+}
+
+function stockManagementChange(
+  existingVariant: {
+    _count?: {
+      inventoryAllocations: number;
+      inventoryBatches: number;
+    };
+    stockQuantity: number;
+  } | null,
+  targetStock: number,
+) {
+  if (targetStock <= 0) return null;
+  if (!existingVariant) return 'create opening stock batch';
+  if (!isBatchManagedVariant(existingVariant)) {
+    return 'create opening stock batch';
+  }
+  if (existingVariant.stockQuantity === targetStock) {
+    return 'already batch-managed';
+  }
+  return 'stock managed by PO batches';
+}
+
+async function runStockBatchRepair(mode: RestoreMode) {
+  const variants = await prisma.productVariant.findMany({
+    orderBy: [{ product: { name: 'asc' } }, { sortOrder: 'asc' }],
+    select: {
+      _count: {
+        select: {
+          inventoryAllocations: true,
+          inventoryBatches: true,
+        },
+      },
+      costPrice: true,
+      id: true,
+      productId: true,
+      sku: true,
+      stockQuantity: true,
+    },
+    where: {
+      stockQuantity: { gt: 0 },
+    },
+  });
+
+  const repairRows: OpeningStockBatchInput[] = variants
+    .filter((variant) => !isBatchManagedVariant(variant))
+    .map((variant) => ({
+      productId: variant.productId,
+      quantity: variant.stockQuantity,
+      sku: variant.sku,
+      unitCost: variant.costPrice,
+      variantId: variant.id,
+    }));
+
+  const totalQuantity = repairRows.reduce(
+    (sum, variant) => sum + variant.quantity,
+    0,
+  );
+
+  if (mode !== 'apply' || repairRows.length === 0) {
+    return {
+      batchCount: 0,
+      orderNumber: null,
+      stockBatchesToCreate: repairRows.length,
+      totalQuantity,
+    };
+  }
+
+  const result = await prisma.$transaction(
+    (tx) =>
+      createOpeningStockBatches(tx, {
+        note: 'Stock batch repair for positive variant stock without inventory batches.',
+        orderNumberPrefix: 'PO-REPAIR',
+        variants: repairRows,
+      }),
+    { timeout: 60_000 },
+  );
+
+  return {
+    ...result,
+    stockBatchesToCreate: repairRows.length,
+  };
+}
+
+export async function repairMissingStockBatchesAction(
+  _prevState: StockBatchRepairState,
+  formData: FormData,
+): Promise<StockBatchRepairState> {
+  await requireAdminRole('/admin/settings/backup', ['admin']);
+
+  const modeRaw = formData.get('mode');
+  const mode: RestoreMode = modeRaw === 'apply' ? 'apply' : 'dry-run';
+
+  try {
+    const result = await runStockBatchRepair(mode);
+
+    if (mode === 'apply') {
+      revalidatePath('/admin/settings/backup');
+      revalidatePath('/admin/products/stock');
+      revalidatePath('/admin/purchase-order');
+    }
+
+    return {
+      error: null,
+      message:
+        mode === 'apply'
+          ? result.batchCount > 0
+            ? `Missing stock batches created in ${result.orderNumber}.`
+            : 'No missing stock batches found.'
+          : result.stockBatchesToCreate > 0
+            ? `${result.stockBatchesToCreate} variant(s) have stock without batches.`
+            : 'No missing stock batches found.',
+      stockBatchesCreated: result.batchCount,
+      stockBatchesToCreate: result.stockBatchesToCreate,
+      totalQuantity: result.totalQuantity,
+    };
+  } catch (error) {
+    return {
+      ...STOCK_BATCH_REPAIR_INITIAL_STATE,
+      error:
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to repair missing stock batches.',
+    };
+  }
+}
+
+type ParsedInventoryBatchRow = {
+  batchNumber: string;
+  purchaseDate: Date;
+  purchaseOrderNumber: string;
+  receivedAt: Date;
+  receivedQuantity: number;
+  remainingQuantity: number;
+  rowNumber: number;
+  status: string;
+  unitCost: Prisma.Decimal;
+  variantId: string;
+  variantSku: string;
+};
+
+function normalizeBatchStatus(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'depleted') return 'depleted';
+  if (normalized === 'reserved') return 'reserved';
+  return 'available';
+}
+
+function fallbackRestoreOrderNumber() {
+  const datePart = new Date().toISOString().slice(0, 10).replace(/\D/g, '');
+  return `PO-BATCH-RESTORE-${datePart}`;
+}
+
+async function syncVariantStockFromBatches(
+  tx: Prisma.TransactionClient,
+  variantIds: string[],
+) {
+  const uniqueVariantIds = Array.from(new Set(variantIds));
+  if (uniqueVariantIds.length === 0) return;
+
+  const sums = await tx.inventoryBatch.groupBy({
+    by: ['variantId'],
+    where: {
+      variantId: { in: uniqueVariantIds },
+    },
+    _sum: {
+      remainingQuantity: true,
+    },
+  });
+  const stockByVariantId = new Map(
+    sums.map((row) => [row.variantId, row._sum.remainingQuantity ?? 0]),
+  );
+
+  for (const variantId of uniqueVariantIds) {
+    await tx.productVariant.update({
+      data: {
+        stockQuantity: stockByVariantId.get(variantId) ?? 0,
+      },
+      where: { id: variantId },
+    });
+  }
+}
+
+export async function restoreInventoryBatchesBackupAction(
+  _prevState: InventoryBatchRestoreState,
+  formData: FormData,
+): Promise<InventoryBatchRestoreState> {
+  await requireAdminRole('/admin/settings/backup', ['admin']);
+
+  const modeRaw = formData.get('mode');
+  const mode: RestoreMode = modeRaw === 'apply' ? 'apply' : 'dry-run';
+  const file = formData.get('inventoryBackupFile');
+
+  if (!(file instanceof File) || file.size === 0) {
+    return {
+      ...INVENTORY_BATCH_RESTORE_INITIAL_STATE,
+      error: 'Please select an inventory batch CSV file.',
+    };
+  }
+
+  const rows = parseCsv(await file.text());
+  if (rows.length === 0) {
+    return {
+      ...INVENTORY_BATCH_RESTORE_INITIAL_STATE,
+      error: 'CSV has no data rows.',
+    };
+  }
+
+  const errors: string[] = [];
+  const errorRows: Array<{ row: number; error: string }> = [];
+  const preview: InventoryBatchRestorePreviewItem[] = [];
+  const seenBatchNumbers = new Map<string, number>();
+  const uniqueBatchNumbers = new Set<string>();
+  const uniqueSkus = new Set<string>();
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const batchNumber = getField(row, ['batch_number', 'batch']).trim();
+    const sku = normalizeSku(getField(row, ['variant_sku', 'sku']));
+    if (batchNumber) uniqueBatchNumbers.add(batchNumber);
+    if (sku) uniqueSkus.add(sku);
+  }
+
+  const [variants, existingBatches] = await Promise.all([
+    uniqueSkus.size > 0
+      ? prisma.productVariant.findMany({
+          where: { sku: { in: Array.from(uniqueSkus) } },
+          select: {
+            id: true,
+            productId: true,
+            sku: true,
+          },
+        })
+      : Promise.resolve([]),
+    uniqueBatchNumbers.size > 0
+      ? prisma.inventoryBatch.findMany({
+          where: { batchNumber: { in: Array.from(uniqueBatchNumbers) } },
+          select: {
+            batchNumber: true,
+            receivedAt: true,
+            receivedQuantity: true,
+            remainingQuantity: true,
+            status: true,
+            unitCost: true,
+            variant: {
+              select: { sku: true },
+            },
+            purchaseOrderLine: {
+              select: {
+                purchaseOrder: {
+                  select: {
+                    orderNumber: true,
+                  },
+                },
+              },
+            },
+          },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const variantBySku = new Map(variants.map((variant) => [variant.sku, variant]));
+  const batchByNumber = new Map(
+    existingBatches.map((batch) => [batch.batchNumber, batch]),
+  );
+  const validRows: ParsedInventoryBatchRow[] = [];
+  let toCreate = 0;
+  let skipped = 0;
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const rowNumber = index + 2;
+    const batchNumber = getField(row, ['batch_number', 'batch']).trim();
+    const variantSku = normalizeSku(getField(row, ['variant_sku', 'sku']));
+    const purchaseOrderNumber =
+      getField(row, ['purchase_order_number', 'po_number', 'order_number']).trim() ||
+      fallbackRestoreOrderNumber();
+    const purchaseDate = parseBackupDate(getField(row, ['purchase_date']));
+    const receivedAt = parseBackupDate(getField(row, ['received_at']));
+    const receivedQuantity = parseRequiredPositiveInt(
+      getField(row, ['received_quantity', 'quantity']),
+    );
+    const remainingQuantity = parseRequiredNonNegativeInt(
+      getField(row, ['remaining_quantity']),
+    );
+    const unitCost = parseRequiredDecimal(getField(row, ['unit_cost', 'cost']));
+    const status = normalizeBatchStatus(getField(row, ['batch_status', 'status']));
+
+    if (!batchNumber) {
+      const msg = 'batch_number is required.';
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+    if (!variantSku) {
+      const msg = 'variant_sku is required.';
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+    const firstSeenRow = seenBatchNumbers.get(batchNumber);
+    if (typeof firstSeenRow === 'number') {
+      const msg = `duplicate batch_number. First seen at row ${firstSeenRow}.`;
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+    seenBatchNumbers.set(batchNumber, rowNumber);
+
+    const variant = variantBySku.get(variantSku);
+    if (!variant) {
+      const msg = `unknown variant_sku (${variantSku}). Restore catalog first.`;
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+    if (!purchaseDate || !receivedAt) {
+      const msg = 'purchase_date or received_at is invalid.';
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+    if (receivedQuantity === null) {
+      const msg = 'received_quantity must be a positive whole number.';
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+    if (remainingQuantity === null) {
+      const msg = 'remaining_quantity must be a non-negative whole number.';
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+    if (remainingQuantity > receivedQuantity) {
+      const msg = 'remaining_quantity cannot exceed received_quantity.';
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+    if (!unitCost) {
+      const msg = 'unit_cost must be a valid amount.';
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+
+    const existingBatch = batchByNumber.get(batchNumber) ?? null;
+    if (existingBatch) {
+      const comparisons: FieldComparison[] = [
+        {
+          field: 'purchase_order_number',
+          from: existingBatch.purchaseOrderLine.purchaseOrder.orderNumber,
+          to: purchaseOrderNumber,
+        },
+        {
+          field: 'variant_sku',
+          from: normalizeSku(existingBatch.variant.sku),
+          to: variantSku,
+        },
+        {
+          field: 'received_quantity',
+          from: String(existingBatch.receivedQuantity),
+          to: String(receivedQuantity),
+        },
+        {
+          field: 'remaining_quantity',
+          from: String(existingBatch.remainingQuantity),
+          to: String(remainingQuantity),
+        },
+        {
+          field: 'unit_cost',
+          from: normalizeCurrency(existingBatch.unitCost),
+          to: unitCost.toFixed(2),
+        },
+        {
+          field: 'batch_status',
+          from: existingBatch.status,
+          to: status,
+        },
+      ];
+      const changes = toChangedFields(comparisons);
+      if (changes.length > 0) {
+        const msg = `batch_number already exists with different values (${changes
+          .map((change) => change.field)
+          .join(', ')}).`;
+        errors.push(`Row ${rowNumber}: ${msg}`);
+        errorRows.push({ row: rowNumber, error: msg });
+        if (preview.length < 50) {
+          preview.push({
+            row: rowNumber,
+            batchNumber,
+            action: 'skip',
+            changes: changes.map((change) => ({
+              field: change.field,
+              from: asDisplayValue(change.from),
+              to: asDisplayValue(change.to),
+            })),
+          });
+        }
+        skipped += 1;
+        continue;
+      }
+
+      skipped += 1;
+      if (preview.length < 50) {
+        preview.push({
+          row: rowNumber,
+          batchNumber,
+          action: 'no-change',
+          changes: [],
+        });
+      }
+      continue;
+    }
+
+    toCreate += 1;
+    validRows.push({
+      batchNumber,
+      purchaseDate,
+      purchaseOrderNumber,
+      receivedAt,
+      receivedQuantity,
+      remainingQuantity,
+      rowNumber,
+      status,
+      unitCost,
+      variantId: variant.id,
+      variantSku,
+    });
+
+    if (preview.length < 50) {
+      preview.push({
+        row: rowNumber,
+        batchNumber,
+        action: 'create',
+        changes: [
+          {
+            field: 'inventory_batch',
+            from: '(new)',
+            to: `${variantSku} / ${remainingQuantity} remaining`,
+          },
+        ],
+      });
+    }
+  }
+
+  if (errors.length > 0) {
+    return {
+      error: null,
+      message:
+        mode === 'apply'
+          ? 'Inventory batch restore finished with errors. Fix rows and upload again.'
+          : 'Inventory batch dry run finished with validation errors.',
+      processed: rows.length,
+      toCreate,
+      skipped,
+      errors: errors.slice(0, 100),
+      errorCsv: buildErrorCsv(errorRows),
+      preview,
+    };
+  }
+
+  if (mode === 'apply' && validRows.length > 0) {
+    await prisma.$transaction(
+      async (tx) => {
+        const rowsByOrderNumber = new Map<string, ParsedInventoryBatchRow[]>();
+        for (const row of validRows) {
+          const rowsForOrder = rowsByOrderNumber.get(row.purchaseOrderNumber) ?? [];
+          rowsForOrder.push(row);
+          rowsByOrderNumber.set(row.purchaseOrderNumber, rowsForOrder);
+        }
+
+        for (const [orderNumber, orderRows] of rowsByOrderNumber) {
+          const totalQuantity = orderRows.reduce(
+            (sum, row) => sum + row.receivedQuantity,
+            0,
+          );
+          const totalCost = orderRows.reduce(
+            (sum, row) => sum.add(row.unitCost.mul(row.receivedQuantity)),
+            new Prisma.Decimal(0),
+          );
+          const purchaseDate = orderRows[0]?.purchaseDate ?? new Date();
+          const receivedAt = orderRows.reduce(
+            (latest, row) =>
+              row.receivedAt.getTime() > latest.getTime() ? row.receivedAt : latest,
+            orderRows[0]?.receivedAt ?? new Date(),
+          );
+          const purchaseOrder = await tx.purchaseOrder.upsert({
+            where: { orderNumber },
+            create: {
+              notes: 'Inventory batches restored from backup CSV.',
+              orderNumber,
+              paidAmount: new Prisma.Decimal(0),
+              paymentStatus: 'due',
+              purchaseDate,
+              receivedAt,
+              status: 'received',
+              supplierName: 'Inventory batch restore',
+              totalCost,
+              totalQuantity,
+            },
+            update: {
+              totalCost: { increment: totalCost },
+              totalQuantity: { increment: totalQuantity },
+            },
+            select: { id: true },
+          });
+
+          for (const row of orderRows) {
+            const line = await tx.purchaseOrderLine.create({
+              data: {
+                batchNumber: row.batchNumber,
+                lineTotal: row.unitCost.mul(row.receivedQuantity),
+                productId:
+                  variantBySku.get(row.variantSku)?.productId ??
+                  undefined,
+                purchaseOrderId: purchaseOrder.id,
+                quantity: row.receivedQuantity,
+                unitCost: row.unitCost,
+                variantId: row.variantId,
+              },
+              select: { id: true },
+            });
+
+            await tx.inventoryBatch.create({
+              data: {
+                batchNumber: row.batchNumber,
+                purchaseOrderLineId: line.id,
+                receivedAt: row.receivedAt,
+                receivedQuantity: row.receivedQuantity,
+                remainingQuantity: row.remainingQuantity,
+                status: row.status,
+                unitCost: row.unitCost,
+                variantId: row.variantId,
+              },
+            });
+          }
+        }
+
+        await syncVariantStockFromBatches(
+          tx,
+          validRows.map((row) => row.variantId),
+        );
+      },
+      { timeout: 60_000 },
+    );
+
+    revalidatePath('/admin/settings/backup');
+    revalidatePath('/admin/products/stock');
+    revalidatePath('/admin/purchase-order');
+  }
+
+  return {
+    error: null,
+    message:
+      mode === 'apply'
+        ? 'Inventory batch restore applied successfully.'
+        : 'Inventory batch dry run successful. No validation errors found.',
+    processed: rows.length,
+    toCreate,
+    skipped,
+    errors: [],
+    errorCsv: null,
+    preview,
+  };
+}
+
 export async function restoreProductsBackupAction(
   _prevState: BackupRestoreState,
   formData: FormData,
@@ -320,6 +1003,9 @@ export async function restoreProductsBackupAction(
   const errorRows: Array<{ row: number; error: string }> = [];
   let toCreate = 0;
   let toUpdate = 0;
+  let stockBatchesCreated = 0;
+  let stockBatchesToCreate = 0;
+  const openingStockRows: OpeningStockBatchInput[] = [];
   const normalizedSkuRows = new Map<string, number>();
   const touchedProductIds = new Set<string>();
   const previewTouchedProductKeys = new Set<string>();
@@ -352,6 +1038,12 @@ export async function restoreProductsBackupAction(
       ? prisma.productVariant.findMany({
           where: { sku: { in: Array.from(uniqueSkus) } },
           select: {
+            _count: {
+              select: {
+                inventoryAllocations: true,
+                inventoryBatches: true,
+              },
+            },
             id: true,
             sku: true,
             productId: true,
@@ -396,14 +1088,33 @@ export async function restoreProductsBackupAction(
       : Promise.resolve([]),
     uniqueCategoryNames.size > 0
       ? prisma.category.findMany({
-          where: { name: { in: Array.from(uniqueCategoryNames) } },
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
     uniqueRequestedSlugs.size > 0
       ? prisma.product.findMany({
           where: { slug: { in: Array.from(uniqueRequestedSlugs) } },
-          select: { id: true, slug: true },
+          select: {
+            brand: { select: { name: true } },
+            categories: {
+              select: {
+                category: { select: { name: true } },
+              },
+            },
+            description: true,
+            id: true,
+            images: {
+              take: 1,
+              orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+              select: { storagePath: true },
+            },
+            name: true,
+            seoDescription: true,
+            seoTitle: true,
+            shortDescription: true,
+            slug: true,
+            status: true,
+          },
         })
       : Promise.resolve([]),
   ]);
@@ -411,7 +1122,14 @@ export async function restoreProductsBackupAction(
   const existingVariantBySku = new Map(existingVariants.map((variant) => [variant.sku, variant]));
   const brandIdByName = new Map(existingBrands.map((brand) => [brand.name, brand.id]));
   const categoryByName = new Map(existingCategories.map((category) => [category.name, category]));
+  const categoryByNormalizedName = new Map(
+    existingCategories.map((category) => [
+      normalizeCategoryName(category.name),
+      category,
+    ]),
+  );
   const productIdBySlug = new Map(productsBySlug.map((product) => [product.slug, product.id]));
+  const productBySlug = new Map(productsBySlug.map((product) => [product.slug, product]));
   const resolvedSlugCache = new Map<string, string>();
 
   for (let i = 0; i < rows.length; i += 1) {
@@ -474,21 +1192,6 @@ export async function restoreProductsBackupAction(
       errorRows.push({ row: rowNumber, error: msg });
       continue;
     }
-    if (!variantSku) {
-      const msg = 'variant_sku is required.';
-      errors.push(`Row ${rowNumber}: ${msg}`);
-      errorRows.push({ row: rowNumber, error: msg });
-      continue;
-    }
-
-    const firstSeenRow = normalizedSkuRows.get(variantSku);
-    if (typeof firstSeenRow === 'number') {
-      const msg = `duplicate variant_sku after normalization. First seen at row ${firstSeenRow}.`;
-      errors.push(`Row ${rowNumber}: ${msg}`);
-      errorRows.push({ row: rowNumber, error: msg });
-      continue;
-    }
-    normalizedSkuRows.set(variantSku, rowNumber);
 
     const parsedVariantPriceInput = variantPriceRaw.trim();
     if (parsedVariantPriceInput.length > 0 && parseDecimal(parsedVariantPriceInput) === null) {
@@ -513,8 +1216,219 @@ export async function restoreProductsBackupAction(
       errorRows.push({ row: rowNumber, error: msg });
       continue;
     }
+    const categoryNames = productCategoriesRaw
+      .split('|')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const hasVariantData =
+      Boolean(variantSku) ||
+      Boolean(variantColor) ||
+      Boolean(variantSize) ||
+      parsedVariantPriceInput.length > 0 ||
+      variantCompareAtRaw.trim().length > 0 ||
+      variantCostRaw.trim().length > 0 ||
+      getField(row, ['variant_stock_quantity', 'stock']).trim().length > 0 ||
+      getField(row, ['variant_reorder_level', 'reorder_level']).trim().length > 0 ||
+      getField(row, ['variant_is_active', 'is_active']).trim().length > 0;
+
+    if (!variantSku && !hasVariantData) {
+      const requestedSlug = slugify(productSlugRaw || productTitle);
+      const existingProduct = productBySlug.get(requestedSlug) ?? null;
+      const targetCategories = normalizeCategories(productCategoriesRaw);
+
+      if (mode === 'dry-run' && preview.length < 50) {
+        const changes: BackupRestorePreviewItem['changes'] = [];
+        if (!existingProduct) {
+          changes.push({ field: 'product_title', from: '(new)', to: productTitle });
+          changes.push({ field: 'product_slug', from: '(new)', to: requestedSlug });
+        } else {
+          const currentCategories = normalizeCategories(
+            existingProduct.categories
+              .map((item) => item.category.name)
+              .join(' | '),
+          );
+          const currentPrimaryImage = normalizeText(
+            existingProduct.images[0]?.storagePath,
+          );
+          const comparisons: FieldComparison[] = [
+            {
+              field: 'product_title',
+              from: normalizeText(existingProduct.name),
+              to: productTitle,
+            },
+            {
+              field: 'product_slug',
+              from: normalizeText(existingProduct.slug),
+              to: requestedSlug,
+            },
+            {
+              field: 'product_status',
+              from: existingProduct.status,
+              to: parseStatus(productStatusRaw),
+            },
+            {
+              field: 'product_brand',
+              from: normalizeText(existingProduct.brand?.name),
+              to: productBrandRaw,
+            },
+            {
+              field: 'product_categories',
+              from: currentCategories,
+              to: targetCategories,
+            },
+            {
+              field: 'product_image_url',
+              from: currentPrimaryImage,
+              to: normalizeText(productImageUrl),
+            },
+            {
+              field: 'product_short_description',
+              from: normalizeComparableText(existingProduct.shortDescription),
+              to: normalizeComparableText(productShortDescription),
+            },
+            {
+              field: 'product_description',
+              from: normalizeComparableText(existingProduct.description),
+              to: normalizeComparableText(productDescription),
+            },
+            {
+              field: 'product_seo_title',
+              from: normalizeComparableText(existingProduct.seoTitle),
+              to: normalizeComparableText(productSeoTitle),
+            },
+            {
+              field: 'product_seo_description',
+              from: normalizeComparableText(existingProduct.seoDescription),
+              to: normalizeComparableText(productSeoDescription),
+            },
+          ];
+          changes.push(...toChangedFields(comparisons).map((comparison) => ({
+            field: comparison.field,
+            from: asDisplayValue(comparison.from),
+            to: asDisplayValue(comparison.to),
+          })));
+        }
+
+        const previewAction: BackupRestorePreviewItem['action'] = !existingProduct
+          ? 'create'
+          : changes.length > 0
+            ? 'update'
+            : 'no-change';
+        preview.push({
+          row: rowNumber,
+          sku: requestedSlug || productTitle,
+          action: previewAction,
+          changes,
+        });
+        if (previewAction === 'create') toCreate += 1;
+        if (previewAction === 'update') toUpdate += 1;
+      }
+
+      if (mode !== 'apply') continue;
+
+      const categories = categoryNames
+        .map((name) => categoryByName.get(name) ?? categoryByNormalizedName.get(normalizeCategoryName(name)))
+        .filter((item): item is { id: string; name: string } => Boolean(item));
+      const missingCategories = categoryNames.filter(
+        (name) => !categoryByName.has(name) && !categoryByNormalizedName.has(normalizeCategoryName(name)),
+      );
+      if (missingCategories.length > 0) {
+        const msg = `unknown categories (${missingCategories.join(', ')}).`;
+        errors.push(`Row ${rowNumber}: ${msg}`);
+        errorRows.push({ row: rowNumber, error: msg });
+        continue;
+      }
+
+      const brandId = productBrandRaw ? (brandIdByName.get(productBrandRaw) ?? null) : null;
+      if (productBrandRaw && !brandId) {
+        const msg = `unknown brand (${productBrandRaw}).`;
+        errors.push(`Row ${rowNumber}: ${msg}`);
+        errorRows.push({ row: rowNumber, error: msg });
+        continue;
+      }
+
+      let productId = existingProduct?.id ?? null;
+      const finalSlug = await ensureUniqueSlug(requestedSlug, productId ?? undefined);
+      const productData = {
+        name: productTitle,
+        slug: finalSlug,
+        status: parseStatus(productStatusRaw),
+        brandId,
+        shortDescription: productShortDescription || null,
+        description: productDescription || null,
+        seoTitle: productSeoTitle || null,
+        seoDescription: productSeoDescription || null,
+      };
+
+      if (productId) {
+        await prisma.product.update({
+          data: productData,
+          where: { id: productId },
+        });
+        toUpdate += 1;
+      } else {
+        const createdProduct = await prisma.product.create({
+          data: productData,
+          select: { id: true },
+        });
+        productId = createdProduct.id;
+        toCreate += 1;
+      }
+
+      if (productId && !touchedProductIds.has(productId)) {
+        touchedProductIds.add(productId);
+        await prisma.productCategory.deleteMany({
+          where: { productId },
+        });
+        if (categories.length > 0) {
+          await prisma.productCategory.createMany({
+            data: categories.map((category) => ({
+              categoryId: category.id,
+              productId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+      continue;
+    }
+
+    if (!variantSku) {
+      const msg = 'variant_sku is required when variant fields are present.';
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+
+    const firstSeenRow = normalizedSkuRows.get(variantSku);
+    if (typeof firstSeenRow === 'number') {
+      const msg = `duplicate variant_sku after normalization. First seen at row ${firstSeenRow}.`;
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+    normalizedSkuRows.set(variantSku, rowNumber);
 
     const existingVariant = existingVariantBySku.get(variantSku) ?? null;
+    const stockChangeMode = stockManagementChange(existingVariant, variantStock);
+
+    if (
+      isBatchManagedVariant(existingVariant) &&
+      variantStock !== existingVariant?.stockQuantity
+    ) {
+      const msg =
+        'variant_stock_quantity is already managed by inventory batches. Update stock through PO receiving instead.';
+      errors.push(`Row ${rowNumber}: ${msg}`);
+      errorRows.push({ row: rowNumber, error: msg });
+      continue;
+    }
+    if (
+      mode === 'dry-run' &&
+      stockChangeMode === 'create opening stock batch' &&
+      variantStock > 0
+    ) {
+      stockBatchesToCreate += 1;
+    }
 
     const isVariantPriceMissingInCsv = parsedVariantPriceInput.length === 0;
     const previewProductKey = existingVariant
@@ -549,10 +1463,6 @@ export async function restoreProductsBackupAction(
         : existingVariant
           ? normalizeCurrency(existingVariant.price)
           : '0.00';
-    const categoryNames = productCategoriesRaw
-      .split('|')
-      .map((item) => item.trim())
-      .filter(Boolean);
     const hasAnyImage =
       Boolean(productImageUrl) || (existingVariant?.product.images.length ?? 0) > 0;
     const requestedStatus = parseStatus(productStatusRaw);
@@ -579,15 +1489,16 @@ export async function restoreProductsBackupAction(
         changes.push({ field: 'product_slug', from: '(new)', to: targetSlug });
         changes.push({ field: 'variant_price', from: '(new)', to: parsedVariantPrice });
         changes.push({
-          field: 'variant_stock_quantity',
+          field: 'opening_stock_batch',
           from: '(new)',
-          to: String(variantStock),
+          to: variantStock > 0 ? `${variantStock} unit(s)` : 'none',
         });
       } else {
-        const currentCategories = existingVariant.product.categories
-          .map((item) => item.category.name)
-          .sort()
-          .join(' | ');
+        const currentCategories = normalizeCategories(
+          existingVariant.product.categories
+            .map((item) => item.category.name)
+            .join(' | '),
+        );
         const currentPrimaryImage = normalizeText(
           existingVariant.product.images[0]?.storagePath,
         );
@@ -610,9 +1521,15 @@ export async function restoreProductsBackupAction(
             to: parsedCost ?? '',
           },
           {
-            field: 'variant_stock_quantity',
-            from: String(existingVariant.stockQuantity),
-            to: String(variantStock),
+            field: 'opening_stock_batch',
+            from:
+              stockChangeMode === 'create opening stock batch'
+                ? 'none'
+                : (stockChangeMode ?? 'none'),
+            to:
+              stockChangeMode === 'create opening stock batch'
+                ? `${variantStock} unit(s)`
+                : (stockChangeMode ?? 'none'),
           },
           {
             field: 'variant_reorder_level',
@@ -709,10 +1626,10 @@ export async function restoreProductsBackupAction(
     if (mode !== 'apply') continue;
 
     const categories = categoryNames
-      .map((name) => categoryByName.get(name))
+      .map((name) => categoryByName.get(name) ?? categoryByNormalizedName.get(normalizeCategoryName(name)))
       .filter((item): item is { id: string; name: string } => Boolean(item));
     const missingCategories = categoryNames.filter(
-      (name) => !categoryByName.has(name),
+      (name) => !categoryByName.has(name) && !categoryByNormalizedName.has(normalizeCategoryName(name)),
     );
     if (missingCategories.length > 0) {
       const msg = `unknown categories (${missingCategories.join(', ')}).`;
@@ -876,7 +1793,9 @@ export async function restoreProductsBackupAction(
       price: parsedVariantPrice,
       compareAtPrice: parsedCompareAt,
       costPrice: parsedCost,
-      stockQuantity: variantStock,
+      stockQuantity: isBatchManagedVariant(existingVariant)
+        ? existingVariant?.stockQuantity
+        : variantStock,
       reorderLevel: variantReorderLevel,
       isActive: shouldForceVariantInactive ? false : variantIsActive,
     };
@@ -933,17 +1852,39 @@ export async function restoreProductsBackupAction(
         });
         rowUpdated = true;
       }
+      if (
+        !isBatchManagedVariant(existingVariant) &&
+        variantStock > 0
+      ) {
+        openingStockRows.push({
+          productId,
+          quantity: variantStock,
+          sku: variantSku,
+          unitCost: parsedCost,
+          variantId: existingVariant.id,
+        });
+      }
     } else {
       const nextSortOrder = await prisma.productVariant.count({
         where: { productId },
       });
-      await prisma.productVariant.create({
+      const createdVariant = await prisma.productVariant.create({
         data: {
           ...baseVariantData,
           sku: variantSku,
           sortOrder: nextSortOrder,
         },
+        select: { id: true },
       });
+      if (variantStock > 0) {
+        openingStockRows.push({
+          productId,
+          quantity: variantStock,
+          sku: variantSku,
+          unitCost: parsedCost,
+          variantId: createdVariant.id,
+        });
+      }
       rowCreated = true;
     }
 
@@ -985,13 +1926,21 @@ export async function restoreProductsBackupAction(
     }
   }
 
+  if (mode === 'apply' && openingStockRows.length > 0) {
+    const result = await prisma.$transaction(
+      (tx) =>
+        createOpeningStockBatches(tx, {
+          note: 'Opening stock batches created from catalog CSV restore.',
+          orderNumberPrefix: 'PO-RESTORE',
+          variants: openingStockRows,
+        }),
+      { timeout: 60_000 },
+    );
+    stockBatchesCreated = result.batchCount;
+    stockBatchesToCreate = openingStockRows.length;
+  }
+
   if (errors.length > 0) {
-    const errorCsvLines = [
-      'row,error',
-      ...errorRows.map((item) =>
-        `${item.row},"${item.error.replace(/"/g, '""')}"`,
-      ),
-    ];
     return {
       error: null,
       message:
@@ -999,10 +1948,12 @@ export async function restoreProductsBackupAction(
           ? 'Restore finished with errors. Fix rows and upload again.'
           : 'Dry run finished with validation errors.',
       processed: rows.length,
+      stockBatchesCreated,
+      stockBatchesToCreate,
       toCreate,
       toUpdate,
       errors: errors.slice(0, 100),
-      errorCsv: errorCsvLines.join('\n'),
+      errorCsv: buildErrorCsv(errorRows),
       preview,
     };
   }
@@ -1014,6 +1965,8 @@ export async function restoreProductsBackupAction(
         ? 'Restore applied successfully.'
         : 'Dry run successful. No validation errors found.',
     processed: rows.length,
+    stockBatchesCreated,
+    stockBatchesToCreate,
     toCreate,
     toUpdate,
     errors: [],

@@ -1,32 +1,29 @@
 'use client';
 
-import { useMemo } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useActionState } from 'react';
 import {
-  type BackupRestoreState,
-  restoreProductsBackupAction,
+  type InventoryBatchRestoreState,
+  restoreInventoryBatchesBackupAction,
 } from '@/app/(admin)/admin/settings/backup/actions';
 
-const backupRestoreInitialState: BackupRestoreState = {
+const initialState: InventoryBatchRestoreState = {
   error: null,
   message: null,
   processed: 0,
-  stockBatchesCreated: 0,
-  stockBatchesToCreate: 0,
   toCreate: 0,
-  toUpdate: 0,
+  skipped: 0,
   errors: [],
   errorCsv: null,
   preview: [],
 };
 
-export default function BackupRestoreForm() {
+export default function InventoryBatchRestoreForm() {
   const [state, formAction, isPending] = useActionState(
-    restoreProductsBackupAction,
-    backupRestoreInitialState,
+    restoreInventoryBatchesBackupAction,
+    initialState,
   );
-  const safeState = state ?? backupRestoreInitialState;
+  const safeState = state ?? initialState;
   const safeErrors = Array.isArray(safeState.errors) ? safeState.errors : [];
   const safePreview = Array.isArray(safeState.preview)
     ? safeState.preview.filter((item) => item.action !== 'no-change')
@@ -39,19 +36,17 @@ export default function BackupRestoreForm() {
 
   useEffect(() => {
     return () => {
-      if (errorCsvDownloadUrl) {
-        URL.revokeObjectURL(errorCsvDownloadUrl);
-      }
+      if (errorCsvDownloadUrl) URL.revokeObjectURL(errorCsvDownloadUrl);
     };
   }, [errorCsvDownloadUrl]);
 
   return (
     <form action={formAction} className="mt-4 space-y-4">
       <label className="block space-y-2 text-sm font-medium text-slate-700">
-        <span>Upload CSV Backup</span>
+        <span>Upload Inventory Batch CSV</span>
         <input
           type="file"
-          name="backupFile"
+          name="inventoryBackupFile"
           accept=".csv,text/csv"
           required
           className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
@@ -75,7 +70,7 @@ export default function BackupRestoreForm() {
           disabled={isPending}
           className="inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {isPending ? 'Applying...' : 'Apply Restore'}
+          {isPending ? 'Applying...' : 'Apply Batch Restore'}
         </button>
       </div>
 
@@ -90,8 +85,7 @@ export default function BackupRestoreForm() {
           <p className="font-semibold text-slate-900">{safeState.message}</p>
           <p className="mt-1">
             Processed: {safeState.processed} | Create: {safeState.toCreate} |
-            {' '}Update: {safeState.toUpdate}
-            {' '}| Stock batches: {safeState.stockBatchesCreated || safeState.stockBatchesToCreate}
+            {' '}Skipped: {safeState.skipped}
           </p>
         </div>
       ) : null}
@@ -107,7 +101,7 @@ export default function BackupRestoreForm() {
           {errorCsvDownloadUrl ? (
             <a
               href={errorCsvDownloadUrl}
-              download="products-restore-errors.csv"
+              download="inventory-batches-restore-errors.csv"
               className="mt-3 inline-flex items-center rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
             >
               Download Error CSV
@@ -124,17 +118,17 @@ export default function BackupRestoreForm() {
           </p>
           <div className="mt-3 space-y-3">
             {safePreview.map((item) => (
-              <div key={`${item.row}-${item.sku}`} className="rounded-md border border-slate-200 p-2">
+              <div key={`${item.row}-${item.batchNumber}`} className="rounded-md border border-slate-200 p-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Row {item.row} • {item.sku} • {item.action}
+                  Row {item.row} - {item.batchNumber} - {item.action}
                 </p>
                 {item.changes.length === 0 ? (
                   <p className="mt-1 text-xs text-slate-600">No field changes.</p>
                 ) : (
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
                     {item.changes.map((change) => (
-                      <li key={`${item.row}-${item.sku}-${change.field}`}>
-                        <span className="font-semibold">{change.field}</span>: {change.from} → {change.to}
+                      <li key={`${item.row}-${item.batchNumber}-${change.field}`}>
+                        <span className="font-semibold">{change.field}</span>: {change.from} - {change.to}
                       </li>
                     ))}
                   </ul>
