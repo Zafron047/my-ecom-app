@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { toVariantImageUrl, type ImageVariantSize } from '@/lib/image-variants';
 import type {
   StorefrontCatalogProduct,
   StorefrontHomepageSection,
@@ -129,6 +130,20 @@ function getPrimaryImage(product: ProductWithRelations) {
   return imageFromVariant ?? '';
 }
 
+function toSizedImage(imageUrl: string, size: ImageVariantSize) {
+  return imageUrl ? toVariantImageUrl(imageUrl, size) : '';
+}
+
+function toSizedImages(imageUrls: string[], size: ImageVariantSize) {
+  return [
+    ...new Set(
+      imageUrls
+        .filter((imageUrl) => Boolean(imageUrl && imageUrl.trim()))
+        .map((imageUrl) => toSizedImage(imageUrl, size)),
+    ),
+  ];
+}
+
 function getPricing(product: ProductWithRelations) {
   if (product.variants.length === 0) {
     return {
@@ -165,13 +180,10 @@ function getPricing(product: ProductWithRelations) {
   };
 }
 
-function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProduct {
-  const { price, salePrice } = getPricing(product);
-  const hasSale = typeof salePrice === 'number' && salePrice < price;
-  const galleryImages = product.images.map((image) => image.storagePath);
-  const images = [...new Set([...galleryImages, getPrimaryImage(product)])].filter(Boolean);
+function toVariantRows(product: ProductWithRelations, imageSize: ImageVariantSize) {
+  const primaryImage = getPrimaryImage(product);
 
-  const variantRows = product.variants.map((variant) => {
+  return product.variants.map((variant) => {
     const basePrice = variant.price.toNumber();
     const compareAt = variant.compareAtPrice?.toNumber();
     const hasVariantSale = typeof compareAt === 'number' && compareAt > basePrice;
@@ -181,6 +193,7 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
         : variant.imagePath
           ? [variant.imagePath]
           : [];
+    const sizedVariantImages = toSizedImages(variantImageList, imageSize);
 
     return {
       id: variant.id,
@@ -189,10 +202,13 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
       size: variant.size?.trim() || '',
       price: hasVariantSale ? compareAt : basePrice,
       ...(hasVariantSale ? { salePrice: basePrice } : {}),
-      image: variant.imagePath || getPrimaryImage(product),
-      ...(variantImageList.length > 0 ? { images: variantImageList } : {}),
+      image: toSizedImage(variant.imagePath || primaryImage, imageSize),
+      ...(sizedVariantImages.length > 0 ? { images: sizedVariantImages } : {}),
     };
   });
+}
+
+function toBundleOffers(product: ProductWithRelations, imageSize: ImageVariantSize) {
   const globalBundleOffers = [
     ...new Map(
       product.variants
@@ -203,14 +219,42 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
     ).values(),
   ];
 
+  return product.bundleOffers.map((offer) => ({
+    id: offer.id,
+    title: offer.title?.trim() || 'Bundle Offer',
+    image: toSizedImage(offer.imagePath || '', imageSize),
+    minTotalQty: offer.minTotalQty,
+    discountPercent: offer.discountPercent.toNumber(),
+    variantIds: offer.variants.map((item) => item.variantId),
+    isActive: offer.isActive,
+  })).concat(
+    globalBundleOffers.map((offer) => ({
+      id: offer.id,
+      title: offer.title.trim() || 'Bundle Offer',
+      image: toSizedImage(offer.imagePath || '', imageSize),
+      minTotalQty: offer.minTotalQty,
+      discountPercent: offer.discountPercent.toNumber(),
+      variantIds: offer.variants.map((item) => item.variantId),
+      isActive: offer.isActive,
+    })),
+  );
+}
+
+function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProduct {
+  const { price, salePrice } = getPricing(product);
+  const hasSale = typeof salePrice === 'number' && salePrice < price;
+  const galleryImages = product.images.map((image) => image.storagePath);
+  const primaryImage = getPrimaryImage(product);
+  const images = toSizedImages([...galleryImages, primaryImage], 'thumb');
+
   return {
     id: product.id,
     name: product.name,
     createdAt: product.createdAt.toISOString(),
     price,
     ...(hasSale ? { salePrice } : {}),
-    image: getPrimaryImage(product),
-    images: images.length > 0 ? images : [getPrimaryImage(product)],
+    image: toSizedImage(primaryImage, 'thumb'),
+    images: images.length > 0 ? images : [toSizedImage(primaryImage, 'thumb')],
     category: getCategoryName(product),
     tags: product.tags.flatMap((row) => [row.tag.slug, row.tag.name]),
     hasActiveBundleOffer: product.hasActiveBundleOffer,
@@ -222,26 +266,8 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
       : {}),
     ...(product.bundleDisplayText ? { bundleDisplayText: product.bundleDisplayText } : {}),
     ...(hasSale ? { badge: 'Sale', superSale: true } : {}),
-    variants: variantRows,
-    bundleOffers: product.bundleOffers.map((offer) => ({
-      id: offer.id,
-      title: offer.title?.trim() || 'Bundle Offer',
-      image: offer.imagePath || '',
-      minTotalQty: offer.minTotalQty,
-      discountPercent: offer.discountPercent.toNumber(),
-      variantIds: offer.variants.map((item) => item.variantId),
-      isActive: offer.isActive,
-    })).concat(
-      globalBundleOffers.map((offer) => ({
-        id: offer.id,
-        title: offer.title.trim() || 'Bundle Offer',
-        image: offer.imagePath || '',
-        minTotalQty: offer.minTotalQty,
-        discountPercent: offer.discountPercent.toNumber(),
-        variantIds: offer.variants.map((item) => item.variantId),
-        isActive: offer.isActive,
-      })),
-    ),
+    variants: toVariantRows(product, 'thumb'),
+    bundleOffers: toBundleOffers(product, 'thumb'),
   };
 }
 
@@ -360,7 +386,10 @@ export async function getStorefrontCatalog() {
           ],
     categories: ['All', ...activeCategories.map((category) => category.name)],
     categoryThumbnails: Object.fromEntries(
-      activeCategories.map((category) => [category.name, category.imagePath || '']),
+      activeCategories.map((category) => [
+        category.name,
+        toSizedImage(category.imagePath || '', 'thumb'),
+      ]),
     ),
   };
 }
@@ -478,7 +507,7 @@ export async function getStorefrontProductDetailById(productId: string) {
   const fallbackImages = product.variants
     .map((variant) => variant.imagePath)
     .filter((imagePath): imagePath is string => Boolean(imagePath));
-  const images = [...new Set([...galleryImages, ...fallbackImages, catalogBase.image])].filter(
+  const images = toSizedImages([...galleryImages, ...fallbackImages, getPrimaryImage(product)], 'detail').filter(
     Boolean,
   );
 
@@ -500,38 +529,12 @@ export async function getStorefrontProductDetailById(productId: string) {
     name: specification.name,
     value: specification.value,
   }));
-  const globalBundleOffers = [
-    ...new Map(
-      product.variants
-        .flatMap((variant) =>
-          variant.globalBundleOfferLinks.map((link) => link.bundleOffer),
-        )
-        .map((offer) => [offer.id, offer] as const),
-    ).values(),
-  ];
-  const bundleOffers = product.bundleOffers.map((offer) => ({
-    id: offer.id,
-    title: offer.title?.trim() || `Bundle ${offer.minTotalQty}+`,
-    image: offer.imagePath || '',
-    minTotalQty: offer.minTotalQty,
-    discountPercent: offer.discountPercent.toNumber(),
-    variantIds: offer.variants.map((item) => item.variantId),
-    isActive: offer.isActive,
-  })).concat(
-    globalBundleOffers.map((offer) => ({
-      id: offer.id,
-      title: offer.title.trim() || `Bundle ${offer.minTotalQty}+`,
-      image: offer.imagePath || '',
-      minTotalQty: offer.minTotalQty,
-      discountPercent: offer.discountPercent.toNumber(),
-      variantIds: offer.variants.map((item) => item.variantId),
-      isActive: offer.isActive,
-    })),
-  );
+  const bundleOffers = toBundleOffers(product, 'thumb');
 
   return {
     ...catalogBase,
     imageVersion: product.updatedAt.getTime(),
+    image: toSizedImage(getPrimaryImage(product), 'detail'),
     images,
     category: getCategoryName(product),
     description,
@@ -551,6 +554,7 @@ export async function getStorefrontProductDetailById(productId: string) {
             { name: 'Availability', value: stock > 0 ? 'In Stock' : 'Out of Stock' },
           ],
     bundleOffers,
+    variants: toVariantRows(product, 'detail'),
     inStock: stock > 0,
     rating: 4.5,
     reviews: 124,

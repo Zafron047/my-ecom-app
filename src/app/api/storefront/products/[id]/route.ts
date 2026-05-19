@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
+import { PUBLIC_STOREFRONT_CACHE_HEADERS } from '@/lib/http-cache';
 import { getStorefrontProductDetailById } from '@/lib/storefront-data';
-
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
 
 export async function GET(
   _request: Request,
@@ -13,14 +11,19 @@ export async function GET(
     const product = await getStorefrontProductDetailById(id);
 
     if (!product) {
-      return NextResponse.json({ error: 'Product not found.' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Product not found.' },
+        { status: 404, headers: PUBLIC_STOREFRONT_CACHE_HEADERS },
+      );
     }
 
-    return NextResponse.json(product);
+    return NextResponse.json(product, {
+      headers: PUBLIC_STOREFRONT_CACHE_HEADERS,
+    });
   } catch {
     return NextResponse.json(
       { error: 'Failed to load product details.' },
-      { status: 500 },
+      { status: 500, headers: PUBLIC_STOREFRONT_CACHE_HEADERS },
     );
   }
 }

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
+import { PRIVATE_NO_STORE_HEADERS } from '@/lib/http-cache';
 
 type CartPricePayload = {
   items: Array<{
@@ -62,7 +63,7 @@ function getCartPriceCache() {
 
 function getCartPriceCacheHeaders(state: 'HIT' | 'MISS' | 'BYPASS') {
   return {
-    'Cache-Control': 'private, max-age=30',
+    ...PRIVATE_NO_STORE_HEADERS,
     'X-Cart-Price-Cache': state,
   };
 }

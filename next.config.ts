@@ -33,12 +33,44 @@ const supabaseStorageHostname = supabaseUrl
   : undefined;
 const disableImageOptimization =
   process.env.NEXT_DISABLE_IMAGE_OPTIMIZATION === 'true';
+const privateNoStoreHeaders = [
+  {
+    key: 'Cache-Control',
+    value: 'private, no-store, max-age=0, must-revalidate',
+  },
+  {
+    key: 'Pragma',
+    value: 'no-cache',
+  },
+  {
+    key: 'Expires',
+    value: '0',
+  },
+];
 
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb',
     },
+  },
+  async headers() {
+    return [
+      '/api/admin/:path*',
+      '/api/account/:path*',
+      '/api/auth/:path*',
+      '/api/cart/:path*',
+      '/api/checkout/:path*',
+      '/api/customers/:path*',
+      '/api/login',
+      '/api/logout',
+      '/api/orders/:path*',
+      '/api/password-reset/:path*',
+      '/api/register',
+    ].map((source) => ({
+      source,
+      headers: privateNoStoreHeaders,
+    }));
   },
   ...(allowedDevOrigins?.length
     ? { allowedDevOrigins }

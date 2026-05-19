@@ -46,8 +46,8 @@ export default function ProductDetail() {
       setIsLoading(true);
       try {
         const [productResponse, catalogResponse] = await Promise.all([
-          fetch(`/api/storefront/products/${productId}`, { cache: 'no-store' }),
-          fetch('/api/storefront/catalog', { cache: 'no-store' }),
+          fetch(`/api/storefront/products/${productId}`),
+          fetch('/api/storefront/catalog'),
         ]);
 
         if (!isMounted) return;
@@ -355,8 +355,8 @@ export default function ProductDetail() {
               </button>
             ))}
           </div>
-          {/* Preload zoom variant once selected; fallback to original if missing */}
-          {safeSelectedImage ? (
+          {/* Load zoom only after the customer starts zooming. */}
+          {safeSelectedImage && isZooming ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={zoomSelectedImage}
