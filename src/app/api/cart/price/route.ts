@@ -1,6 +1,6 @@
-import { prisma } from '@/lib/prisma';
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
 import { PRIVATE_NO_STORE_HEADERS } from '@/lib/http-cache';
+import { getCartPricingLookup } from '@/lib/storefront-data';
 
 type CartPricePayload = {
   items: Array<{
@@ -177,67 +177,10 @@ export async function POST(request: Request) {
           .filter((value): value is string => Boolean(value)),
       ),
     ];
-    const [variants, globalBundleOffers] = await Promise.all([
-      prisma.productVariant.findMany({
-        where: {
-          isActive: true,
-          ...(selectedVariantIds.length > 0
-            ? { id: { in: selectedVariantIds } }
-            : {}),
-          product: {
-            id: { in: productIds },
-            status: 'active',
-          },
-        },
-        select: {
-          id: true,
-          price: true,
-          productId: true,
-          product: {
-            select: {
-              bundleOffers: {
-                where: { isActive: true },
-                orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-                select: {
-                  id: true,
-                  title: true,
-                  minTotalQty: true,
-                  discountPercent: true,
-                  isActive: true,
-                  variants: {
-                    select: { variantId: true },
-                  },
-                },
-              },
-            },
-          },
-        },
-      }),
-      selectedVariantIds.length > 0
-        ? prisma.bundleOffer.findMany({
-            where: {
-              isActive: true,
-              variants: {
-                some: {
-                  variantId: { in: selectedVariantIds },
-                },
-              },
-              OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }],
-              AND: [
-                {
-                  OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }],
-                },
-              ],
-            },
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-            include: {
-              variants: {
-                select: { variantId: true },
-              },
-            },
-          })
-        : Promise.resolve([]),
-    ]);
+    const [variants, globalBundleOffers] = await getCartPricingLookup(
+      productIds,
+      selectedVariantIds,
+    );
 
     const variantById = new Map(variants.map((variant) => [variant.id, variant]));
     const variantsByProductId = new Map<string, typeof variants>();

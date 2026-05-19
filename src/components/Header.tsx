@@ -5,7 +5,6 @@ import {
   useCart,
 } from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
-import { fetchStorefrontCatalogClient } from '@/lib/storefront-catalog-client';
 import { getGroupedAreaOptions } from '@/lib/location-presenter';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -347,21 +346,18 @@ export default function Header() {
 
     async function loadSearchProducts() {
       try {
-        const payload = await fetchStorefrontCatalogClient();
+        const response = await fetch('/api/storefront/search');
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          products?: {
+            id: string;
+            name: string;
+            image: string;
+            variantCount: number;
+          }[];
+        };
         if (!isMounted) return;
-        setSearchableProducts(
-          (payload.products ?? []).map((product) => ({
-            id: product.id,
-            name: product.name,
-            image: product.image,
-            variantCount:
-              typeof product.variantCount === 'number'
-                ? product.variantCount
-                : Array.isArray(product.variants)
-                  ? product.variants.length
-                  : 0,
-          })),
-        );
+        setSearchableProducts(payload.products ?? []);
       } catch {
         // Keep search suggestions empty when loading fails.
       }

@@ -24,19 +24,19 @@ Status: planned. Work sequentially by phase.
 
 ## Phase 2: Split Storefront Data And Rendering
 
-- [ ] Split the current heavy `getStorefrontProducts()` query into narrower data functions.
-- [ ] Add `getCatalogCards()` for homepage/product listing/collection product cards.
-- [ ] Add `getProductDetail()` for product detail pages.
-- [ ] Add `getHeaderSearchProducts()` for header search/autocomplete.
-- [ ] Add `getCartPricingLookup()` for cart sync/pricing lookup needs.
-- [ ] Add `getHomepageSections()` for homepage section configuration and curated product IDs.
-- [ ] Convert `/` from full client fetching to Server Component data loading with ISR/cache.
-- [ ] Convert `/products` from full client fetching to Server Component data loading with ISR/cache.
-- [ ] Convert `/products/[id]` from full client fetching to Server Component product detail loading with ISR/cache.
+- [x] Split the current heavy `getStorefrontProducts()` query into narrower data functions.
+- [x] Add `getCatalogCards()` for homepage/product listing/collection product cards.
+- [x] Add `getProductDetail()` for product detail pages.
+- [x] Add `getHeaderSearchProducts()` for header search/autocomplete.
+- [x] Add `getCartPricingLookup()` for cart sync/pricing lookup needs.
+- [x] Add `getHomepageSections()` for homepage section configuration and curated product IDs.
+- [x] Convert `/` from full client fetching to Server Component data loading with ISR/cache.
+- [x] Convert `/products` from full client fetching to Server Component data loading with ISR/cache.
+- [x] Convert `/products/[id]` from full client fetching to Server Component product detail loading with ISR/cache.
 - [ ] Push `"use client"` down into small interactive controls: cart buttons, gallery/zoom controls, filters/sort controls.
-- [ ] Keep checkout stock/pricing validation dynamic and database-backed.
-- [ ] Keep customer account and order history dynamic/private.
-- [ ] Keep admin pages dynamic/private.
+- [x] Keep checkout stock/pricing validation dynamic and database-backed.
+- [x] Keep customer account and order history dynamic/private.
+- [x] Keep admin pages dynamic/private.
 
 ## Phase 3: Abuse Protection And Scaling Hardening
 
