@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { buildCheckoutPricing, type CheckoutItemInput } from '@/lib/checkout-pricing';
+import { getDeliveryDivisionForDistrict } from '@/lib/delivery-locations';
 import {
   CUSTOMER_RECENT_ORDER_COOKIE,
   createRecentOrderAccessToken,
@@ -101,7 +102,7 @@ export async function POST(request: Request) {
         withPrivateNoStoreHeaders({ status: 400 }),
       );
     }
-    if (!payload?.shipping?.division?.trim() || !payload?.shipping?.district?.trim() || !payload?.shipping?.thana?.trim()) {
+    if (!payload?.shipping?.district?.trim() || !payload?.shipping?.thana?.trim()) {
       return Response.json(
         { error: 'Shipping location is required.' },
         withPrivateNoStoreHeaders({ status: 400 }),
@@ -122,6 +123,16 @@ export async function POST(request: Request) {
     if (payload.payment?.method !== 'bkash' && payload.payment?.method !== 'cod') {
       return Response.json(
         { error: 'Invalid payment method.' },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
+    }
+
+    const resolvedDivision =
+      payload.shipping.division.trim() ||
+      (await getDeliveryDivisionForDistrict(payload.shipping.district.trim()));
+    if (!resolvedDivision) {
+      return Response.json(
+        { error: 'Could not match the selected district to a delivery division.' },
         withPrivateNoStoreHeaders({ status: 400 }),
       );
     }
@@ -165,6 +176,50 @@ export async function POST(request: Request) {
         withPrivateNoStoreHeaders({ status: 400 }),
       );
     }
+
+    for (const item of payload.items) {
+      const productId = item.detailId ?? item.id;
+      const product = productById.get(productId);
+      if (!product) {
+        return Response.json(
+          {
+            error: `${item.name || 'A cart item'} is no longer active. Please remove it from cart and add an available product.`,
+          },
+          withPrivateNoStoreHeaders({ status: 400 }),
+        );
+      }
+
+      const variant =
+        product.variants.find((candidate) => candidate.id === item.variantId) ??
+        (product.variants.length === 1 ? product.variants[0] : undefined);
+      if (!variant) {
+        return Response.json(
+          {
+            error: `${item.name || product.name} is no longer available in the selected option. Please remove it from cart and add it again.`,
+          },
+          withPrivateNoStoreHeaders({ status: 400 }),
+        );
+      }
+
+      const quantity = Math.max(1, Math.floor(item.quantity || 1));
+      if (variant.stockQuantity <= 0) {
+        const label = [variant.color, variant.size].filter(Boolean).join(' / ');
+        return Response.json(
+          {
+            error: `${product.name}${label ? ` (${label})` : ''} is out of stock. Please remove it from cart.`,
+          },
+          withPrivateNoStoreHeaders({ status: 400 }),
+        );
+      }
+      if (quantity > variant.stockQuantity) {
+        return Response.json(
+          {
+            error: `Only ${variant.stockQuantity} piece${variant.stockQuantity === 1 ? '' : 's'} of ${product.name} are available. Please update your cart quantity.`,
+          },
+          withPrivateNoStoreHeaders({ status: 400 }),
+        );
+      }
+    }
     const selectedVariantIds = [
       ...new Set(
         payload.items
@@ -198,7 +253,10 @@ export async function POST(request: Request) {
       globalBundleOffers,
       items: payload.items,
       products,
-      shipping: payload.shipping,
+      shipping: {
+        ...payload.shipping,
+        division: resolvedDivision,
+      },
     });
     if (!pricingResult.ok) {
       return Response.json(
@@ -248,7 +306,7 @@ export async function POST(request: Request) {
           lastName: payload.customer.lastName?.trim() || null,
           email: payload.customer.email?.trim() || null,
           phone: normalizedPhone,
-          division: payload.shipping.division.trim(),
+          division: resolvedDivision,
           district: payload.shipping.district.trim(),
           thana: payload.shipping.thana.trim(),
           address: payload.shipping.address.trim(),
@@ -266,7 +324,7 @@ export async function POST(request: Request) {
           lastName: payload.customer.lastName?.trim() || null,
           email: payload.customer.email?.trim() || null,
           phone: normalizedPhone,
-          division: payload.shipping.division.trim(),
+          division: resolvedDivision,
           district: payload.shipping.district.trim(),
           thana: payload.shipping.thana.trim(),
           address: payload.shipping.address.trim(),
@@ -290,7 +348,7 @@ export async function POST(request: Request) {
               receiverPhone:
                 payload.customer.receiverMobile?.trim() || payload.customer.customerMobile.trim(),
               email: payload.customer.email?.trim() || null,
-              division: payload.shipping.division.trim(),
+              division: resolvedDivision,
               district: payload.shipping.district.trim(),
               thana: payload.shipping.thana.trim(),
               address: payload.shipping.address.trim(),

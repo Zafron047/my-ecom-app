@@ -2,6 +2,7 @@
 
 import HomeProductListSection from '@/components/HomeProductListSection';
 import HeroSlider from '@/components/HeroSlider';
+import { slugifyCategory } from '@/lib/category-slug';
 import type {
   StorefrontCatalogProduct,
   StorefrontHomepageSection,
@@ -147,7 +148,7 @@ export default function HomePageClient({
             {categories.map((category) => (
               <Link
                 key={category.name}
-                href="#"
+                href={`/collections/${slugifyCategory(category.name)}`}
                 className="w-[140px] md:w-[160px]"
               >
                 <div className="group flex flex-col items-center text-center">

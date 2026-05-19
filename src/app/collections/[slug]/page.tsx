@@ -1,4 +1,5 @@
 import ProductCollectionView from '@/components/ProductCollectionView';
+import { slugifyCategory } from '@/lib/category-slug';
 import { getStorefrontCatalog } from '@/lib/storefront-data';
 import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 import { notFound } from 'next/navigation';
@@ -19,6 +20,30 @@ export default async function CollectionPage({
   const { slug } = await params;
   const collection = collectionConfig[slug as keyof typeof collectionConfig];
   const catalog = await getStorefrontCatalog();
+
+  const categoryName = catalog.categories.find(
+    (category) => category !== 'All' && slugifyCategory(category) === slug,
+  );
+
+  if (!collection && !categoryName) {
+    notFound();
+  }
+
+  if (categoryName) {
+    const products = catalog.products.filter(
+      (product) => product.category === categoryName,
+    );
+
+    return (
+      <ProductCollectionView
+        title={categoryName}
+        description={`Browse products from ${categoryName}.`}
+        products={products}
+        categories={catalog.categories}
+        initialCategory={categoryName}
+      />
+    );
+  }
 
   if (!collection) {
     notFound();

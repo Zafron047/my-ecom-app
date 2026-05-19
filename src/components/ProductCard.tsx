@@ -21,6 +21,7 @@ interface Product {
     size: string;
     price: number;
     salePrice?: number;
+    stockQuantity: number;
     image: string;
     images?: string[];
   }[];
@@ -103,6 +104,10 @@ export default function ProductCard({ product }: { product: Product }) {
   const activeSalePrice = selectedVariant
     ? selectedVariant.salePrice
     : product.salePrice;
+  const activeStockQuantity = selectedVariant?.stockQuantity ?? 0;
+  const isActiveVariantSoldOut = activeStockQuantity <= 0;
+  const canIncreaseActiveVariant =
+    Boolean(selectedVariant) && activeVariantQuantity < activeStockQuantity;
 
   const discount =
     activeSalePrice && activePrice > activeSalePrice
@@ -152,9 +157,13 @@ export default function ProductCard({ product }: { product: Product }) {
                 </motion.div>
               )}
             </AnimatePresence>
-            {product.badge && (
-              <div className="absolute left-2 top-2 rounded-sm bg-[#e85a73] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.04em] text-white">
-                {product.badge}
+            {(isActiveVariantSoldOut || product.badge) && (
+              <div
+                className={`absolute left-2 top-2 rounded-sm px-2 py-1 text-[10px] font-medium uppercase tracking-[0.04em] text-white ${
+                  isActiveVariantSoldOut ? 'bg-slate-900' : 'bg-[#e85a73]'
+                }`}
+              >
+                {isActiveVariantSoldOut ? 'Sold Out' : product.badge}
               </div>
             )}
             {discount > 0 && (
@@ -229,6 +238,11 @@ export default function ProductCard({ product }: { product: Product }) {
       </div>
 
       <div className="relative mt-4">
+        {isActiveVariantSoldOut ? (
+          <div className="flex w-full items-center justify-center rounded-full border border-slate-300 bg-slate-100 px-4 py-2.5 text-[0.78rem] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            Sold Out
+          </div>
+        ) : (
         <div
           className="flex w-full items-center justify-between rounded-full border border-[#2d5db3] bg-[#2d5db3] px-4 py-2.5 text-[0.9rem] font-semibold text-white"
           style={{ display: 'flex' }}
@@ -254,6 +268,7 @@ export default function ProductCard({ product }: { product: Product }) {
           <button
             type="button"
             onClick={() => {
+              if (!canIncreaseActiveVariant) return;
               if (!selectedVariantCartItem) {
                 addToCart(
                   {
@@ -263,6 +278,7 @@ export default function ProductCard({ product }: { product: Product }) {
                     image: cartImage,
                     price: activePrice,
                     salePrice: activeSalePrice,
+                    stockQuantity: activeStockQuantity,
                     bundleOffers: product.bundleOffers,
                     hasActiveBundleOffer: product.hasActiveBundleOffer,
                     bundleMinTotalQty: product.bundleMinTotalQty,
@@ -278,13 +294,15 @@ export default function ProductCard({ product }: { product: Product }) {
                 selectedVariantCartItem.quantity + 1,
               );
             }}
-            className="leading-none transition hover:opacity-90"
+            disabled={!canIncreaseActiveVariant}
+            className="leading-none transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
             style={{ width: '40%' }}
             aria-label={`Increase quantity for ${product.name}`}
           >
             +
           </button>
         </div>
+        )}
       </div>
     </div>
   );

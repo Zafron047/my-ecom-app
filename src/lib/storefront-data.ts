@@ -21,6 +21,8 @@ async function loadCatalogCardProducts() {
     select: {
       id: true,
       name: true,
+      price: true,
+      salePrice: true,
       createdAt: true,
       hasActiveBundleOffer: true,
       bundleMinTotalQty: true,
@@ -65,6 +67,7 @@ async function loadCatalogCardProducts() {
           size: true,
           price: true,
           compareAtPrice: true,
+          stockQuantity: true,
           imagePath: true,
           variantImages: {
             select: {
@@ -173,9 +176,16 @@ function toSizedImages(imageUrls: string[], size: ImageVariantSize) {
 
 function getPricing(product: StorefrontProductRow) {
   if (product.variants.length === 0) {
+    const productPrice = product.price?.toNumber() ?? 0;
+    const productSalePrice = product.salePrice?.toNumber();
     return {
-      price: 0,
-      salePrice: undefined as number | undefined,
+      price: productSalePrice && productSalePrice < productPrice
+        ? productPrice
+        : productSalePrice ?? productPrice,
+      salePrice:
+        productSalePrice && productSalePrice < productPrice
+          ? productSalePrice
+          : undefined,
     };
   }
 
@@ -229,6 +239,7 @@ function toVariantRows(product: StorefrontProductRow, imageSize: ImageVariantSiz
       size: variant.size?.trim() || '',
       price: hasVariantSale ? compareAt : basePrice,
       ...(hasVariantSale ? { salePrice: basePrice } : {}),
+      stockQuantity: variant.stockQuantity,
       image: toSizedImage(variant.imagePath || primaryImage, imageSize),
       ...(sizedVariantImages.length > 0 ? { images: sizedVariantImages } : {}),
     };
@@ -270,6 +281,9 @@ function toBundleOffers(product: StorefrontProductRow, imageSize: ImageVariantSi
 function toCatalogProduct(product: StorefrontProductRow): StorefrontCatalogProduct {
   const { price, salePrice } = getPricing(product);
   const hasSale = typeof salePrice === 'number' && salePrice < price;
+  const isSoldOut =
+    product.variants.length === 0 ||
+    product.variants.every((variant) => variant.stockQuantity <= 0);
   const galleryImages = product.images.map((image) => image.storagePath);
   const primaryImage = getPrimaryImage(product);
   const images = toSizedImages([...galleryImages, primaryImage], 'thumb');
@@ -292,7 +306,11 @@ function toCatalogProduct(product: StorefrontProductRow): StorefrontCatalogProdu
       ? { bundleDiscountPercent: product.bundleDiscountPercent.toNumber() }
       : {}),
     ...(product.bundleDisplayText ? { bundleDisplayText: product.bundleDisplayText } : {}),
-    ...(hasSale ? { badge: 'Sale', superSale: true } : {}),
+    ...(isSoldOut
+      ? { badge: 'Sold Out' }
+      : hasSale
+        ? { badge: 'Sale', superSale: true }
+        : {}),
     variants: toVariantRows(product, 'thumb'),
     bundleOffers: toBundleOffers(product, 'thumb'),
   };
@@ -703,6 +721,7 @@ export async function getCartPricingLookup(
     prisma.productVariant.findMany({
       where: {
         isActive: true,
+        stockQuantity: { gt: 0 },
         ...(selectedVariantIds.length > 0
           ? { id: { in: selectedVariantIds } }
           : {}),
@@ -714,6 +733,7 @@ export async function getCartPricingLookup(
       select: {
         id: true,
         price: true,
+        stockQuantity: true,
         productId: true,
         product: {
           select: {

@@ -1,5 +1,6 @@
 import {
   getDeliveryAreas,
+  getDeliveryDivisionForDistrict,
   getDeliveryDistricts,
   getDeliveryDivisions,
 } from '@/lib/delivery-locations';
@@ -44,6 +45,19 @@ export async function GET(request: Request) {
         items: await getCachedItems(`areas:${division}:${district}`, () =>
           getDeliveryAreas(division, district),
         ),
+      },
+      { headers: PUBLIC_STOREFRONT_CACHE_HEADERS },
+    );
+  }
+
+  if (type === 'division') {
+    return Response.json(
+      {
+        division: district
+          ? await getCachedItems(`division:${district}`, async () => [
+              await getDeliveryDivisionForDistrict(district),
+            ]).then((items) => items[0] ?? '')
+          : '',
       },
       { headers: PUBLIC_STOREFRONT_CACHE_HEADERS },
     );

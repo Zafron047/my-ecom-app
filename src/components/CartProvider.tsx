@@ -58,6 +58,7 @@ type CartContextValue = {
   discountTotal: number;
   subtotal: number;
   linePricingById: Record<string, CartLinePricing>;
+  cartPricingError: string;
   shipping: number;
   openCart: () => void;
   closeCart: () => void;
@@ -66,6 +67,7 @@ type CartContextValue = {
   setShippingOption: (option: ShippingOption) => void;
   toggleItemSelection: (lineId: string) => void;
   setItemSelection: (lineId: string, selected: boolean) => void;
+  setItemsSelection: (lineIds: string[], selected: boolean) => void;
   updateQuantity: (lineId: string, quantity: number) => void;
   removeFromCart: (lineId: string) => void;
   clearSelectedItems: () => void;
@@ -247,8 +249,8 @@ function CartStateSync({ children }: { children: React.ReactNode }) {
           const matchedVariant = product.variants?.find(
             (variant) => variant.id === parsedVariantId,
           );
-          // Guard against transient catalog/variant mismatch during admin edits:
-          // if variant cannot be resolved, preserve existing line identity and price.
+          if (!matchedVariant) continue;
+          if (matchedVariant.stockQuantity <= 0) continue;
           const syncedPrice = matchedVariant?.price ?? item.price;
           const syncedSalePrice = matchedVariant?.salePrice ?? item.salePrice;
           const normalizedLineId =
@@ -262,6 +264,8 @@ function CartStateSync({ children }: { children: React.ReactNode }) {
             name: product.name,
             price: syncedPrice,
             salePrice: syncedSalePrice,
+            stockQuantity: matchedVariant.stockQuantity,
+            quantity: Math.min(item.quantity, matchedVariant.stockQuantity),
             hasActiveBundleOffer: product.hasActiveBundleOffer,
             bundleMinTotalQty: product.bundleMinTotalQty,
             bundleDiscountPercent: product.bundleDiscountPercent,
@@ -296,6 +300,7 @@ function CartStateSync({ children }: { children: React.ReactNode }) {
               item.name === currentItem.name &&
               item.price === currentItem.price &&
               item.salePrice === currentItem.salePrice &&
+              item.stockQuantity === currentItem.stockQuantity &&
               item.image === currentItem.image &&
               item.quantity === currentItem.quantity &&
               item.selected === currentItem.selected &&
@@ -348,6 +353,7 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
   const selectedItemCount = useSelector(selectSelectedItemCount);
   const [serverPricing, setServerPricing] = useState<CartPricingResult | null>(null);
   const [isPricingAuthoritative, setIsPricingAuthoritative] = useState(false);
+  const [cartPricingError, setCartPricingError] = useState('');
   const authoritativePricingSignatureRef = useRef<string | null>(null);
   const lastBundleSyncSnapshot = useSelector(selectLastBundleSyncSnapshot);
 
@@ -378,13 +384,24 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
     }[];
 
     if (requestPayload.length === 0) {
-      setServerPricing({
-        linePricingById: {},
-        subtotalBeforeDiscount: 0,
-        discountTotal: 0,
-        subtotal: 0,
-      });
+      const hasEmptyPricing =
+        serverPricing !== null &&
+        Object.keys(serverPricing.linePricingById).length === 0 &&
+        serverPricing.subtotalBeforeDiscount === 0 &&
+        serverPricing.discountTotal === 0 &&
+        serverPricing.subtotal === 0;
+
+      authoritativePricingSignatureRef.current = selectedCartPricingSignature;
+      if (!hasEmptyPricing) {
+        setServerPricing({
+          linePricingById: {},
+          subtotalBeforeDiscount: 0,
+          discountTotal: 0,
+          subtotal: 0,
+        });
+      }
       setIsPricingAuthoritative(true);
+      setCartPricingError('');
       return;
     }
 
@@ -392,7 +409,16 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (authoritativePricingSignatureRef.current === selectedCartPricingSignature) {
+    const hasCompletePricingForRequest =
+      serverPricing !== null &&
+      requestPayload.every((item) =>
+        Object.hasOwn(serverPricing.linePricingById, item.id),
+      );
+
+    if (
+      authoritativePricingSignatureRef.current === selectedCartPricingSignature &&
+      hasCompletePricingForRequest
+    ) {
       setIsPricingAuthoritative(true);
       return;
     }
@@ -405,7 +431,10 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
 
     const runPricingFetch = async (markPending: boolean): Promise<void> => {
       if (disposed) return;
-      if (markPending) setIsPricingAuthoritative(false);
+      if (markPending) {
+        setIsPricingAuthoritative(false);
+        setCartPricingError('');
+      }
 
       const attempt = async (attemptIndex: number): Promise<void> => {
         const controller = new AbortController();
@@ -418,14 +447,26 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
             signal: controller.signal,
           });
           if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            const errorPayload = (await response.json().catch(() => null)) as
+              | { error?: string }
+              | null;
+            throw new Error(errorPayload?.error || `HTTP ${response.status}`);
           }
           const payload = (await response.json()) as CartPricingResult;
           if (disposed) return;
+          const hasPricingForEveryRequestedLine = requestPayload.every((item) =>
+            Object.hasOwn(payload.linePricingById, item.id),
+          );
+          if (!hasPricingForEveryRequestedLine) {
+            throw new Error(
+              'One or more cart items are no longer active or in stock. Please remove unavailable items and add them again.',
+            );
+          }
           authoritativePricingSignatureRef.current = selectedCartPricingSignature;
           setServerPricing(payload);
           setIsPricingAuthoritative(true);
-        } catch {
+          setCartPricingError('');
+        } catch (error) {
           if (disposed || controller.signal.aborted) return;
           if (attemptIndex < retries.length - 1) {
             activeTimer = window.setTimeout(() => {
@@ -434,6 +475,11 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
             return;
           }
           setIsPricingAuthoritative(false);
+          setCartPricingError(
+            error instanceof Error && error.message
+              ? error.message
+              : 'One or more cart items are no longer active or in stock. Please remove unavailable items and add them again.',
+          );
         } finally {
           controllers.delete(controller);
         }
@@ -461,7 +507,7 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
         window.clearTimeout(activeTimer);
       }
     };
-  }, [isCartOpen, selectedCartPricingSignature]);
+  }, [isCartOpen, selectedCartPricingSignature, serverPricing]);
 
   const localPricingFallback = useMemo<CartPricingResult>(() => {
     const linePricingById = Object.fromEntries(
@@ -489,11 +535,24 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
     };
   }, [selectedCartItems]);
 
-  const effectivePricing = serverPricing ?? localPricingFallback;
+  const hasCompleteServerLinePricing =
+    serverPricing !== null &&
+    selectedCartItems.every((item) =>
+      Object.hasOwn(serverPricing.linePricingById, item.id),
+    );
+  const hasServerPricingForCurrentSelection =
+    serverPricing !== null &&
+    authoritativePricingSignatureRef.current === selectedCartPricingSignature &&
+    hasCompleteServerLinePricing;
+  const effectivePricing = hasServerPricingForCurrentSelection
+    ? serverPricing
+    : localPricingFallback;
   const linePricingById = effectivePricing.linePricingById;
   const subtotalBeforeDiscount = effectivePricing.subtotalBeforeDiscount;
   const discountTotal = effectivePricing.discountTotal;
   const subtotal = effectivePricing.subtotal;
+  const isCurrentPricingAuthoritative =
+    isPricingAuthoritative && hasServerPricingForCurrentSelection;
   const shipping = selectedItemCount > 0 ? shippingOptions[shippingOption].charge : 0;
 
   function openCart() {
@@ -513,6 +572,9 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
   }
 
   function addToCart(product: CartProduct, quantity = 1) {
+    if (typeof product.stockQuantity === 'number' && product.stockQuantity <= 0) {
+      return;
+    }
     const productId = product.detailId ?? product.id;
     const normalizedId = product.variantId ? `${productId}::${product.variantId}` : productId;
     const nextNotice = {
@@ -529,18 +591,23 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
 
     const existingItem = cartItems.find((item) => item.id === normalizedId);
     if (existingItem) {
+      const nextQuantity =
+        typeof product.stockQuantity === 'number'
+          ? Math.min(existingItem.quantity + quantity, product.stockQuantity)
+          : existingItem.quantity + quantity;
       setCartItems(
         cartItems.map((item) =>
           item.id === normalizedId
             ? {
                 ...item,
-                quantity: item.quantity + quantity,
+                quantity: nextQuantity,
                 detailId: productId,
                 variantId: product.variantId ?? item.variantId,
                 variantLabel: product.variantLabel ?? item.variantLabel,
                 image: product.image || item.image,
                 price: product.price,
                 salePrice: product.salePrice,
+                stockQuantity: product.stockQuantity ?? item.stockQuantity,
                 bundleOffers: product.bundleOffers ?? item.bundleOffers ?? [],
               }
             : item,
@@ -555,7 +622,10 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
         ...product,
         id: normalizedId,
         detailId: productId,
-        quantity,
+        quantity:
+          typeof product.stockQuantity === 'number'
+            ? Math.min(quantity, product.stockQuantity)
+            : quantity,
         selected: true,
       },
     ]);
@@ -581,6 +651,15 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
+  function setItemsSelection(lineIds: string[], selected: boolean) {
+    const lineIdSet = new Set(lineIds);
+    setCartItems(
+      cartItems.map((item) =>
+        lineIdSet.has(item.id) ? { ...item, selected } : item,
+      ),
+    );
+  }
+
   function updateQuantity(lineId: string, quantity: number) {
     if (quantity <= 0) {
       removeFromCart(lineId);
@@ -589,7 +668,15 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
 
     setCartItems(
       cartItems.map((item) =>
-        item.id === lineId ? { ...item, quantity } : item,
+        item.id === lineId
+          ? {
+              ...item,
+              quantity:
+                typeof item.stockQuantity === 'number'
+                  ? Math.min(quantity, item.stockQuantity)
+                  : quantity,
+            }
+          : item,
       ),
     );
   }
@@ -610,11 +697,12 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
     shippingOption,
     itemCount,
     selectedItemCount,
-    isPricingAuthoritative,
+    isPricingAuthoritative: isCurrentPricingAuthoritative,
     subtotalBeforeDiscount,
     discountTotal,
     subtotal,
     linePricingById,
+    cartPricingError,
     shipping,
     openCart,
     closeCart,
@@ -623,6 +711,7 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
     setShippingOption,
     toggleItemSelection,
     setItemSelection,
+    setItemsSelection,
     updateQuantity,
     removeFromCart,
     clearSelectedItems,

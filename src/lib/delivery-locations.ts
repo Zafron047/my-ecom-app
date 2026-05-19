@@ -55,12 +55,14 @@ const upazilas = getTableData<UpazilaRow>(rawUpazilas, 'upazilas');
 
 const divisionNameById = new Map(divisions.map((division) => [division.id, division.name]));
 const districtNameById = new Map(districts.map((district) => [district.id, district.name]));
+const districtDivisionByName = new Map<string, string>();
 const districtsByDivision = new Map<string, Set<string>>();
 const upazilasByDistrict = new Map<string, Set<string>>();
 
 for (const district of districts) {
   const divisionName = divisionNameById.get(district.division_id);
   if (!divisionName) continue;
+  districtDivisionByName.set(district.name.trim().toLowerCase(), divisionName.trim());
   if (!districtsByDivision.has(divisionName)) {
     districtsByDivision.set(divisionName, new Set<string>());
   }
@@ -81,17 +83,25 @@ function getFallbackDivisions() {
 }
 
 function getFallbackDistricts(divisionName: string) {
+  if (!divisionName.trim()) {
+    return sortAsc(districts.map((district) => district.name.trim()));
+  }
   const districtSet = districtsByDivision.get(divisionName);
   if (!districtSet) return [];
   return sortAsc(Array.from(districtSet));
 }
 
 function getFallbackAreas(divisionName: string, districtName: string) {
-  const districtSet = districtsByDivision.get(divisionName);
+  const inferredDivision = divisionName || getFallbackDivisionForDistrict(districtName);
+  const districtSet = districtsByDivision.get(inferredDivision);
   if (!districtSet || !districtSet.has(districtName)) return [];
   const upazilaSet = upazilasByDistrict.get(districtName);
   if (!upazilaSet) return [];
   return sortAsc(Array.from(upazilaSet));
+}
+
+function getFallbackDivisionForDistrict(districtName: string) {
+  return districtDivisionByName.get(districtName.trim().toLowerCase()) ?? '';
 }
 
 export async function getDeliveryDivisions() {
@@ -113,6 +123,17 @@ export async function getDeliveryDivisions() {
 
 export async function getDeliveryDistricts(divisionName: string) {
   try {
+    if (!divisionName.trim()) {
+      const rows = await prisma.deliveryDistrict.findMany({
+        where: { isActive: true, division: { isActive: true } },
+        orderBy: { name: 'asc' },
+        select: { name: true },
+      });
+      if (rows.length > 0) {
+        return rows.map((row) => row.name.trim());
+      }
+    }
+
     const division = await prisma.deliveryDivision.findFirst({
       where: { isActive: true, name: { equals: divisionName, mode: 'insensitive' } },
       select: { id: true },
@@ -140,10 +161,12 @@ export async function getDeliveryAreas(divisionName: string, districtName: strin
       where: {
         isActive: true,
         name: { equals: districtName, mode: 'insensitive' },
-        division: {
-          isActive: true,
-          name: { equals: divisionName, mode: 'insensitive' },
-        },
+        division: divisionName.trim()
+          ? {
+              isActive: true,
+              name: { equals: divisionName, mode: 'insensitive' },
+            }
+          : { isActive: true },
       },
       select: { id: true },
     });
@@ -162,4 +185,30 @@ export async function getDeliveryAreas(divisionName: string, districtName: strin
   }
 
   return getFallbackAreas(divisionName, districtName);
+}
+
+export async function getDeliveryDivisionForDistrict(districtName: string) {
+  try {
+    const district = await prisma.deliveryDistrict.findFirst({
+      where: {
+        isActive: true,
+        name: { equals: districtName, mode: 'insensitive' },
+        division: { isActive: true },
+      },
+      select: {
+        division: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+    if (district?.division?.name) {
+      return district.division.name.trim();
+    }
+  } catch {
+    // Fall back to static dataset when DB is unavailable.
+  }
+
+  return getFallbackDivisionForDistrict(districtName);
 }

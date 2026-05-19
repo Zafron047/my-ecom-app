@@ -169,12 +169,15 @@ export async function POST(request: Request) {
     for (const item of payload.items) {
       const lineId = typeof item?.id === 'string' ? item.id.trim() : '';
       if (!lineId) {
-        return Response.json({ error: 'Invalid cart line id.' }, { status: 400 });
+        return Response.json(
+          { error: 'Invalid cart line id.' },
+          { status: 400, headers: getCartPriceCacheHeaders('BYPASS') },
+        );
       }
       if (seenLineIds.has(lineId)) {
         return Response.json(
           { error: `Duplicate cart line id detected: ${lineId}` },
-          { status: 400 },
+          { status: 400, headers: getCartPriceCacheHeaders('BYPASS') },
         );
       }
       seenLineIds.add(lineId);
@@ -268,6 +271,19 @@ export async function POST(request: Request) {
       });
     }
 
+    if (pricingLines.length !== payload.items.length) {
+      return Response.json(
+        {
+          error:
+            'One or more cart items are no longer active or in stock. Please remove unavailable items and add them again.',
+        },
+        {
+          status: 409,
+          headers: getCartPriceCacheHeaders('BYPASS'),
+        },
+      );
+    }
+
     const pricing = computeCartPricing(
       pricingLines,
       (productId) => offersByProductId.get(productId) ?? [],
@@ -333,7 +349,7 @@ export async function POST(request: Request) {
     console.error(error);
     return Response.json(
       { error: 'Failed to price cart.' },
-      { status: 500 },
+      { status: 500, headers: getCartPriceCacheHeaders('BYPASS') },
     );
   }
 }

@@ -109,6 +109,10 @@ export default function ProductDetailClient({
     activeVariant
       ? activeVariant.salePrice
       : product?.salePrice;
+  const activeStockQuantity = activeVariant?.stockQuantity ?? 0;
+  const isActiveVariantInStock = activeStockQuantity > 0;
+  const canIncreaseActiveVariant =
+    Boolean(activeVariant) && activeVariantQuantity < activeStockQuantity;
   const discount = useMemo(() => {
     if (!activeSalePrice || activePrice <= activeSalePrice) return 0;
     return Math.round(((activePrice - activeSalePrice) / activePrice) * 100);
@@ -340,8 +344,8 @@ export default function ProductDetailClient({
                 </span>
               )}
             </div>
-            <p className={product.inStock ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
-              {product.inStock ? 'In Stock' : 'Out of Stock'}
+            <p className={isActiveVariantInStock ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+              {isActiveVariantInStock ? 'In Stock' : 'Out of Stock'}
             </p>
           </div>
 
@@ -421,6 +425,7 @@ export default function ProductDetailClient({
                   <button
                     type="button"
                     onClick={() => {
+                      if (!canIncreaseActiveVariant) return;
                       if (!activeVariantCartItem) {
                         addToCart(
                           {
@@ -429,6 +434,7 @@ export default function ProductDetailClient({
                             name: product.name,
                             price: activePrice,
                             salePrice: activeSalePrice,
+                            stockQuantity: activeStockQuantity,
                             image: activeVariant?.image || product.image,
                             variantId: activeVariant?.id,
                             variantLabel: activeVariant
@@ -447,7 +453,8 @@ export default function ProductDetailClient({
                       }
                       updateQuantity(activeVariantCartItem.id, activeVariantCartItem.quantity + 1);
                     }}
-                    className="px-4 py-2 text-lg leading-none text-slate-700 transition hover:bg-slate-100"
+                    disabled={!canIncreaseActiveVariant}
+                    className="px-4 py-2 text-lg leading-none text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45"
                     aria-label="Increase quantity"
                   >
                     +
@@ -464,7 +471,8 @@ export default function ProductDetailClient({
           <div className="mb-6">
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
+                if (!canIncreaseActiveVariant) return;
                 addToCart(
                   {
                     id: product.id,
@@ -472,6 +480,7 @@ export default function ProductDetailClient({
                     name: product.name,
                     price: activePrice,
                     salePrice: activeSalePrice,
+                    stockQuantity: activeStockQuantity,
                     image: activeVariant?.image || product.image,
                     variantId: activeVariant?.id,
                     variantLabel: activeVariant
@@ -485,11 +494,12 @@ export default function ProductDetailClient({
                     bundleDisplayText: bestActiveBundleOffer?.title?.trim() || undefined,
                   },
                   1,
-                )
-              }
-              className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700"
+                );
+              }}
+              disabled={!canIncreaseActiveVariant}
+              className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              Add to Cart
+              {activeStockQuantity <= 0 ? 'Out of Stock' : 'Add to Cart'}
             </button>
           </div>
 

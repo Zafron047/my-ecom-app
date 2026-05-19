@@ -63,7 +63,8 @@ export function getGroupedAreaOptions(
   district: string,
   fallbackAreas: string[],
 ): GroupedLocationOptions[] {
-  if (division !== 'Dhaka' || district !== 'Dhaka') {
+  const resolvedDivision = division || (district === 'Dhaka' ? 'Dhaka' : '');
+  if (resolvedDivision !== 'Dhaka' || district !== 'Dhaka') {
     return [{ heading: 'Area', options: fallbackAreas }];
   }
 
