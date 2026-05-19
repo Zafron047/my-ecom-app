@@ -6,6 +6,7 @@ import {
   CUSTOMER_RECENT_ORDER_COOKIE,
   createRecentOrderAccessToken,
 } from '@/lib/customer-auth';
+import { getCustomerSessionFromToken } from '@/lib/customer-session';
 import { allocateInventoryForOrderProduct } from '@/lib/inventory-allocation';
 
 type PlaceOrderPayload = {
@@ -46,6 +47,17 @@ function normalizePhone(phone: string) {
     return `0${trimmed.slice(4)}`;
   }
   return trimmed;
+}
+
+function getCookieValue(request: Request, name: string) {
+  const cookieHeader = request.headers.get('cookie');
+  if (!cookieHeader) return undefined;
+
+  return cookieHeader
+    .split(';')
+    .map((cookie) => cookie.trim())
+    .find((cookie) => cookie.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
 }
 
 export async function POST(request: Request) {
@@ -154,14 +166,36 @@ export async function POST(request: Request) {
     const deliveryCharge = pricingResult.deliveryCharge;
     const totalAmount = pricingResult.totalAmount;
     const normalizedPhone = normalizePhone(payload.customer.customerMobile);
+    const customerSession = await getCustomerSessionFromToken(
+      getCookieValue(request, 'customer_session'),
+    );
+    const sessionCustomer = customerSession
+      ? await prisma.customer.findUnique({
+          where: { id: customerSession.customerId },
+        })
+      : null;
+    if (sessionCustomer?.isBlocked) {
+      return Response.json(
+        { error: 'This customer account cannot place new orders.' },
+        { status: 403 },
+      );
+    }
+
     const existingCustomerByPhone = await prisma.customer.findFirst({
       where: {
         OR: [{ phone: normalizedPhone }, { phone: payload.customer.customerMobile.trim() }],
       },
     });
+    if (existingCustomerByPhone?.isBlocked) {
+      return Response.json(
+        { error: 'This customer account cannot place new orders.' },
+        { status: 403 },
+      );
+    }
 
     const customer =
       existingCustomerByPhone ??
+      sessionCustomer ??
       (await prisma.customer.create({
         data: {
           firstName: payload.customer.firstName.trim(),
@@ -178,7 +212,7 @@ export async function POST(request: Request) {
         },
       }));
 
-    if (existingCustomerByPhone) {
+    if (existingCustomerByPhone || sessionCustomer) {
       await prisma.customer.update({
         where: { id: customer.id },
         data: {

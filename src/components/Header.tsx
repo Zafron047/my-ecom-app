@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SearchableDropdown from '@/components/SearchableDropdown';
+import { FacebookIcon, GoogleIcon } from '@/components/SocialAuthIcons';
 
 const MOBILE_PATTERN = /^(?:\+8801[3-9]\d{8}|01[3-9]\d{8})$/;
 
@@ -180,7 +181,10 @@ export default function Header() {
     { href: '#', label: 'Categories' },
     { href: '/checkout', label: 'Cart' },
     ...(isCustomerLoggedIn
-      ? [{ href: '#', label: 'Logout' }]
+      ? [
+          { href: '/account', label: 'Account' },
+          { href: '#', label: 'Logout' },
+        ]
       : [{ href: '/login', label: 'Login' }]),
     { href: '#', label: 'Support' },
   ];
@@ -1684,7 +1688,15 @@ export default function Header() {
                       : 'pointer-events-none bg-slate-300 !text-white'
                   }`}
                 >
-                  Proceed Checkout
+                  <span>Proceed Checkout</span>
+                  <span className="ml-3 flex items-center gap-1.5" aria-hidden="true">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
+                      <GoogleIcon className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
+                      <FacebookIcon className="h-4 w-4" />
+                    </span>
+                  </span>
                 </button>
               </div>
             </>
