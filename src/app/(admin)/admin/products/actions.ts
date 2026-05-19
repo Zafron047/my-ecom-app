@@ -12,7 +12,7 @@ const productStatuses = Object.values(ProductStatus);
 const PRODUCT_NAME_WORD_LIMIT = 6;
 const SHORT_DESCRIPTION_WORD_LIMIT = 40;
 const PRODUCT_STORAGE_FOLDER = 'products';
-const MAX_PRODUCT_IMAGE_FILES = 12;
+const MAX_PRODUCT_IMAGE_FILES = 10;
 const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 4 * 1024 * 1024;
 const ALLOWED_PRODUCT_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',
@@ -862,24 +862,22 @@ async function uploadOptimizedImageVariantsFromBuffer(
   objectKey: string,
   sourceBuffer: Buffer,
 ) {
-  await Promise.all(
-    PRODUCT_IMAGE_VARIANTS.map(async (variant) => {
-      const optimizedBuffer = await sharp(sourceBuffer)
-        .rotate()
-        .resize({
-          width: variant.width,
-          withoutEnlargement: true,
-        })
-        .webp({ quality: variant.quality })
-        .toBuffer();
+  for (const variant of PRODUCT_IMAGE_VARIANTS) {
+    const optimizedBuffer = await sharp(sourceBuffer)
+      .rotate()
+      .resize({
+        width: variant.width,
+        withoutEnlargement: true,
+      })
+      .webp({ quality: variant.quality })
+      .toBuffer();
 
-      await uploadStorageBuffer(
-        getVariantObjectKey(objectKey, variant.suffix),
-        optimizedBuffer,
-        'image/webp',
-      );
-    }),
-  );
+    await uploadStorageBuffer(
+      getVariantObjectKey(objectKey, variant.suffix),
+      optimizedBuffer,
+      'image/webp',
+    );
+  }
 }
 
 function getContentTypeFromExtension(extension: string) {

@@ -1,5 +1,10 @@
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
 import { PRIVATE_NO_STORE_HEADERS } from '@/lib/http-cache';
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from '@/lib/rate-limit';
 import { getCartPricingLookup } from '@/lib/storefront-data';
 
 type CartPricePayload = {
@@ -38,6 +43,10 @@ const EMPTY_CART_PRICING: CartPriceResponse = {
 };
 
 const CART_PRICE_CACHE_TTL_MS = 30_000;
+const CART_PRICE_RATE_LIMIT = {
+  limit: 120,
+  windowMs: 60_000,
+};
 
 type CartPriceCacheEntry = {
   expiresAt: number;
@@ -128,6 +137,23 @@ function responseFromCacheEntry(
 
 export async function POST(request: Request) {
   try {
+    const rateLimit = await checkDistributedRateLimit({
+      key: `cart:price:${getClientIp(request)}`,
+      ...CART_PRICE_RATE_LIMIT,
+    });
+    if (!rateLimit.allowed) {
+      return Response.json(
+        { error: 'Too many cart pricing requests. Please wait a moment and retry.' },
+        {
+          status: 429,
+          headers: {
+            ...getCartPriceCacheHeaders('BYPASS'),
+            ...rateLimitHeaders(rateLimit, CART_PRICE_RATE_LIMIT.limit),
+          },
+        },
+      );
+    }
+
     const requestText = await request.text();
     const payload = requestText
       ? (JSON.parse(requestText) as CartPricePayload)

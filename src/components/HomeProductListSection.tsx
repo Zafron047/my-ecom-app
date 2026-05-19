@@ -1,5 +1,3 @@
-'use client';
-
 import ProductCard from '@/components/ProductCard';
 import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 import Link from 'next/link';

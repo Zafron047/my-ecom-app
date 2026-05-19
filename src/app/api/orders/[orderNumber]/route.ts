@@ -5,15 +5,43 @@ import {
   verifyRecentOrderAccessToken,
 } from '@/lib/customer-auth';
 import { getCustomerSession } from '@/lib/customer-session';
+import { withPrivateNoStoreHeaders } from '@/lib/http-cache';
 import { prisma } from '@/lib/prisma';
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from '@/lib/rate-limit';
+
+const ORDER_LOOKUP_RATE_LIMIT = {
+  limit: 30,
+  windowMs: 60_000,
+};
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ orderNumber: string }> },
 ) {
   const { orderNumber } = await context.params;
   if (!orderNumber) {
-    return Response.json({ error: 'Order number is required.' }, { status: 400 });
+    return Response.json(
+      { error: 'Order number is required.' },
+      withPrivateNoStoreHeaders({ status: 400 }),
+    );
+  }
+
+  const rateLimit = await checkDistributedRateLimit({
+    key: `orders:lookup:${getClientIp(request)}`,
+    ...ORDER_LOOKUP_RATE_LIMIT,
+  });
+  if (!rateLimit.allowed) {
+    return Response.json(
+      { error: 'Too many order lookups. Please wait a moment and retry.' },
+      withPrivateNoStoreHeaders({
+        status: 429,
+        headers: rateLimitHeaders(rateLimit, ORDER_LOOKUP_RATE_LIMIT.limit),
+      }),
+    );
   }
 
   const adminSession = await getAdminSession();
@@ -30,7 +58,10 @@ export async function GET(
     orderWhere = { orderNumber };
   } else {
     if (!customerSession) {
-      return Response.json({ error: 'Unauthorized.' }, { status: 401 });
+      return Response.json(
+        { error: 'Unauthorized.' },
+        withPrivateNoStoreHeaders({ status: 401 }),
+      );
     }
 
     orderWhere = { orderNumber, customerId: customerSession.customerId };
@@ -54,7 +85,10 @@ export async function GET(
   });
 
   if (!order) {
-    return Response.json({ error: 'Order not found.' }, { status: 404 });
+    return Response.json(
+      { error: 'Order not found.' },
+      withPrivateNoStoreHeaders({ status: 404 }),
+    );
   }
 
   const items = order.products.map((item) => ({
@@ -74,30 +108,33 @@ export async function GET(
     bundleRule: item.bundleRule,
   }));
 
-  return Response.json({
-    id: order.orderNumber,
-    customer: {
-      firstName: order.firstName,
-      lastName: order.lastName ?? '',
-      email: order.email ?? '',
-      customerMobile: order.phone,
-      receiverMobile: order.receiverPhone,
+  return Response.json(
+    {
+      id: order.orderNumber,
+      customer: {
+        firstName: order.firstName,
+        lastName: order.lastName ?? '',
+        email: order.email ?? '',
+        customerMobile: order.phone,
+        receiverMobile: order.receiverPhone,
+      },
+      shipping: {
+        division: order.division,
+        district: order.district,
+        thana: order.thana,
+        address: order.address,
+      },
+      payment: {
+        method: order.paymentMethod === 'BKASH' ? 'bkash' : 'cod',
+      },
+      items,
+      totals: {
+        subtotal: Number(order.subtotalAmount),
+        shipping: Number(order.deliveryCharge),
+        total: Number(order.totalAmount),
+      },
+      orderDate: order.createdAt.toISOString(),
     },
-    shipping: {
-      division: order.division,
-      district: order.district,
-      thana: order.thana,
-      address: order.address,
-    },
-    payment: {
-      method: order.paymentMethod === 'BKASH' ? 'bkash' : 'cod',
-    },
-    items,
-    totals: {
-      subtotal: Number(order.subtotalAmount),
-      shipping: Number(order.deliveryCharge),
-      total: Number(order.totalAmount),
-    },
-    orderDate: order.createdAt.toISOString(),
-  });
+    withPrivateNoStoreHeaders(),
+  );
 }

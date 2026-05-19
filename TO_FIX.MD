@@ -33,35 +33,35 @@ Status: planned. Work sequentially by phase.
 - [x] Convert `/` from full client fetching to Server Component data loading with ISR/cache.
 - [x] Convert `/products` from full client fetching to Server Component data loading with ISR/cache.
 - [x] Convert `/products/[id]` from full client fetching to Server Component product detail loading with ISR/cache.
-- [ ] Push `"use client"` down into small interactive controls: cart buttons, gallery/zoom controls, filters/sort controls.
+- [x] Push `"use client"` down into small interactive controls: cart buttons, gallery/zoom controls, filters/sort controls.
 - [x] Keep checkout stock/pricing validation dynamic and database-backed.
 - [x] Keep customer account and order history dynamic/private.
 - [x] Keep admin pages dynamic/private.
 
 ## Phase 3: Abuse Protection And Scaling Hardening
 
-- [ ] Add distributed rate limiting for `/api/checkout/place-order`.
-- [ ] Add distributed rate limiting for `/api/cart/price`.
-- [ ] Add distributed rate limiting for `/api/cart/abandoned-checkout`.
-- [ ] Add distributed rate limiting for `/api/orders/[orderNumber]`.
-- [ ] Add distributed rate limiting for `/api/admin/product-images/sign-upload`.
-- [ ] Add `sharp` as a direct dependency in `package.json`.
-- [ ] Keep Sharp processing on Vercel for now.
-- [ ] Enforce product image upload file count and file size limits consistently before signing/upload processing.
-- [ ] Avoid processing too many product images concurrently in one request.
-- [ ] Add or verify inventory allocation indexes for checkout stock allocation.
-- [ ] Add staged/orphaned Supabase Storage cleanup for product images.
+- [x] Add distributed rate limiting for `/api/checkout/place-order`.
+- [x] Add distributed rate limiting for `/api/cart/price`.
+- [x] Add distributed rate limiting for `/api/cart/abandoned-checkout`.
+- [x] Add distributed rate limiting for `/api/orders/[orderNumber]`.
+- [x] Add distributed rate limiting for `/api/admin/product-images/sign-upload`.
+- [x] Add `sharp` as a direct dependency in `package.json`.
+- [x] Keep Sharp processing on Vercel for now.
+- [x] Enforce product image upload file count and file size limits consistently before signing/upload processing.
+- [x] Avoid processing too many product images concurrently in one request.
+- [x] Add or verify inventory allocation indexes for checkout stock allocation.
+- [x] Add staged/orphaned Supabase Storage cleanup for product images.
 
 ## Cache Safety Rules
 
-- [ ] Public-cache only shared storefront catalog/product/location data.
-- [ ] Do not public-cache checkout order placement.
-- [ ] Do not public-cache cart pricing responses.
-- [ ] Do not public-cache customer-specific order data.
-- [ ] Do not public-cache customer account/session data.
-- [ ] Do not public-cache admin pages or admin APIs.
-- [ ] Treat cached stock display as advisory only; validate stock fresh during cart pricing and checkout.
-- [ ] Treat cached product price display as advisory only; validate final pricing fresh during cart pricing and checkout.
+- [x] Public-cache only shared storefront catalog/product/location data.
+- [x] Do not public-cache checkout order placement.
+- [x] Do not public-cache cart pricing responses.
+- [x] Do not public-cache customer-specific order data.
+- [x] Do not public-cache customer account/session data.
+- [x] Do not public-cache admin pages or admin APIs.
+- [x] Treat cached stock display as advisory only; validate stock fresh during cart pricing and checkout.
+- [x] Treat cached product price display as advisory only; validate final pricing fresh during cart pricing and checkout.
 
 ## Verification Checklist
 
@@ -78,4 +78,4 @@ Status: planned. Work sequentially by phase.
 - [x] Browser-check `/`.
 - [x] Browser-check `/products`.
 - [x] Browser-check `/products/[id]`.
-- [ ] Browser-check checkout to order confirmation.
+- [x] Browser-check checkout to order confirmation.

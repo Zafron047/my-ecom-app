@@ -1,4 +1,10 @@
 import { prisma } from '@/lib/prisma';
+import { withPrivateNoStoreHeaders } from '@/lib/http-cache';
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from '@/lib/rate-limit';
 import { Prisma } from '@prisma/client';
 
 type AbandonedCheckoutPayload = {
@@ -26,12 +32,37 @@ function toMoney(value: number) {
   return Number(value.toFixed(2));
 }
 
+const ABANDONED_CHECKOUT_RATE_LIMIT = {
+  limit: 60,
+  windowMs: 60_000,
+};
+
 export async function POST(request: Request) {
   try {
+    const rateLimit = await checkDistributedRateLimit({
+      key: `cart:abandoned-checkout:${getClientIp(request)}`,
+      ...ABANDONED_CHECKOUT_RATE_LIMIT,
+    });
+    if (!rateLimit.allowed) {
+      return Response.json(
+        { error: 'Too many cart sync requests. Please wait a moment and retry.' },
+        withPrivateNoStoreHeaders({
+          status: 429,
+          headers: rateLimitHeaders(
+            rateLimit,
+            ABANDONED_CHECKOUT_RATE_LIMIT.limit,
+          ),
+        }),
+      );
+    }
+
     const payload = (await request.json()) as AbandonedCheckoutPayload;
     const sessionId = payload.sessionId?.trim();
     if (!sessionId) {
-      return Response.json({ error: 'Cart session id is required.' }, { status: 400 });
+      return Response.json(
+        { error: 'Cart session id is required.' },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
     }
 
     const items = (payload.items ?? [])
@@ -92,12 +123,12 @@ export async function POST(request: Request) {
       },
     });
 
-    return Response.json({ success: true });
+    return Response.json({ success: true }, withPrivateNoStoreHeaders());
   } catch (error) {
     console.error(error);
     return Response.json(
       { error: 'Failed to save abandoned checkout.' },
-      { status: 500 },
+      withPrivateNoStoreHeaders({ status: 500 }),
     );
   }
 }

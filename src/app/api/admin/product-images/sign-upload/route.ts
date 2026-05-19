@@ -1,8 +1,25 @@
 import { NextResponse } from 'next/server';
 import { getAdminSession } from '@/lib/admin-session';
+import { withPrivateNoStoreHeaders } from '@/lib/http-cache';
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from '@/lib/rate-limit';
 
 const SUPABASE_STORAGE_BUCKET =
   process.env.SUPABASE_STORAGE_BUCKET || 'product-images';
+const ALLOWED_PRODUCT_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+]);
+const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 4 * 1024 * 1024;
+const SIGN_UPLOAD_RATE_LIMIT = {
+  limit: 40,
+  windowMs: 60_000,
+};
 
 function getSupabaseProjectUrlFromDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -34,7 +51,24 @@ function getSupabaseUrl() {
 export async function POST(request: Request) {
   const session = await getAdminSession();
   if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      withPrivateNoStoreHeaders({ status: 401 }),
+    );
+  }
+
+  const rateLimit = await checkDistributedRateLimit({
+    key: `admin:product-image-sign-upload:${session.id}:${getClientIp(request)}`,
+    ...SIGN_UPLOAD_RATE_LIMIT,
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many image upload requests. Please wait a moment and retry.' },
+      withPrivateNoStoreHeaders({
+        status: 429,
+        headers: rateLimitHeaders(rateLimit, SIGN_UPLOAD_RATE_LIMIT.limit),
+      }),
+    );
   }
 
   const supabaseUrl = getSupabaseUrl();
@@ -42,16 +76,36 @@ export async function POST(request: Request) {
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json(
       { error: 'Supabase storage is not configured.' },
-      { status: 500 },
+      withPrivateNoStoreHeaders({ status: 500 }),
     );
   }
 
   const body = (await request.json().catch(() => null)) as
-    | { contentType?: string; extension?: string }
+    | { contentType?: string; extension?: string; size?: number }
     | null;
   const extension = (body?.extension || '.jpg').toLowerCase();
   const sanitizedExtension = extension.match(/^\.[a-z0-9]+$/i)?.[0] ?? '.jpg';
   const contentType = body?.contentType || 'application/octet-stream';
+  const fileSize = Number(body?.size ?? 0);
+
+  if (!ALLOWED_PRODUCT_IMAGE_TYPES.has(contentType)) {
+    return NextResponse.json(
+      { error: 'Unsupported image type. Allowed: JPG, PNG, WEBP, AVIF.' },
+      withPrivateNoStoreHeaders({ status: 400 }),
+    );
+  }
+
+  if (
+    !Number.isFinite(fileSize) ||
+    fileSize <= 0 ||
+    fileSize > MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES
+  ) {
+    return NextResponse.json(
+      { error: 'Image must be larger than 0 bytes and no more than 4MB.' },
+      withPrivateNoStoreHeaders({ status: 400 }),
+    );
+  }
+
   const objectKey = `products/staged/${Date.now()}-${crypto.randomUUID()}${sanitizedExtension}`;
 
   const signResponse = await fetch(
@@ -72,7 +126,7 @@ export async function POST(request: Request) {
   if (!signResponse.ok) {
     return NextResponse.json(
       { error: `Failed to sign upload: ${await signResponse.text()}` },
-      { status: 500 },
+      withPrivateNoStoreHeaders({ status: 500 }),
     );
   }
 
@@ -93,11 +147,13 @@ export async function POST(request: Request) {
     ? uploadPath
     : `${supabaseUrl}${uploadPath}`;
 
-  return NextResponse.json({
-    bucket: SUPABASE_STORAGE_BUCKET,
-    contentType,
-    objectKey,
-    uploadUrl,
-  });
+  return NextResponse.json(
+    {
+      bucket: SUPABASE_STORAGE_BUCKET,
+      contentType,
+      objectKey,
+      uploadUrl,
+    },
+    withPrivateNoStoreHeaders(),
+  );
 }
-

@@ -7,3 +7,16 @@ export const PRIVATE_NO_STORE_HEADERS = {
   Pragma: 'no-cache',
   Expires: '0',
 };
+
+export function withPrivateNoStoreHeaders(init: ResponseInit = {}): ResponseInit {
+  const headers = new Headers(init.headers);
+
+  for (const [key, value] of Object.entries(PRIVATE_NO_STORE_HEADERS)) {
+    headers.set(key, value);
+  }
+
+  return {
+    ...init,
+    headers,
+  };
+}
