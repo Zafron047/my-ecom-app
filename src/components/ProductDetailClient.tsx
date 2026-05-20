@@ -2,12 +2,13 @@
 
 import { useCart } from '@/components/CartProvider';
 import { toVariantImageUrl } from '@/lib/image-variants';
+import { trackMetaEvent } from '@/lib/meta-pixel';
 import type {
   StorefrontCatalogProduct,
   StorefrontProductDetail,
 } from '@/lib/storefront-types';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 function isValidColorHex(value: string | undefined) {
   return Boolean(value && /^#[0-9a-f]{6}$/i.test(value));
@@ -176,6 +177,23 @@ export default function ProductDetailClient({
     );
     setSelectedImage(imageIndex >= 0 ? imageIndex : 0);
   };
+
+  useEffect(() => {
+    trackMetaEvent('ViewContent', {
+      content_ids: [activeVariant?.id ?? product.id],
+      content_name: product.name,
+      content_type: 'product',
+      contents: [
+        {
+          id: activeVariant?.id ?? product.id,
+          item_price: activeSalePrice ?? activePrice,
+          quantity: 1,
+        },
+      ],
+      currency: 'BDT',
+      value: activeSalePrice ?? activePrice,
+    });
+  }, [activePrice, activeSalePrice, activeVariant?.id, product.id, product.name]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">

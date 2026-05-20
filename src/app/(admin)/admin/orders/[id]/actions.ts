@@ -2,6 +2,7 @@
 
 import type { Prisma } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
+import { headers } from 'next/headers';
 import { requireAdminPermission } from '@/lib/admin-session';
 import {
   allocateInventoryForOrderProduct,
@@ -10,6 +11,7 @@ import {
   releaseInventoryQuantityForOrderProduct,
 } from '@/lib/inventory-allocation';
 import { prisma } from '@/lib/prisma';
+import { createMetaCapiEventId, sendMetaServerEvent } from '@/lib/meta-capi';
 import {
   SALES_ORDER_STATUS,
   assertSalesOrderStatusTransition,
@@ -197,6 +199,15 @@ function getLineLabel(item: {
 function formatRefundMethod(value: string | null | undefined) {
   if (!value) return '';
   return REFUND_METHOD_LABELS[value as keyof typeof REFUND_METHOD_LABELS] ?? value;
+}
+
+async function createMetaRequestForServerAction() {
+  const headerStore = await headers();
+  const requestHeaders = new Headers();
+  headerStore.forEach((value, key) => requestHeaders.set(key, value));
+  return new Request(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000', {
+    headers: requestHeaders,
+  });
 }
 
 function serializeUpdatedOrder(
@@ -848,6 +859,33 @@ export async function updateOrderDetailsAction(
 
   revalidatePath(`/admin/orders/${orderId}`);
 
+  if (updatedOrder.status === SALES_ORDER_STATUS.CANCELLED) {
+    const eventId = createMetaCapiEventId('cancel-order', updatedOrder.orderNumber);
+    await sendMetaServerEvent({
+      eventId,
+      eventName: 'CancelOrder',
+      eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL || ''}/admin/orders/${orderId}`,
+      request: await createMetaRequestForServerAction(),
+      user: {
+        city: updatedOrder.district,
+        email: updatedOrder.email,
+        externalId: updatedOrder.customerId,
+        firstName: updatedOrder.firstName,
+        lastName: updatedOrder.lastName,
+        phone: updatedOrder.phone,
+      },
+      customData: {
+        content_ids: updatedOrder.products.map((product) => product.variantId),
+        content_type: 'product',
+        currency: 'BDT',
+        order_id: updatedOrder.orderNumber,
+        value: decimalToNumberSafe(updatedOrder.totalAmount),
+      },
+    }).catch((error) => {
+      console.error('Meta CAPI CancelOrder event failed', error);
+    });
+  }
+
   return serializeUpdatedOrder(updatedOrder, timeline);
 }
 
@@ -1118,6 +1156,36 @@ export async function processOrderReturnAction(
   const timeline = await getSalesOrderTimeline(orderId);
 
   revalidatePath(`/admin/orders/${orderId}`);
+
+  const returnedValue = payload.lines.reduce((sum, line) => {
+    const product = updatedOrder.products.find((item) => item.id === line.orderProductId);
+    if (!product || product.quantity <= 0) return sum;
+    return sum + (decimalToNumberSafe(product.lineTotal) / product.quantity) * line.quantity;
+  }, 0);
+  const eventId = createMetaCapiEventId('return-order', updatedOrder.orderNumber);
+  await sendMetaServerEvent({
+    eventId,
+    eventName: 'ReturnOrder',
+    eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL || ''}/admin/orders/${orderId}`,
+    request: await createMetaRequestForServerAction(),
+    user: {
+      city: updatedOrder.district,
+      email: updatedOrder.email,
+      externalId: updatedOrder.customerId,
+      firstName: updatedOrder.firstName,
+      lastName: updatedOrder.lastName,
+      phone: updatedOrder.phone,
+    },
+    customData: {
+      content_ids: payload.lines.map((line) => line.orderProductId),
+      content_type: 'product',
+      currency: 'BDT',
+      order_id: updatedOrder.orderNumber,
+      value: toMoney(returnedValue),
+    },
+  }).catch((error) => {
+    console.error('Meta CAPI ReturnOrder event failed', error);
+  });
 
   return serializeUpdatedOrder(updatedOrder, timeline);
 }

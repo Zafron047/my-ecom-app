@@ -6,6 +6,12 @@ import {
   readPendingOrderId,
   shouldClearSelectedItems,
 } from '@/lib/checkoutPendingOrder.mjs';
+import {
+  META_PURCHASE_EVENT_STORAGE_PREFIX,
+  markMetaPurchaseEventTracked,
+  shouldTrackMetaPurchaseEvent,
+  trackMetaPurchase,
+} from '@/lib/meta-pixel';
 import SafeImage from '@/components/SafeImage';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -45,6 +51,7 @@ function OrderConfirmationContent() {
   const searchParams = useSearchParams();
   const { clearSelectedItems } = useCart();
   const hasLoadedRef = useRef(false);
+  const hasTrackedPurchaseRef = useRef(false);
   const orderId = searchParams.get('orderId');
   const localOrderData = useMemo<OrderData | null>(() => {
     if (!orderId || typeof window === 'undefined') return null;
@@ -109,6 +116,31 @@ function OrderConfirmationContent() {
 
     hasLoadedRef.current = true; // Prevent re-execution
   }, [clearSelectedItems, orderData, orderId]);
+
+  useEffect(() => {
+    if (hasTrackedPurchaseRef.current || isLoadingOrder || !orderData || !orderId) {
+      return;
+    }
+
+    const eventId = localStorage.getItem(
+      `${META_PURCHASE_EVENT_STORAGE_PREFIX}${orderId}`,
+    );
+    if (!eventId) return;
+
+    if (!shouldTrackMetaPurchaseEvent(localStorage, orderId, eventId)) {
+      hasTrackedPurchaseRef.current = true;
+      return;
+    }
+
+    trackMetaPurchase({
+      eventId,
+      items: orderData.items,
+      orderId,
+      value: orderData.totals.total,
+    });
+    markMetaPurchaseEventTracked(localStorage, orderId, eventId);
+    hasTrackedPurchaseRef.current = true;
+  }, [isLoadingOrder, orderData, orderId]);
 
   if (isLoadingOrder || !orderData) {
     return (

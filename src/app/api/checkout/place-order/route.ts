@@ -11,6 +11,10 @@ import { getCustomerSessionFromToken } from '@/lib/customer-session';
 import { withPrivateNoStoreHeaders } from '@/lib/http-cache';
 import { allocateInventoryForOrderProduct } from '@/lib/inventory-allocation';
 import {
+  createMetaCapiEventId,
+  sendMetaPurchaseEvent,
+} from '@/lib/meta-capi';
+import {
   checkDistributedRateLimit,
   getClientIp,
   rateLimitHeaders,
@@ -337,7 +341,7 @@ export async function POST(request: Request) {
       });
     }
 
-    let order = null as Awaited<ReturnType<typeof prisma.order.create>> | null;
+    let order: Prisma.OrderGetPayload<{ include: { products: true } }> | null = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         order = await prisma.$transaction(async (tx) => {
@@ -427,10 +431,25 @@ export async function POST(request: Request) {
       });
     }
 
+    const metaEventId = createMetaCapiEventId('purchase', order.orderNumber);
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    const eventSourceUrl = appUrl
+      ? `${appUrl.replace(/\/$/, '')}/order-confirmation?orderId=${encodeURIComponent(order.orderNumber)}`
+      : request.headers.get('referer') ?? undefined;
+    await sendMetaPurchaseEvent({
+      request,
+      eventId: metaEventId,
+      eventSourceUrl,
+      order,
+    }).catch((error) => {
+      console.error('Meta CAPI Purchase event failed', error);
+    });
+
     const response = NextResponse.json(
       {
         success: true,
         orderId: order.orderNumber,
+        metaEventId,
       },
       withPrivateNoStoreHeaders(),
     );

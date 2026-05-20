@@ -23,6 +23,7 @@ import {
   selectLastBundleSyncSnapshot,
 } from '@/store/cartSelectors';
 import { type CartPricingResult } from '@/lib/cart-bundle-pricing';
+import { trackMetaAddToCart } from '@/lib/meta-pixel';
 import { fetchStorefrontCatalogClient } from '@/lib/storefront-catalog-client';
 
 export type { CartItem } from '@/store/cartSlice';
@@ -595,6 +596,7 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
         typeof product.stockQuantity === 'number'
           ? Math.min(existingItem.quantity + quantity, product.stockQuantity)
           : existingItem.quantity + quantity;
+      const addedQuantity = Math.max(0, nextQuantity - existingItem.quantity);
       setCartItems(
         cartItems.map((item) =>
           item.id === normalizedId
@@ -613,22 +615,36 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
             : item,
         ),
       );
+      if (addedQuantity > 0) {
+        trackMetaAddToCart(
+          {
+            ...existingItem,
+            detailId: productId,
+            variantId: product.variantId ?? existingItem.variantId,
+            variantLabel: product.variantLabel ?? existingItem.variantLabel,
+            image: product.image || existingItem.image,
+            price: product.price,
+            salePrice: product.salePrice,
+            stockQuantity: product.stockQuantity ?? existingItem.stockQuantity,
+          },
+          addedQuantity,
+        );
+      }
       return;
     }
 
-    setCartItems([
-      ...cartItems,
-      {
-        ...product,
-        id: normalizedId,
-        detailId: productId,
-        quantity:
-          typeof product.stockQuantity === 'number'
-            ? Math.min(quantity, product.stockQuantity)
-            : quantity,
-        selected: true,
-      },
-    ]);
+    const nextItem = {
+      ...product,
+      id: normalizedId,
+      detailId: productId,
+      quantity:
+        typeof product.stockQuantity === 'number'
+          ? Math.min(quantity, product.stockQuantity)
+          : quantity,
+      selected: true,
+    };
+    setCartItems([...cartItems, nextItem]);
+    trackMetaAddToCart(nextItem, nextItem.quantity);
   }
 
   function setShippingOption(option: ShippingOption) {
@@ -666,19 +682,24 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const currentItem = cartItems.find((item) => item.id === lineId);
+    const nextQuantity =
+      currentItem && typeof currentItem.stockQuantity === 'number'
+        ? Math.min(quantity, currentItem.stockQuantity)
+        : quantity;
     setCartItems(
       cartItems.map((item) =>
         item.id === lineId
           ? {
               ...item,
-              quantity:
-                typeof item.stockQuantity === 'number'
-                  ? Math.min(quantity, item.stockQuantity)
-                  : quantity,
+              quantity: nextQuantity,
             }
           : item,
       ),
     );
+    if (currentItem && nextQuantity > currentItem.quantity) {
+      trackMetaAddToCart(currentItem, nextQuantity - currentItem.quantity);
+    }
   }
 
   function removeFromCart(lineId: string) {

@@ -94,6 +94,7 @@ export async function GET(
   const items = order.products.map((item) => ({
     id: item.productId,
     detailId: item.productId,
+    variantId: item.variantId,
     name: item.productName,
     price: Number(item.unitPrice),
     salePrice: undefined,

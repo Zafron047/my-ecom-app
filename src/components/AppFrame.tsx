@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { CartProvider } from '@/components/CartProvider';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import MetaPixel from '@/components/MetaPixel';
 
 function isStorefrontPath(pathname: string) {
   return !(
@@ -23,6 +24,7 @@ export default function AppFrame({ children }: { children: React.ReactNode }) {
 
   return (
     <CartProvider>
+      <MetaPixel />
       <Header />
       <main className="flex-1">{children}</main>
       <Footer />

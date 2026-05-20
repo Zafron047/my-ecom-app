@@ -6,6 +6,11 @@ import {
 } from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
 import { getGroupedAreaOptions, getGroupedDistrictOptions } from '@/lib/location-presenter';
+import {
+  META_PURCHASE_EVENT_STORAGE_PREFIX,
+  trackMetaEvent,
+  trackMetaInitiateCheckout,
+} from '@/lib/meta-pixel';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
 import Image from 'next/image';
@@ -440,6 +445,13 @@ export default function Header() {
 
   function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (normalizedQuery) {
+      trackMetaEvent('Search', {
+        search_string: searchQuery.trim(),
+        content_ids: searchSuggestions.map((product) => product.id),
+        contents: searchSuggestions.map((product) => ({ id: product.id })),
+      });
+    }
 
     const exactMatch = searchableProducts.find(
       (product) => product.name.toLowerCase() === normalizedQuery,
@@ -459,6 +471,11 @@ export default function Header() {
   function handleSuggestionSelect(productId: string, productName: string) {
     setSearchQuery(productName);
     setIsSearchOpen(false);
+    trackMetaEvent('Search', {
+      search_string: searchQuery.trim() || productName,
+      content_ids: [productId],
+      contents: [{ id: productId }],
+    });
     router.push(`/products/${productId}`);
   }
 
@@ -488,6 +505,7 @@ export default function Header() {
   function handleProceedToCheckout() {
     if (!canCheckoutWithAuthoritativePricing) return;
     setIsCheckoutView(true);
+    trackMetaInitiateCheckout(selectedCartItems, subtotal);
   }
 
   function handleCheckoutInputChange(
@@ -637,7 +655,10 @@ export default function Header() {
         return;
       }
 
-      const payload = (await response.json()) as { orderId: string };
+      const payload = (await response.json()) as {
+        orderId: string;
+        metaEventId?: string;
+      };
       if (!payload.orderId) {
         setPlaceOrderError('Could not place order. Please try again.');
         return;
@@ -650,6 +671,12 @@ export default function Header() {
       };
 
       localStorage.setItem(`order_${payload.orderId}`, JSON.stringify(orderData));
+      if (payload.metaEventId) {
+        localStorage.setItem(
+          `${META_PURCHASE_EVENT_STORAGE_PREFIX}${payload.orderId}`,
+          payload.metaEventId,
+        );
+      }
       localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, payload.orderId);
       handleCloseCart();
       router.push(`/order-confirmation?orderId=${payload.orderId}`);
