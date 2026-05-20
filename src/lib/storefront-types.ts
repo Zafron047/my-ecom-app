@@ -21,6 +21,7 @@ export interface StorefrontCatalogProduct {
     size: string;
     price: number;
     salePrice?: number;
+    stockQuantity: number;
     image: string;
     images?: string[];
   }[];
@@ -84,6 +85,7 @@ export interface StorefrontProductDetail {
     size: string;
     price: number;
     salePrice?: number;
+    stockQuantity: number;
     image: string;
     images?: string[];
   }[];

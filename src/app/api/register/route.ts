@@ -1,7 +1,15 @@
 import { NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
+import {
+  CUSTOMER_AUTH_COOKIE,
+  CUSTOMER_SESSION_COOKIE,
+  createCustomerSessionToken,
+  hashCustomerSessionToken,
+} from '@/lib/customer-auth';
 import { hashPassword } from '@/lib/password-auth';
 import { prisma } from '@/lib/prisma';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 type RegisterBody = {
   firstName?: string;
@@ -22,6 +30,48 @@ function getPhoneVariants(phone: string) {
     return { canonical: trimmed, variants: [trimmed, intl] };
   }
   return { canonical: trimmed, variants: [trimmed] };
+}
+
+async function createAuthenticatedRegistrationResponse(customerId: string) {
+  const response = NextResponse.json({
+    redirectTo: '/',
+    success: true,
+    customerId,
+  });
+  const sessionToken = createCustomerSessionToken();
+  const sessionTokenHash = hashCustomerSessionToken(sessionToken);
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
+  const now = new Date();
+
+  await prisma.$executeRawUnsafe(
+    `
+      INSERT INTO "CustomerSession"
+      ("id", "customerId", "sessionTokenHash", "expiresAt", "lastSeenAt", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, $5, $5, $5)
+    `,
+    randomUUID(),
+    customerId,
+    sessionTokenHash,
+    expiresAt,
+    now,
+  );
+
+  response.cookies.set(CUSTOMER_SESSION_COOKIE, sessionToken, {
+    expires: expiresAt,
+    httpOnly: true,
+    path: '/',
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  });
+  response.cookies.set(CUSTOMER_AUTH_COOKIE, '1', {
+    expires: expiresAt,
+    httpOnly: false,
+    path: '/',
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  });
+
+  return response;
 }
 
 export async function POST(request: Request) {
@@ -52,6 +102,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const normalizedRateLimitPhone = phone.toLowerCase();
+  const rateLimit = checkRateLimit({
+    key: `customer-register:${getClientIp(request)}:${normalizedRateLimitPhone}`,
+    limit: 5,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many registration attempts. Please try again later.' },
+      { status: 429 },
+    );
+  }
+
   try {
     const passwordHash = await hashPassword(password);
     const normalizedPhone = getPhoneVariants(phone);
@@ -62,13 +125,28 @@ export async function POST(request: Request) {
           in: normalizedPhone.variants,
         },
       },
-      select: { id: true },
+      select: { id: true, passwordHash: true },
     });
     if (existingByPhone) {
-      return NextResponse.json(
-        { error: 'A customer with this phone already exists.' },
-        { status: 409 },
-      );
+      if (existingByPhone.passwordHash) {
+        return NextResponse.json(
+          { error: 'A customer with this phone already exists.' },
+          { status: 409 },
+        );
+      }
+
+      await prisma.customer.update({
+        where: { id: existingByPhone.id },
+        data: {
+          firstName,
+          lastName: lastName || null,
+          email,
+          phone: normalizedPhone.canonical,
+          passwordHash,
+        },
+      });
+
+      return createAuthenticatedRegistrationResponse(existingByPhone.id);
     }
 
     const customer = await prisma.customer.create({
@@ -87,7 +165,7 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ success: true, customerId: customer.id });
+    return createAuthenticatedRegistrationResponse(customer.id);
   } catch (error) {
     console.error('register_api_error', error);
 

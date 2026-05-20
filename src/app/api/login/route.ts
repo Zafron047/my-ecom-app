@@ -8,6 +8,7 @@ import {
 } from '@/lib/customer-auth';
 import { verifyPassword } from '@/lib/password-auth';
 import { prisma } from '@/lib/prisma';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 type LoginBody = {
   identifier?: string;
@@ -61,6 +62,18 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: 'Phone/email and password are required.' },
       { status: 400 },
+    );
+  }
+
+  const rateLimit = checkRateLimit({
+    key: `customer-login:${getClientIp(request)}:${identifier.toLowerCase()}`,
+    limit: 10,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many login attempts. Please try again later.' },
+      { status: 429 },
     );
   }
 

@@ -458,8 +458,10 @@ export default function PurchaseRecordForm({
       const alreadyReceived = receivedByLine.get(line.id) ?? line.receivedQuantity;
       const remainingQuantity = Math.max(0, line.orderedQuantity - alreadyReceived);
 
+      if (remainingQuantity === 0) continue;
+      if (!rawReceiveQuantity.trim()) continue;
+
       if (
-        !rawReceiveQuantity.trim() ||
         !Number.isInteger(receiveQuantity) ||
         receiveQuantity < 0
       ) {
@@ -646,10 +648,12 @@ export default function PurchaseRecordForm({
       const alreadyReceived = receivedByLine.get(line.id) ?? line.receivedQuantity;
       const remainingQuantity = Math.max(0, line.orderedQuantity - alreadyReceived);
 
+      if (remainingQuantity === 0) continue;
+      if (!rawReceiveQuantity.trim()) continue;
+
       if (
-        rawReceiveQuantity.trim() &&
-        (!Number.isInteger(Number(rawReceiveQuantity)) ||
-          Number(rawReceiveQuantity) < 0)
+        !Number.isInteger(Number(rawReceiveQuantity)) ||
+        Number(rawReceiveQuantity) < 0
       ) {
         setActionError('Received quantity must be a whole number.');
         return;
@@ -1186,11 +1190,17 @@ export default function PurchaseRecordForm({
               alreadyReceived + receiveNow,
             );
             const toReceive = Math.max(0, line.orderedQuantity - projectedReceived);
+            const remainingQuantity = Math.max(0, line.orderedQuantity - alreadyReceived);
+            const isLineFullyReceived = remainingQuantity === 0;
 
             return (
               <div
                 key={line.id}
-                className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                className={`rounded-xl border p-3 ${
+                  isLineFullyReceived
+                    ? 'border-slate-200 bg-slate-100/80'
+                    : 'border-slate-200 bg-slate-50'
+                }`}
               >
                 <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_135px_105px_105px_120px_120px] md:items-start">
                   <div className="min-w-0 space-y-1.5 text-xs font-semibold text-slate-600">
@@ -1251,14 +1261,28 @@ export default function PurchaseRecordForm({
                     />
                   </label>
                   <label className="space-y-1.5 text-xs font-semibold text-slate-600">
-                    <span>Receive Now</span>
+                    <span className="flex items-center justify-between gap-2">
+                      <span>Receive Now</span>
+                      {isLineFullyReceived ? (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                          Full
+                        </span>
+                      ) : null}
+                    </span>
                     <input
-                      readOnly={!isEditingReceive}
+                      disabled={isLineFullyReceived}
+                      readOnly={!isEditingReceive || isLineFullyReceived}
                       inputMode="numeric"
-                      max={Math.max(0, line.orderedQuantity - alreadyReceived)}
-                      value={isEditingReceive ? receiveNowByLine.get(line.id) ?? '' : '0'}
+                      max={remainingQuantity}
+                      value={
+                        isLineFullyReceived
+                          ? '0'
+                          : isEditingReceive
+                            ? receiveNowByLine.get(line.id) ?? ''
+                            : '0'
+                      }
                       onChange={(event) => updateReceiveNow(line.id, event.target.value)}
-                      className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-300 read-only:border-slate-200 read-only:bg-slate-100 read-only:font-semibold read-only:text-slate-700"
+                      className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-300 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:font-semibold disabled:text-slate-500 read-only:border-slate-200 read-only:bg-slate-100 read-only:font-semibold read-only:text-slate-700"
                     />
                   </label>
                 </div>

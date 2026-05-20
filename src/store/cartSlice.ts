@@ -9,6 +9,7 @@ export type CartProduct = {
   name: string;
   price: number;
   salePrice?: number;
+  stockQuantity?: number;
   image: string;
   hasActiveBundleOffer?: boolean;
   bundleMinTotalQty?: number;

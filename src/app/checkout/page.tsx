@@ -5,12 +5,22 @@ import {
   useCart,
 } from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
-import { getGroupedAreaOptions } from '@/lib/location-presenter';
+import { getGroupedAreaOptions, getGroupedDistrictOptions } from '@/lib/location-presenter';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import SearchableDropdown from '@/components/SearchableDropdown';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+const MOBILE_PATTERN = /^01[3-9]\d{8}$/;
+
+function normalizeMobileInput(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (digits.startsWith('8801') && digits.length === 13) {
+    return `0${digits.slice(3)}`;
+  }
+  return digits;
+}
 
 export default function Checkout() {
   const router = useRouter();
@@ -32,9 +42,9 @@ export default function Checkout() {
     expiryDate: '',
     cvv: '',
   });
-  const [locationDivisions, setLocationDivisions] = useState<string[]>([]);
   const [locationDistricts, setLocationDistricts] = useState<string[]>([]);
   const [locationAreas, setLocationAreas] = useState<string[]>([]);
+  const lastAutofillPhoneRef = useRef('');
 
   const shippingCharge = useMemo(() => {
     return getShippingCharge({
@@ -50,6 +60,7 @@ export default function Checkout() {
     formData.district,
     locationAreas,
   );
+  const groupedDistrictOptions = getGroupedDistrictOptions(locationDistricts);
 
   const handlePlaceOrder = async () => {
     // Basic validation
@@ -57,7 +68,6 @@ export default function Checkout() {
       !formData.firstName ||
       !formData.lastName ||
       !formData.customerMobile ||
-      !formData.division ||
       !formData.district ||
       !formData.thana ||
       !formData.address
@@ -110,8 +120,15 @@ export default function Checkout() {
       });
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as
-          | { error?: string }
+          | { code?: string; error?: string; redirectTo?: string }
           | null;
+        if (
+          response.status === 403 &&
+          errorPayload?.code === 'CUSTOMER_BLOCKED'
+        ) {
+          router.push(errorPayload.redirectTo || '/unauthorized');
+          return;
+        }
         setPlaceOrderError(
           errorPayload?.error || 'Could not place order. Please try again.',
         );
@@ -145,43 +162,9 @@ export default function Checkout() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadDivisions() {
-      try {
-        const response = await fetch('/api/delivery-locations');
-        if (!response.ok) return;
-        const payload = (await response.json()) as { items: string[] };
-        if (!isMounted) return;
-        setLocationDivisions(payload.items ?? []);
-      } catch {
-        if (!isMounted) return;
-        setLocationDivisions([]);
-      }
-    }
-
-    void loadDivisions();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    if (!formData.division) {
-      setLocationDistricts([]);
-      return () => {
-        isMounted = false;
-      };
-    }
-
     async function loadDistricts() {
       try {
-        const query = new URLSearchParams({
-          type: 'districts',
-          division: formData.division,
-        });
-        const response = await fetch(`/api/delivery-locations?${query.toString()}`);
+        const response = await fetch('/api/delivery-locations?type=districts');
         if (!response.ok) return;
         const payload = (await response.json()) as { items: string[] };
         if (!isMounted) return;
@@ -197,12 +180,12 @@ export default function Checkout() {
     return () => {
       isMounted = false;
     };
-  }, [formData.division]);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
 
-    if (!formData.division || !formData.district) {
+    if (!formData.district) {
       setLocationAreas([]);
       return () => {
         isMounted = false;
@@ -213,7 +196,6 @@ export default function Checkout() {
       try {
         const query = new URLSearchParams({
           type: 'areas',
-          division: formData.division,
           district: formData.district,
         });
         const response = await fetch(`/api/delivery-locations?${query.toString()}`);
@@ -232,7 +214,56 @@ export default function Checkout() {
     return () => {
       isMounted = false;
     };
-  }, [formData.district, formData.division]);
+  }, [formData.district]);
+
+  useEffect(() => {
+    const normalizedPhone = normalizeMobileInput(formData.customerMobile);
+
+    if (!MOBILE_PATTERN.test(normalizedPhone)) return;
+    if (lastAutofillPhoneRef.current === normalizedPhone) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const query = new URLSearchParams({ phone: normalizedPhone });
+        const response = await fetch(`/api/customers/by-phone?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          customer: {
+            firstName: string;
+            lastName: string | null;
+            email: string | null;
+            phone: string;
+            division: string | null;
+            district: string | null;
+            thana: string | null;
+            address: string | null;
+          } | null;
+        };
+        if (!payload.customer) {
+          lastAutofillPhoneRef.current = normalizedPhone;
+          return;
+        }
+        setFormData((current) => ({
+          ...current,
+          customerMobile: current.customerMobile,
+          firstName: payload.customer?.firstName ?? current.firstName,
+          lastName: payload.customer?.lastName ?? current.lastName,
+          email: payload.customer?.email ?? current.email,
+          division: payload.customer?.division ?? current.division,
+          district: payload.customer?.district ?? current.district,
+          thana: payload.customer?.thana ?? current.thana,
+          address: payload.customer?.address ?? current.address,
+        }));
+        lastAutofillPhoneRef.current = normalizedPhone;
+      } catch {
+        // Checkout remains usable if the saved customer lookup is unavailable.
+      }
+    }, 320);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [formData.customerMobile]);
 
   const handleInputChange = (
     e: React.ChangeEvent<
@@ -243,21 +274,18 @@ export default function Checkout() {
     setFormData((prev) => ({
       ...prev,
       [name]: value,
-      // Reset dependent fields when parent changes
-      ...(name === 'division' && { district: '', thana: '' }),
-      ...(name === 'district' && { thana: '' }),
+      ...(name === 'district' && { division: '', thana: '' }),
     }));
   };
 
   function handleLocationSelect(
-    field: 'division' | 'district' | 'thana',
+    field: 'district' | 'thana',
     value: string,
   ) {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
-      ...(field === 'division' && { district: '', thana: '' }),
-      ...(field === 'district' && { thana: '' }),
+      ...(field === 'district' && { division: '', thana: '' }),
     }));
   }
 
@@ -417,22 +445,7 @@ export default function Checkout() {
               </svg>
               Delivery Address
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div>
-                <label
-                  htmlFor="division"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Division *
-                </label>
-                <SearchableDropdown
-                  value={formData.division}
-                  options={locationDivisions}
-                  placeholder="Select Division"
-                  onSelect={(value) => handleLocationSelect('division', value)}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
-                />
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label
                   htmlFor="district"
@@ -442,9 +455,8 @@ export default function Checkout() {
                 </label>
                 <SearchableDropdown
                   value={formData.district}
-                  options={locationDistricts}
+                  options={groupedDistrictOptions}
                   placeholder="Select District"
-                  disabled={!formData.division}
                   onSelect={(value) => handleLocationSelect('district', value)}
                   className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"
                 />

@@ -10,6 +10,7 @@ interface ProductCollectionViewProps {
   description: string;
   products: StorefrontCatalogProduct[];
   categories: string[];
+  initialCategory?: string;
 }
 
 export default function ProductCollectionView({
@@ -17,9 +18,12 @@ export default function ProductCollectionView({
   description,
   products,
   categories,
+  initialCategory,
 }: ProductCollectionViewProps) {
   const [sortBy, setSortBy] = useState('featured');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(
+    initialCategory ?? null,
+  );
 
   const filteredProducts =
     selectedCategory && selectedCategory !== 'All'

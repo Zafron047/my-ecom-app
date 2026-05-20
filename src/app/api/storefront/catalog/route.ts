@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
+import { PUBLIC_STOREFRONT_CACHE_HEADERS } from '@/lib/http-cache';
 import { getStorefrontCatalog } from '@/lib/storefront-data';
-
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
 
 const CATALOG_CACHE_TTL_MS = 5 * 60_000;
 type CatalogCacheEntry = {
@@ -17,7 +15,7 @@ const globalForCatalogCache = globalThis as unknown as {
 
 function catalogHeaders(cacheState: 'HIT' | 'MISS') {
   return {
-    'Cache-Control': 'private, max-age=300',
+    ...PUBLIC_STOREFRONT_CACHE_HEADERS,
     'X-Catalog-Cache': cacheState,
   };
 }
@@ -49,7 +47,7 @@ export async function GET() {
     globalForCatalogCache.storefrontCatalogPromise = null;
     return NextResponse.json(
       { error: 'Failed to load storefront catalog.' },
-      { status: 500 },
+      { status: 500, headers: PUBLIC_STOREFRONT_CACHE_HEADERS },
     );
   }
 }

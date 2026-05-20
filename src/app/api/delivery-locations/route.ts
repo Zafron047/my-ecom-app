@@ -1,8 +1,10 @@
 import {
   getDeliveryAreas,
+  getDeliveryDivisionForDistrict,
   getDeliveryDistricts,
   getDeliveryDivisions,
 } from '@/lib/delivery-locations';
+import { PUBLIC_STOREFRONT_CACHE_HEADERS } from '@/lib/http-cache';
 
 const DELIVERY_CACHE_TTL_MS = 5 * 60_000;
 const deliveryCache = new Map<string, { expiresAt: number; items: string[] }>();
@@ -27,22 +29,44 @@ export async function GET(request: Request) {
   const district = url.searchParams.get('district') ?? '';
 
   if (type === 'districts') {
-    return Response.json({
-      items: await getCachedItems(`districts:${division}`, () =>
-        getDeliveryDistricts(division),
-      ),
-    });
+    return Response.json(
+      {
+        items: await getCachedItems(`districts:${division}`, () =>
+          getDeliveryDistricts(division),
+        ),
+      },
+      { headers: PUBLIC_STOREFRONT_CACHE_HEADERS },
+    );
   }
 
   if (type === 'areas') {
-    return Response.json({
-      items: await getCachedItems(`areas:${division}:${district}`, () =>
-        getDeliveryAreas(division, district),
-      ),
-    });
+    return Response.json(
+      {
+        items: await getCachedItems(`areas:${division}:${district}`, () =>
+          getDeliveryAreas(division, district),
+        ),
+      },
+      { headers: PUBLIC_STOREFRONT_CACHE_HEADERS },
+    );
   }
 
-  return Response.json({
-    items: await getCachedItems('divisions', getDeliveryDivisions),
-  });
+  if (type === 'division') {
+    return Response.json(
+      {
+        division: district
+          ? await getCachedItems(`division:${district}`, async () => [
+              await getDeliveryDivisionForDistrict(district),
+            ]).then((items) => items[0] ?? '')
+          : '',
+      },
+      { headers: PUBLIC_STOREFRONT_CACHE_HEADERS },
+    );
+  }
+
+  return Response.json(
+    {
+      items: await getCachedItems('divisions', getDeliveryDivisions),
+    },
+    { headers: PUBLIC_STOREFRONT_CACHE_HEADERS },
+  );
 }

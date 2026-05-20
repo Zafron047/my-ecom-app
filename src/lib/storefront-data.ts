@@ -1,20 +1,35 @@
 import { prisma } from '@/lib/prisma';
+import { toVariantImageUrl, type ImageVariantSize } from '@/lib/image-variants';
+import { unstable_cache } from 'next/cache';
 import type {
   StorefrontCatalogProduct,
   StorefrontHomepageSection,
   StorefrontProductDetail,
 } from '@/lib/storefront-types';
 
-type ProductWithRelations = Awaited<ReturnType<typeof getStorefrontProducts>>[number];
+export const STOREFRONT_REVALIDATE_SECONDS = 300;
 
-async function getStorefrontProducts() {
+type CatalogCardProduct = Awaited<ReturnType<typeof loadCatalogCardProducts>>[number];
+type ProductDetailProduct = NonNullable<Awaited<ReturnType<typeof loadProductDetail>>>;
+type StorefrontProductRow = CatalogCardProduct | ProductDetailProduct;
+
+async function loadCatalogCardProducts() {
   return prisma.product.findMany({
     where: {
       status: 'active',
     },
-    include: {
+    select: {
+      id: true,
+      name: true,
+      price: true,
+      salePrice: true,
+      createdAt: true,
+      hasActiveBundleOffer: true,
+      bundleMinTotalQty: true,
+      bundleDiscountPercent: true,
+      bundleDisplayText: true,
       categories: {
-        include: {
+        select: {
           category: {
             select: {
               name: true,
@@ -24,20 +39,14 @@ async function getStorefrontProducts() {
         take: 1,
       },
       images: {
-        orderBy: [
-          {
-            isPrimary: 'desc',
-          },
-          {
-            sortOrder: 'asc',
-          },
-        ],
-      },
-      specifications: {
+        select: {
+          storagePath: true,
+          isPrimary: true,
+          sortOrder: true,
+        },
         orderBy: {
           sortOrder: 'asc',
         },
-        take: 8,
       },
       variants: {
         where: {
@@ -46,8 +55,19 @@ async function getStorefrontProducts() {
         orderBy: {
           sortOrder: 'asc',
         },
-        include: {
+        select: {
+          id: true,
+          color: true,
+          colorHex: true,
+          size: true,
+          price: true,
+          compareAtPrice: true,
+          stockQuantity: true,
+          imagePath: true,
           variantImages: {
+            select: {
+              imagePath: true,
+            },
             orderBy: {
               sortOrder: 'asc',
             },
@@ -85,7 +105,7 @@ async function getStorefrontProducts() {
         },
       },
       tags: {
-        include: {
+        select: {
           tag: {
             select: {
               name: true,
@@ -101,7 +121,13 @@ async function getStorefrontProducts() {
         orderBy: {
           sortOrder: 'asc',
         },
-        include: {
+        select: {
+          id: true,
+          title: true,
+          imagePath: true,
+          minTotalQty: true,
+          discountPercent: true,
+          isActive: true,
           variants: {
             select: {
               variantId: true,
@@ -117,11 +143,11 @@ async function getStorefrontProducts() {
   });
 }
 
-function getCategoryName(product: ProductWithRelations) {
+function getCategoryName(product: StorefrontProductRow) {
   return product.categories[0]?.category.name ?? 'Uncategorized';
 }
 
-function getPrimaryImage(product: ProductWithRelations) {
+function getPrimaryImage(product: StorefrontProductRow) {
   const imageFromGallery = product.images[0]?.storagePath;
   if (imageFromGallery) return imageFromGallery;
 
@@ -129,11 +155,32 @@ function getPrimaryImage(product: ProductWithRelations) {
   return imageFromVariant ?? '';
 }
 
-function getPricing(product: ProductWithRelations) {
+function toSizedImage(imageUrl: string, size: ImageVariantSize) {
+  return imageUrl ? toVariantImageUrl(imageUrl, size) : '';
+}
+
+function toSizedImages(imageUrls: string[], size: ImageVariantSize) {
+  return [
+    ...new Set(
+      imageUrls
+        .filter((imageUrl) => Boolean(imageUrl && imageUrl.trim()))
+        .map((imageUrl) => toSizedImage(imageUrl, size)),
+    ),
+  ];
+}
+
+function getPricing(product: StorefrontProductRow) {
   if (product.variants.length === 0) {
+    const productPrice = product.price?.toNumber() ?? 0;
+    const productSalePrice = product.salePrice?.toNumber();
     return {
-      price: 0,
-      salePrice: undefined as number | undefined,
+      price: productSalePrice && productSalePrice < productPrice
+        ? productPrice
+        : productSalePrice ?? productPrice,
+      salePrice:
+        productSalePrice && productSalePrice < productPrice
+          ? productSalePrice
+          : undefined,
     };
   }
 
@@ -165,13 +212,10 @@ function getPricing(product: ProductWithRelations) {
   };
 }
 
-function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProduct {
-  const { price, salePrice } = getPricing(product);
-  const hasSale = typeof salePrice === 'number' && salePrice < price;
-  const galleryImages = product.images.map((image) => image.storagePath);
-  const images = [...new Set([...galleryImages, getPrimaryImage(product)])].filter(Boolean);
+function toVariantRows(product: StorefrontProductRow, imageSize: ImageVariantSize) {
+  const primaryImage = getPrimaryImage(product);
 
-  const variantRows = product.variants.map((variant) => {
+  return product.variants.map((variant) => {
     const basePrice = variant.price.toNumber();
     const compareAt = variant.compareAtPrice?.toNumber();
     const hasVariantSale = typeof compareAt === 'number' && compareAt > basePrice;
@@ -181,6 +225,7 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
         : variant.imagePath
           ? [variant.imagePath]
           : [];
+    const sizedVariantImages = toSizedImages(variantImageList, imageSize);
 
     return {
       id: variant.id,
@@ -189,10 +234,14 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
       size: variant.size?.trim() || '',
       price: hasVariantSale ? compareAt : basePrice,
       ...(hasVariantSale ? { salePrice: basePrice } : {}),
-      image: variant.imagePath || getPrimaryImage(product),
-      ...(variantImageList.length > 0 ? { images: variantImageList } : {}),
+      stockQuantity: variant.stockQuantity,
+      image: toSizedImage(variant.imagePath || primaryImage, imageSize),
+      ...(sizedVariantImages.length > 0 ? { images: sizedVariantImages } : {}),
     };
   });
+}
+
+function toBundleOffers(product: StorefrontProductRow, imageSize: ImageVariantSize) {
   const globalBundleOffers = [
     ...new Map(
       product.variants
@@ -203,14 +252,45 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
     ).values(),
   ];
 
+  return product.bundleOffers.map((offer) => ({
+    id: offer.id,
+    title: offer.title?.trim() || 'Bundle Offer',
+    image: toSizedImage(offer.imagePath || '', imageSize),
+    minTotalQty: offer.minTotalQty,
+    discountPercent: offer.discountPercent.toNumber(),
+    variantIds: offer.variants.map((item) => item.variantId),
+    isActive: offer.isActive,
+  })).concat(
+    globalBundleOffers.map((offer) => ({
+      id: offer.id,
+      title: offer.title.trim() || 'Bundle Offer',
+      image: toSizedImage(offer.imagePath || '', imageSize),
+      minTotalQty: offer.minTotalQty,
+      discountPercent: offer.discountPercent.toNumber(),
+      variantIds: offer.variants.map((item) => item.variantId),
+      isActive: offer.isActive,
+    })),
+  );
+}
+
+function toCatalogProduct(product: StorefrontProductRow): StorefrontCatalogProduct {
+  const { price, salePrice } = getPricing(product);
+  const hasSale = typeof salePrice === 'number' && salePrice < price;
+  const isSoldOut =
+    product.variants.length === 0 ||
+    product.variants.every((variant) => variant.stockQuantity <= 0);
+  const galleryImages = product.images.map((image) => image.storagePath);
+  const primaryImage = getPrimaryImage(product);
+  const images = toSizedImages([...galleryImages, primaryImage], 'thumb');
+
   return {
     id: product.id,
     name: product.name,
     createdAt: product.createdAt.toISOString(),
     price,
     ...(hasSale ? { salePrice } : {}),
-    image: getPrimaryImage(product),
-    images: images.length > 0 ? images : [getPrimaryImage(product)],
+    image: toSizedImage(primaryImage, 'thumb'),
+    images: images.length > 0 ? images : [toSizedImage(primaryImage, 'thumb')],
     category: getCategoryName(product),
     tags: product.tags.flatMap((row) => [row.tag.slug, row.tag.name]),
     hasActiveBundleOffer: product.hasActiveBundleOffer,
@@ -221,33 +301,83 @@ function toCatalogProduct(product: ProductWithRelations): StorefrontCatalogProdu
       ? { bundleDiscountPercent: product.bundleDiscountPercent.toNumber() }
       : {}),
     ...(product.bundleDisplayText ? { bundleDisplayText: product.bundleDisplayText } : {}),
-    ...(hasSale ? { badge: 'Sale', superSale: true } : {}),
-    variants: variantRows,
-    bundleOffers: product.bundleOffers.map((offer) => ({
-      id: offer.id,
-      title: offer.title?.trim() || 'Bundle Offer',
-      image: offer.imagePath || '',
-      minTotalQty: offer.minTotalQty,
-      discountPercent: offer.discountPercent.toNumber(),
-      variantIds: offer.variants.map((item) => item.variantId),
-      isActive: offer.isActive,
-    })).concat(
-      globalBundleOffers.map((offer) => ({
-        id: offer.id,
-        title: offer.title.trim() || 'Bundle Offer',
-        image: offer.imagePath || '',
-        minTotalQty: offer.minTotalQty,
-        discountPercent: offer.discountPercent.toNumber(),
-        variantIds: offer.variants.map((item) => item.variantId),
-        isActive: offer.isActive,
-      })),
-    ),
+    ...(isSoldOut
+      ? { badge: 'Sold Out' }
+      : hasSale
+        ? { badge: 'Sale', superSale: true }
+        : {}),
+    variants: toVariantRows(product, 'thumb'),
+    bundleOffers: toBundleOffers(product, 'thumb'),
   };
 }
 
-export async function getStorefrontCatalog() {
-  const products = await getStorefrontProducts();
-  const catalogProducts = products.map(toCatalogProduct);
+export const getCatalogCards = unstable_cache(
+  async () => {
+    const products = await loadCatalogCardProducts();
+    return products.map(toCatalogProduct);
+  },
+  ['storefront-catalog-cards'],
+  {
+    revalidate: STOREFRONT_REVALIDATE_SECONDS,
+    tags: ['storefront-catalog'],
+  },
+);
+
+export const getHeaderSearchProducts = unstable_cache(
+  async () => {
+    const products = await prisma.product.findMany({
+      where: {
+        status: 'active',
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+      take: 200,
+      select: {
+        id: true,
+        name: true,
+        images: {
+          select: {
+            storagePath: true,
+            isPrimary: true,
+            sortOrder: true,
+          },
+          orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+          take: 1,
+        },
+        variants: {
+          where: {
+            isActive: true,
+          },
+          select: {
+            id: true,
+            imagePath: true,
+          },
+        },
+      },
+    });
+
+    return products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      image: toSizedImage(
+        product.images[0]?.storagePath ||
+          product.variants.find((variant) => variant.imagePath)?.imagePath ||
+          '',
+        'thumb',
+      ),
+      variantCount: product.variants.length,
+    }));
+  },
+  ['storefront-header-search-products'],
+  {
+    revalidate: STOREFRONT_REVALIDATE_SECONDS,
+    tags: ['storefront-catalog'],
+  },
+);
+
+export const getHomepageSections = unstable_cache(
+  async () => {
   const homepageSectionDelegate = (prisma as { homepageSection?: unknown })
     .homepageSection as
     | {
@@ -294,7 +424,59 @@ export async function getStorefrontCatalog() {
         },
       })
     : [];
-  const activeCategories = await prisma.category.findMany({
+
+    return homepageSections.length > 0
+      ? homepageSections.map(
+          (section): StorefrontHomepageSection => ({
+            id: section.id,
+            title: section.title,
+            ...(section.eyebrow ? { eyebrow: section.eyebrow } : {}),
+            variant: section.variant,
+            layout: section.layout,
+            sourceType: section.sourceType,
+            ...(section.sourceValue ? { sourceValue: section.sourceValue } : {}),
+            productIds: section.products.map((row) => row.productId),
+            productLimit: section.productLimit,
+            displayOrder: section.displayOrder,
+            ...(section.ctaLabel ? { ctaLabel: section.ctaLabel } : {}),
+            ...(section.ctaHref ? { ctaHref: section.ctaHref } : {}),
+          }),
+        )
+      : ([
+          {
+            id: 'default-featured',
+            title: 'Featured Products',
+            eyebrow: 'Fresh Picks',
+            variant: 'default',
+            layout: 'grid',
+            sourceType: 'latest',
+            productLimit: 6,
+            displayOrder: 1,
+          },
+          {
+            id: 'default-super-sale',
+            title: 'Super Sale',
+            eyebrow: 'Limited-Time Offers',
+            variant: 'sale',
+            layout: 'grid',
+            sourceType: 'super_sale',
+            productLimit: 5,
+            displayOrder: 2,
+            ctaLabel: 'Shop all deals',
+            ctaHref: '/collections/super-sale',
+          },
+        ] satisfies StorefrontHomepageSection[]);
+  },
+  ['storefront-homepage-sections'],
+  {
+    revalidate: STOREFRONT_REVALIDATE_SECONDS,
+    tags: ['storefront-homepage-sections'],
+  },
+);
+
+export const getStorefrontCategories = unstable_cache(
+  async () => {
+    const activeCategories = await prisma.category.findMany({
     where: {
       isActive: true,
       products: {
@@ -314,59 +496,39 @@ export async function getStorefrontCatalog() {
     },
   });
 
+    return {
+      categories: ['All', ...activeCategories.map((category) => category.name)],
+      categoryThumbnails: Object.fromEntries(
+        activeCategories.map((category) => [
+          category.name,
+          toSizedImage(category.imagePath || '', 'thumb'),
+        ]),
+      ),
+    };
+  },
+  ['storefront-categories'],
+  {
+    revalidate: STOREFRONT_REVALIDATE_SECONDS,
+    tags: ['storefront-categories'],
+  },
+);
+
+export async function getStorefrontCatalog() {
+  const [products, homepageSections, categoryData] = await Promise.all([
+    getCatalogCards(),
+    getHomepageSections(),
+    getStorefrontCategories(),
+  ]);
+
   return {
-    products: catalogProducts,
-    homepageSections:
-      homepageSections.length > 0
-        ? homepageSections.map(
-            (section): StorefrontHomepageSection => ({
-              id: section.id,
-              title: section.title,
-              ...(section.eyebrow ? { eyebrow: section.eyebrow } : {}),
-              variant: section.variant,
-              layout: section.layout,
-              sourceType: section.sourceType,
-              ...(section.sourceValue ? { sourceValue: section.sourceValue } : {}),
-              productIds: section.products.map((row) => row.productId),
-              productLimit: section.productLimit,
-              displayOrder: section.displayOrder,
-              ...(section.ctaLabel ? { ctaLabel: section.ctaLabel } : {}),
-              ...(section.ctaHref ? { ctaHref: section.ctaHref } : {}),
-            }),
-          )
-        : [
-            {
-              id: 'default-featured',
-              title: 'Featured Products',
-              eyebrow: 'Fresh Picks',
-              variant: 'default',
-              layout: 'grid',
-              sourceType: 'latest',
-              productLimit: 6,
-              displayOrder: 1,
-            },
-            {
-              id: 'default-super-sale',
-              title: 'Super Sale',
-              eyebrow: 'Limited-Time Offers',
-              variant: 'sale',
-              layout: 'grid',
-              sourceType: 'super_sale',
-              productLimit: 5,
-              displayOrder: 2,
-              ctaLabel: 'Shop all deals',
-              ctaHref: '/collections/super-sale',
-            },
-          ],
-    categories: ['All', ...activeCategories.map((category) => category.name)],
-    categoryThumbnails: Object.fromEntries(
-      activeCategories.map((category) => [category.name, category.imagePath || '']),
-    ),
+    products,
+    homepageSections,
+    ...categoryData,
   };
 }
 
-export async function getStorefrontProductDetailById(productId: string) {
-  const product = await prisma.product.findFirst({
+async function loadProductDetail(productId: string) {
+  return prisma.product.findFirst({
     where: {
       id: productId,
       status: 'active',
@@ -384,9 +546,6 @@ export async function getStorefrontProductDetailById(productId: string) {
       },
       images: {
         orderBy: [
-          {
-            isPrimary: 'desc',
-          },
           {
             sortOrder: 'asc',
           },
@@ -470,7 +629,11 @@ export async function getStorefrontProductDetailById(productId: string) {
       },
     },
   });
+}
 
+export const getProductDetail = unstable_cache(
+  async (productId: string) => {
+    const product = await loadProductDetail(productId);
   if (!product) return null;
 
   const catalogBase = toCatalogProduct(product);
@@ -478,7 +641,7 @@ export async function getStorefrontProductDetailById(productId: string) {
   const fallbackImages = product.variants
     .map((variant) => variant.imagePath)
     .filter((imagePath): imagePath is string => Boolean(imagePath));
-  const images = [...new Set([...galleryImages, ...fallbackImages, catalogBase.image])].filter(
+  const images = toSizedImages([...galleryImages, ...fallbackImages, getPrimaryImage(product)], 'detail').filter(
     Boolean,
   );
 
@@ -500,38 +663,12 @@ export async function getStorefrontProductDetailById(productId: string) {
     name: specification.name,
     value: specification.value,
   }));
-  const globalBundleOffers = [
-    ...new Map(
-      product.variants
-        .flatMap((variant) =>
-          variant.globalBundleOfferLinks.map((link) => link.bundleOffer),
-        )
-        .map((offer) => [offer.id, offer] as const),
-    ).values(),
-  ];
-  const bundleOffers = product.bundleOffers.map((offer) => ({
-    id: offer.id,
-    title: offer.title?.trim() || `Bundle ${offer.minTotalQty}+`,
-    image: offer.imagePath || '',
-    minTotalQty: offer.minTotalQty,
-    discountPercent: offer.discountPercent.toNumber(),
-    variantIds: offer.variants.map((item) => item.variantId),
-    isActive: offer.isActive,
-  })).concat(
-    globalBundleOffers.map((offer) => ({
-      id: offer.id,
-      title: offer.title.trim() || `Bundle ${offer.minTotalQty}+`,
-      image: offer.imagePath || '',
-      minTotalQty: offer.minTotalQty,
-      discountPercent: offer.discountPercent.toNumber(),
-      variantIds: offer.variants.map((item) => item.variantId),
-      isActive: offer.isActive,
-    })),
-  );
+  const bundleOffers = toBundleOffers(product, 'thumb');
 
   return {
     ...catalogBase,
     imageVersion: product.updatedAt.getTime(),
+    image: toSizedImage(getPrimaryImage(product), 'detail'),
     images,
     category: getCategoryName(product),
     description,
@@ -551,8 +688,88 @@ export async function getStorefrontProductDetailById(productId: string) {
             { name: 'Availability', value: stock > 0 ? 'In Stock' : 'Out of Stock' },
           ],
     bundleOffers,
+    variants: toVariantRows(product, 'detail'),
     inStock: stock > 0,
     rating: 4.5,
     reviews: 124,
   } satisfies StorefrontProductDetail;
+  },
+  ['storefront-product-detail'],
+  {
+    revalidate: STOREFRONT_REVALIDATE_SECONDS,
+    tags: ['storefront-products'],
+  },
+);
+
+export async function getStorefrontProductDetailById(productId: string) {
+  return getProductDetail(productId);
+}
+
+export async function getCartPricingLookup(
+  productIds: string[],
+  selectedVariantIds: string[],
+) {
+  return Promise.all([
+    prisma.productVariant.findMany({
+      where: {
+        isActive: true,
+        stockQuantity: { gt: 0 },
+        ...(selectedVariantIds.length > 0
+          ? { id: { in: selectedVariantIds } }
+          : {}),
+        product: {
+          id: { in: productIds },
+          status: 'active',
+        },
+      },
+      select: {
+        id: true,
+        price: true,
+        stockQuantity: true,
+        productId: true,
+        product: {
+          select: {
+            bundleOffers: {
+              where: { isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+              select: {
+                id: true,
+                title: true,
+                minTotalQty: true,
+                discountPercent: true,
+                isActive: true,
+                variants: {
+                  select: { variantId: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
+    selectedVariantIds.length > 0
+      ? prisma.bundleOffer.findMany({
+          where: {
+            isActive: true,
+            variants: {
+              some: {
+                variantId: { in: selectedVariantIds },
+              },
+            },
+            OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }],
+            AND: [
+              {
+                OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }],
+              },
+            ],
+          },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            variants: {
+              select: { variantId: true },
+            },
+          },
+        })
+      : Promise.resolve([]),
+  ]);
 }

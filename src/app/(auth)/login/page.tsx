@@ -1,8 +1,23 @@
 'use client';
 
+import { FacebookIcon, GoogleIcon } from '@/components/SocialAuthIcons';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
+
+function getOAuthErrorMessage(error: string | null) {
+  if (!error) return null;
+  if (error === 'oauth_not_configured') {
+    return 'Social sign in is not configured yet.';
+  }
+  if (error === 'oauth_cancelled') {
+    return 'Social sign in was cancelled.';
+  }
+  if (error === 'oauth_blocked') {
+    return 'This customer account cannot sign in.';
+  }
+  return 'Social sign in failed. Please try again or use your password.';
+}
 
 function LoginContent() {
   const router = useRouter();
@@ -19,6 +34,11 @@ function LoginContent() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSocialLogin = (provider: 'google' | 'facebook') => {
+    const nextPath = searchParams.get('next') ?? '/';
+    window.location.href = `/api/auth/${provider}/start?next=${encodeURIComponent(nextPath)}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -81,6 +101,8 @@ function LoginContent() {
     }
   };
 
+  const visibleError = error ?? getOAuthErrorMessage(searchParams.get('error'));
+
   return (
     <div className="w-full max-w-md">
       <div className="rounded-lg bg-white p-8 shadow-lg">
@@ -95,9 +117,9 @@ function LoginContent() {
         </div>
 
         <form onSubmit={handleSubmit} className="mb-6 space-y-4">
-          {error && (
+          {visibleError && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error}
+              {visibleError}
             </div>
           )}
 
@@ -128,7 +150,7 @@ function LoginContent() {
               >
                 Password
               </label>
-              <Link href="#" className="text-xs text-blue-600 hover:text-blue-700">
+              <Link href="/forgot-password" className="text-xs text-blue-600 hover:text-blue-700">
                 Forgot?
               </Link>
             </div>
@@ -219,21 +241,19 @@ function LoginContent() {
         <div className="mb-6 space-y-2">
           <button
             type="button"
+            onClick={() => handleSocialLogin('google')}
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
           >
-            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M15.545 6.558a9.42 9.42 0 011.946 2.921c.881-1.12 1.579-2.436 1.974-3.85.084-.251.166-.502.252-.752-.635.159-1.302.299-1.99.322a4.42 4.42 0 002.048-1.953 8.875 8.875 0 01-2.805.98 4.444 4.444 0 00-7.768 4.05A12.6 12.6 0 002.33 3.06a4.46 4.46 0 001.374 5.93 4.386 4.386 0 01-2.01-.556v.056a4.432 4.432 0 003.562 4.344 4.419 4.419 0 01-2.005.078 4.434 4.434 0 004.14 3.08 8.88 8.88 0 01-5.513 1.9c-.358 0-.716-.02-1.066-.065A12.515 12.515 0 007.738 19.67c7.76 0 11.946-6.435 11.946-12.008 0-.183-.005-.365-.015-.544a8.532 8.532 0 002.087-2.17z" />
-            </svg>
+            <GoogleIcon />
             Continue with Google
           </button>
           <button
             type="button"
+            onClick={() => handleSocialLogin('facebook')}
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium transition hover:bg-gray-50"
           >
-            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M8.42 16.91a7.51 7.51 0 100-15.02A7.568 7.568 0 003.06 4.375a7.52 7.52 0 1010.86 9.83c-.165.25-.373.477-.62.657m4.04-12.93a7.51 7.51 0 11-15.02 0 7.51 7.51 0 0115.02 0z" />
-            </svg>
-            Continue with Apple
+            <FacebookIcon />
+            Continue with Facebook
           </button>
         </div>
 

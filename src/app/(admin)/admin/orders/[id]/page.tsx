@@ -5,6 +5,7 @@ import OrderPrintButton from '@/components/admin/OrderPrintButton';
 import SafeImage from '@/components/SafeImage';
 import { prisma } from '@/lib/prisma';
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
+import { getSalesOrderTimeline } from './order-timeline';
 
 type OrderDetailsPageProps = {
   params: Promise<{
@@ -28,19 +29,6 @@ export default async function AdminOrderDetailsPage({
   const order = await prisma.order.findUnique({
     where: { id },
     include: {
-      customer: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          phone: true,
-          email: true,
-          division: true,
-          district: true,
-          thana: true,
-          address: true,
-        },
-      },
       products: {
         include: {
           product: {
@@ -76,13 +64,29 @@ export default async function AdminOrderDetailsPage({
           createdAt: 'asc',
         },
       },
+      orderReturns: {
+        include: {
+          lines: {
+            select: {
+              id: true,
+              orderProductId: true,
+              quantity: true,
+              restocked: true,
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      },
     },
   });
 
   if (!order) notFound();
-  const orderNotes = await prisma.$queryRaw<
-    Array<{ id: string; note: string; createdByName: string; createdAt: Date }>
-  >`SELECT id, note, "createdByName", "createdAt" FROM "OrderNote" WHERE "orderId" = ${id} ORDER BY "createdAt" DESC`;
+  const orderTimeline = await getSalesOrderTimeline(id);
   const catalogVariants = await prisma.productVariant.findMany({
     where: {
       isActive: true,
@@ -102,27 +106,14 @@ export default async function AdminOrderDetailsPage({
     },
     orderBy: [{ product: { name: 'asc' } }, { sortOrder: 'asc' }],
   });
-  const isFulfilled = order.status === 'delivered';
-  const effectiveFirstName = isFulfilled
-    ? order.firstName
-    : order.customer.firstName || order.firstName;
-  const effectiveLastName = isFulfilled
-    ? order.lastName ?? ''
-    : order.customer.lastName ?? order.lastName ?? '';
-  const effectivePhone = isFulfilled ? order.phone : order.customer.phone || order.phone;
-  const effectiveEmail = isFulfilled
-    ? order.email ?? ''
-    : order.customer.email ?? order.email ?? '';
-  const effectiveDivision = isFulfilled
-    ? order.division
-    : order.customer.division ?? order.division;
-  const effectiveDistrict = isFulfilled
-    ? order.district
-    : order.customer.district ?? order.district;
-  const effectiveThana = isFulfilled ? order.thana : order.customer.thana ?? order.thana;
-  const effectiveAddress = isFulfilled
-    ? order.address
-    : order.customer.address ?? order.address;
+  const effectiveFirstName = order.firstName;
+  const effectiveLastName = order.lastName ?? '';
+  const effectivePhone = order.phone;
+  const effectiveEmail = order.email ?? '';
+  const effectiveDivision = order.division;
+  const effectiveDistrict = order.district;
+  const effectiveThana = order.thana;
+  const effectiveAddress = order.address;
   const paidAmountValue =
     order.paidAmount && typeof order.paidAmount.toNumber === 'function'
       ? order.paidAmount.toNumber()
@@ -235,11 +226,12 @@ export default async function AdminOrderDetailsPage({
           thana: effectiveThana,
           address: effectiveAddress,
           notes: '',
-          noteHistory: orderNotes.map((entry) => ({
+          noteHistory: orderTimeline.map((entry) => ({
             id: entry.id,
+            kind: entry.kind,
             note: entry.note,
             createdByName: entry.createdByName,
-            createdAt: entry.createdAt.toISOString(),
+            createdAt: entry.createdAt,
           })),
           subtotalAmount: order.subtotalAmount.toNumber(),
           discountAmount: order.discountAmount.toNumber(),
@@ -254,6 +246,21 @@ export default async function AdminOrderDetailsPage({
           deliveryCharge: order.deliveryCharge.toNumber(),
           totalAmount: order.totalAmount.toNumber(),
           paidAmount: paidAmountValue,
+          returns: order.orderReturns.map((orderReturn) => ({
+            id: orderReturn.id,
+            reason: orderReturn.reason ?? '',
+            refundAmount: orderReturn.refundAmount.toNumber(),
+            refundMethod: orderReturn.refundMethod ?? '',
+            refundReferenceNote: orderReturn.refundReferenceNote ?? '',
+            createdByName: orderReturn.createdByName,
+            createdAt: orderReturn.createdAt.toISOString(),
+            lines: orderReturn.lines.map((line) => ({
+              id: line.id,
+              orderProductId: line.orderProductId,
+              quantity: line.quantity,
+              restocked: line.restocked,
+            })),
+          })),
           variantCatalog: catalogVariants.map((variant) => ({
             variantId: variant.id,
             productId: variant.productId,

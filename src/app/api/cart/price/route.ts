@@ -1,5 +1,11 @@
-import { prisma } from '@/lib/prisma';
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
+import { PRIVATE_NO_STORE_HEADERS } from '@/lib/http-cache';
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from '@/lib/rate-limit';
+import { getCartPricingLookup } from '@/lib/storefront-data';
 
 type CartPricePayload = {
   items: Array<{
@@ -37,6 +43,10 @@ const EMPTY_CART_PRICING: CartPriceResponse = {
 };
 
 const CART_PRICE_CACHE_TTL_MS = 30_000;
+const CART_PRICE_RATE_LIMIT = {
+  limit: 120,
+  windowMs: 60_000,
+};
 
 type CartPriceCacheEntry = {
   expiresAt: number;
@@ -62,7 +72,7 @@ function getCartPriceCache() {
 
 function getCartPriceCacheHeaders(state: 'HIT' | 'MISS' | 'BYPASS') {
   return {
-    'Cache-Control': 'private, max-age=30',
+    ...PRIVATE_NO_STORE_HEADERS,
     'X-Cart-Price-Cache': state,
   };
 }
@@ -127,6 +137,23 @@ function responseFromCacheEntry(
 
 export async function POST(request: Request) {
   try {
+    const rateLimit = await checkDistributedRateLimit({
+      key: `cart:price:${getClientIp(request)}`,
+      ...CART_PRICE_RATE_LIMIT,
+    });
+    if (!rateLimit.allowed) {
+      return Response.json(
+        { error: 'Too many cart pricing requests. Please wait a moment and retry.' },
+        {
+          status: 429,
+          headers: {
+            ...getCartPriceCacheHeaders('BYPASS'),
+            ...rateLimitHeaders(rateLimit, CART_PRICE_RATE_LIMIT.limit),
+          },
+        },
+      );
+    }
+
     const requestText = await request.text();
     const payload = requestText
       ? (JSON.parse(requestText) as CartPricePayload)
@@ -142,12 +169,15 @@ export async function POST(request: Request) {
     for (const item of payload.items) {
       const lineId = typeof item?.id === 'string' ? item.id.trim() : '';
       if (!lineId) {
-        return Response.json({ error: 'Invalid cart line id.' }, { status: 400 });
+        return Response.json(
+          { error: 'Invalid cart line id.' },
+          { status: 400, headers: getCartPriceCacheHeaders('BYPASS') },
+        );
       }
       if (seenLineIds.has(lineId)) {
         return Response.json(
           { error: `Duplicate cart line id detected: ${lineId}` },
-          { status: 400 },
+          { status: 400, headers: getCartPriceCacheHeaders('BYPASS') },
         );
       }
       seenLineIds.add(lineId);
@@ -176,67 +206,10 @@ export async function POST(request: Request) {
           .filter((value): value is string => Boolean(value)),
       ),
     ];
-    const [variants, globalBundleOffers] = await Promise.all([
-      prisma.productVariant.findMany({
-        where: {
-          isActive: true,
-          ...(selectedVariantIds.length > 0
-            ? { id: { in: selectedVariantIds } }
-            : {}),
-          product: {
-            id: { in: productIds },
-            status: 'active',
-          },
-        },
-        select: {
-          id: true,
-          price: true,
-          productId: true,
-          product: {
-            select: {
-              bundleOffers: {
-                where: { isActive: true },
-                orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-                select: {
-                  id: true,
-                  title: true,
-                  minTotalQty: true,
-                  discountPercent: true,
-                  isActive: true,
-                  variants: {
-                    select: { variantId: true },
-                  },
-                },
-              },
-            },
-          },
-        },
-      }),
-      selectedVariantIds.length > 0
-        ? prisma.bundleOffer.findMany({
-            where: {
-              isActive: true,
-              variants: {
-                some: {
-                  variantId: { in: selectedVariantIds },
-                },
-              },
-              OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }],
-              AND: [
-                {
-                  OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }],
-                },
-              ],
-            },
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-            include: {
-              variants: {
-                select: { variantId: true },
-              },
-            },
-          })
-        : Promise.resolve([]),
-    ]);
+    const [variants, globalBundleOffers] = await getCartPricingLookup(
+      productIds,
+      selectedVariantIds,
+    );
 
     const variantById = new Map(variants.map((variant) => [variant.id, variant]));
     const variantsByProductId = new Map<string, typeof variants>();
@@ -296,6 +269,19 @@ export async function POST(request: Request) {
         quantity: Math.max(1, Math.floor(item.quantity || 1)),
         unitPrice: toMoney(variant.price.toNumber()),
       });
+    }
+
+    if (pricingLines.length !== payload.items.length) {
+      return Response.json(
+        {
+          error:
+            'One or more cart items are no longer active or in stock. Please remove unavailable items and add them again.',
+        },
+        {
+          status: 409,
+          headers: getCartPriceCacheHeaders('BYPASS'),
+        },
+      );
     }
 
     const pricing = computeCartPricing(
@@ -363,7 +349,7 @@ export async function POST(request: Request) {
     console.error(error);
     return Response.json(
       { error: 'Failed to price cart.' },
-      { status: 500 },
+      { status: 500, headers: getCartPriceCacheHeaders('BYPASS') },
     );
   }
 }

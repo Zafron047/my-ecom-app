@@ -2,11 +2,19 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { buildCheckoutPricing, type CheckoutItemInput } from '@/lib/checkout-pricing';
+import { getDeliveryDivisionForDistrict } from '@/lib/delivery-locations';
 import {
   CUSTOMER_RECENT_ORDER_COOKIE,
   createRecentOrderAccessToken,
 } from '@/lib/customer-auth';
+import { getCustomerSessionFromToken } from '@/lib/customer-session';
+import { withPrivateNoStoreHeaders } from '@/lib/http-cache';
 import { allocateInventoryForOrderProduct } from '@/lib/inventory-allocation';
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from '@/lib/rate-limit';
 
 type PlaceOrderPayload = {
   customer: {
@@ -48,34 +56,103 @@ function normalizePhone(phone: string) {
   return trimmed;
 }
 
+function getCookieValue(request: Request, name: string) {
+  const cookieHeader = request.headers.get('cookie');
+  if (!cookieHeader) return undefined;
+
+  return cookieHeader
+    .split(';')
+    .map((cookie) => cookie.trim())
+    .find((cookie) => cookie.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+
+const PLACE_ORDER_RATE_LIMIT = {
+  limit: 8,
+  windowMs: 60_000,
+};
+
+function blockedCustomerResponse() {
+  return Response.json(
+    {
+      code: 'CUSTOMER_BLOCKED',
+      error: 'This customer account cannot place new orders.',
+      redirectTo: '/unauthorized',
+    },
+    withPrivateNoStoreHeaders({ status: 403 }),
+  );
+}
+
 export async function POST(request: Request) {
   try {
+    const rateLimit = await checkDistributedRateLimit({
+      key: `checkout:place-order:${getClientIp(request)}`,
+      ...PLACE_ORDER_RATE_LIMIT,
+    });
+    if (!rateLimit.allowed) {
+      return Response.json(
+        { error: 'Too many checkout attempts. Please wait a moment and retry.' },
+        withPrivateNoStoreHeaders({
+          status: 429,
+          headers: rateLimitHeaders(rateLimit, PLACE_ORDER_RATE_LIMIT.limit),
+        }),
+      );
+    }
+
     const payload = (await request.json()) as PlaceOrderPayload;
 
     if (!payload?.customer?.firstName?.trim()) {
-      return Response.json({ error: 'First name is required.' }, { status: 400 });
+      return Response.json(
+        { error: 'First name is required.' },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
     }
     if (!payload?.customer?.customerMobile?.trim()) {
-      return Response.json({ error: 'Customer mobile is required.' }, { status: 400 });
+      return Response.json(
+        { error: 'Customer mobile is required.' },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
     }
-    if (!payload?.shipping?.division?.trim() || !payload?.shipping?.district?.trim() || !payload?.shipping?.thana?.trim()) {
-      return Response.json({ error: 'Shipping location is required.' }, { status: 400 });
+    if (!payload?.shipping?.district?.trim() || !payload?.shipping?.thana?.trim()) {
+      return Response.json(
+        { error: 'Shipping location is required.' },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
     }
     if (!payload?.shipping?.address?.trim()) {
-      return Response.json({ error: 'Shipping address is required.' }, { status: 400 });
+      return Response.json(
+        { error: 'Shipping address is required.' },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
     }
     if (!Array.isArray(payload.items) || payload.items.length === 0) {
-      return Response.json({ error: 'At least one product is required.' }, { status: 400 });
+      return Response.json(
+        { error: 'At least one product is required.' },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
     }
     if (payload.payment?.method !== 'bkash' && payload.payment?.method !== 'cod') {
-      return Response.json({ error: 'Invalid payment method.' }, { status: 400 });
+      return Response.json(
+        { error: 'Invalid payment method.' },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
+    }
+
+    const resolvedDivision =
+      payload.shipping.division.trim() ||
+      (await getDeliveryDivisionForDistrict(payload.shipping.district.trim()));
+    if (!resolvedDivision) {
+      return Response.json(
+        { error: 'Could not match the selected district to a delivery division.' },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
     }
 
     const productIds = payload.items.map((item) => item.detailId ?? item.id).filter(Boolean);
     if (productIds.length === 0) {
       return Response.json(
         { error: 'Your cart is empty or outdated. Please refresh and add items again.' },
-        { status: 400 },
+        withPrivateNoStoreHeaders({ status: 400 }),
       );
     }
     const products = await prisma.product.findMany({
@@ -107,8 +184,52 @@ export async function POST(request: Request) {
           error:
             'Your cart items are outdated after recent data reset. Please clear cart and add products again.',
         },
-        { status: 400 },
+        withPrivateNoStoreHeaders({ status: 400 }),
       );
+    }
+
+    for (const item of payload.items) {
+      const productId = item.detailId ?? item.id;
+      const product = productById.get(productId);
+      if (!product) {
+        return Response.json(
+          {
+            error: `${item.name || 'A cart item'} is no longer active. Please remove it from cart and add an available product.`,
+          },
+          withPrivateNoStoreHeaders({ status: 400 }),
+        );
+      }
+
+      const variant =
+        product.variants.find((candidate) => candidate.id === item.variantId) ??
+        (product.variants.length === 1 ? product.variants[0] : undefined);
+      if (!variant) {
+        return Response.json(
+          {
+            error: `${item.name || product.name} is no longer available in the selected option. Please remove it from cart and add it again.`,
+          },
+          withPrivateNoStoreHeaders({ status: 400 }),
+        );
+      }
+
+      const quantity = Math.max(1, Math.floor(item.quantity || 1));
+      if (variant.stockQuantity <= 0) {
+        const label = [variant.color, variant.size].filter(Boolean).join(' / ');
+        return Response.json(
+          {
+            error: `${product.name}${label ? ` (${label})` : ''} is out of stock. Please remove it from cart.`,
+          },
+          withPrivateNoStoreHeaders({ status: 400 }),
+        );
+      }
+      if (quantity > variant.stockQuantity) {
+        return Response.json(
+          {
+            error: `Only ${variant.stockQuantity} piece${variant.stockQuantity === 1 ? '' : 's'} of ${product.name} are available. Please update your cart quantity.`,
+          },
+          withPrivateNoStoreHeaders({ status: 400 }),
+        );
+      }
     }
     const selectedVariantIds = [
       ...new Set(
@@ -143,10 +264,16 @@ export async function POST(request: Request) {
       globalBundleOffers,
       items: payload.items,
       products,
-      shipping: payload.shipping,
+      shipping: {
+        ...payload.shipping,
+        division: resolvedDivision,
+      },
     });
     if (!pricingResult.ok) {
-      return Response.json({ error: pricingResult.error }, { status: 400 });
+      return Response.json(
+        { error: pricingResult.error },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
     }
 
     const subtotalBeforeDiscount = pricingResult.subtotalBeforeDiscount;
@@ -154,21 +281,37 @@ export async function POST(request: Request) {
     const deliveryCharge = pricingResult.deliveryCharge;
     const totalAmount = pricingResult.totalAmount;
     const normalizedPhone = normalizePhone(payload.customer.customerMobile);
+    const customerSession = await getCustomerSessionFromToken(
+      getCookieValue(request, 'customer_session'),
+    );
+    const sessionCustomer = customerSession
+      ? await prisma.customer.findUnique({
+          where: { id: customerSession.customerId },
+        })
+      : null;
+    if (sessionCustomer?.isBlocked) {
+      return blockedCustomerResponse();
+    }
+
     const existingCustomerByPhone = await prisma.customer.findFirst({
       where: {
         OR: [{ phone: normalizedPhone }, { phone: payload.customer.customerMobile.trim() }],
       },
     });
+    if (existingCustomerByPhone?.isBlocked) {
+      return blockedCustomerResponse();
+    }
 
     const customer =
       existingCustomerByPhone ??
+      sessionCustomer ??
       (await prisma.customer.create({
         data: {
           firstName: payload.customer.firstName.trim(),
           lastName: payload.customer.lastName?.trim() || null,
           email: payload.customer.email?.trim() || null,
           phone: normalizedPhone,
-          division: payload.shipping.division.trim(),
+          division: resolvedDivision,
           district: payload.shipping.district.trim(),
           thana: payload.shipping.thana.trim(),
           address: payload.shipping.address.trim(),
@@ -178,7 +321,7 @@ export async function POST(request: Request) {
         },
       }));
 
-    if (existingCustomerByPhone) {
+    if (existingCustomerByPhone || sessionCustomer) {
       await prisma.customer.update({
         where: { id: customer.id },
         data: {
@@ -186,7 +329,7 @@ export async function POST(request: Request) {
           lastName: payload.customer.lastName?.trim() || null,
           email: payload.customer.email?.trim() || null,
           phone: normalizedPhone,
-          division: payload.shipping.division.trim(),
+          division: resolvedDivision,
           district: payload.shipping.district.trim(),
           thana: payload.shipping.thana.trim(),
           address: payload.shipping.address.trim(),
@@ -210,7 +353,7 @@ export async function POST(request: Request) {
               receiverPhone:
                 payload.customer.receiverMobile?.trim() || payload.customer.customerMobile.trim(),
               email: payload.customer.email?.trim() || null,
-              division: payload.shipping.division.trim(),
+              division: resolvedDivision,
               district: payload.shipping.district.trim(),
               thana: payload.shipping.thana.trim(),
               address: payload.shipping.address.trim(),
@@ -266,7 +409,7 @@ export async function POST(request: Request) {
     if (!order) {
       return Response.json(
         { error: 'Could not generate a unique order number. Please retry.' },
-        { status: 500 },
+        withPrivateNoStoreHeaders({ status: 500 }),
       );
     }
 
@@ -284,10 +427,13 @@ export async function POST(request: Request) {
       });
     }
 
-    const response = NextResponse.json({
-      success: true,
-      orderId: order.orderNumber,
-    });
+    const response = NextResponse.json(
+      {
+        success: true,
+        orderId: order.orderNumber,
+      },
+      withPrivateNoStoreHeaders(),
+    );
     const recentOrderToken = createRecentOrderAccessToken(order.orderNumber);
     if (recentOrderToken) {
       response.cookies.set(CUSTOMER_RECENT_ORDER_COOKIE, recentOrderToken, {
@@ -306,7 +452,10 @@ export async function POST(request: Request) {
       (error.message.startsWith('Insufficient stock') ||
         error.message.includes('Stock changed while saving order'))
     ) {
-      return Response.json({ error: error.message }, { status: 400 });
+      return Response.json(
+        { error: error.message },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
     }
     const isDev = process.env.NODE_ENV !== 'production';
     const message =
@@ -315,7 +464,7 @@ export async function POST(request: Request) {
         : 'Failed to place order.';
     return Response.json(
       { error: isDev ? `Failed to place order: ${message}` : 'Failed to place order.' },
-      { status: 500 },
+      withPrivateNoStoreHeaders({ status: 500 }),
     );
   }
 }

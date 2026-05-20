@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { redirect } from 'next/navigation';
 import path from 'path';
 import sharp from 'sharp';
@@ -12,7 +12,7 @@ const productStatuses = Object.values(ProductStatus);
 const PRODUCT_NAME_WORD_LIMIT = 6;
 const SHORT_DESCRIPTION_WORD_LIMIT = 40;
 const PRODUCT_STORAGE_FOLDER = 'products';
-const MAX_PRODUCT_IMAGE_FILES = 12;
+const MAX_PRODUCT_IMAGE_FILES = 10;
 const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 4 * 1024 * 1024;
 const ALLOWED_PRODUCT_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',
@@ -27,6 +27,19 @@ const PRODUCT_IMAGE_VARIANTS = [
   { suffix: 'detail', width: 1200, quality: 78 },
   { suffix: 'zoom', width: 1800, quality: 75 },
 ] as const;
+
+function revalidateStorefrontProduct(productId?: string) {
+  revalidateTag('storefront-catalog', 'max');
+  revalidateTag('storefront-products', 'max');
+  revalidateTag('storefront-categories', 'max');
+  revalidatePath('/');
+  revalidatePath('/products');
+  revalidatePath('/api/storefront/catalog');
+  if (productId) {
+    revalidatePath(`/products/${productId}`);
+    revalidatePath(`/api/storefront/products/${productId}`);
+  }
+}
 
 function getProductStorageFolder(productId: string) {
   return `${PRODUCT_STORAGE_FOLDER}/${productId}`;
@@ -862,24 +875,22 @@ async function uploadOptimizedImageVariantsFromBuffer(
   objectKey: string,
   sourceBuffer: Buffer,
 ) {
-  await Promise.all(
-    PRODUCT_IMAGE_VARIANTS.map(async (variant) => {
-      const optimizedBuffer = await sharp(sourceBuffer)
-        .rotate()
-        .resize({
-          width: variant.width,
-          withoutEnlargement: true,
-        })
-        .webp({ quality: variant.quality })
-        .toBuffer();
+  for (const variant of PRODUCT_IMAGE_VARIANTS) {
+    const optimizedBuffer = await sharp(sourceBuffer)
+      .rotate()
+      .resize({
+        width: variant.width,
+        withoutEnlargement: true,
+      })
+      .webp({ quality: variant.quality })
+      .toBuffer();
 
-      await uploadStorageBuffer(
-        getVariantObjectKey(objectKey, variant.suffix),
-        optimizedBuffer,
-        'image/webp',
-      );
-    }),
-  );
+    await uploadStorageBuffer(
+      getVariantObjectKey(objectKey, variant.suffix),
+      optimizedBuffer,
+      'image/webp',
+    );
+  }
 }
 
 function getContentTypeFromExtension(extension: string) {
@@ -1360,6 +1371,7 @@ export async function createProduct(formData: FormData) {
   }
 
   revalidatePath('/admin/products');
+  revalidateStorefrontProduct(productId);
   return {
     productId,
     redirectTo: `/admin/products/${productId}/edit`,
@@ -1975,6 +1987,7 @@ export async function updateProduct(formData: FormData) {
 
   revalidatePath('/admin/products');
   revalidatePath(`/admin/products/${productId}/edit`);
+  revalidateStorefrontProduct(productId);
   redirect(`/admin/products/${productId}/edit`);
 }
 

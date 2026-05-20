@@ -5,8 +5,7 @@ import {
   useCart,
 } from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
-import { fetchStorefrontCatalogClient } from '@/lib/storefront-catalog-client';
-import { getGroupedAreaOptions } from '@/lib/location-presenter';
+import { getGroupedAreaOptions, getGroupedDistrictOptions } from '@/lib/location-presenter';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
 import Image from 'next/image';
@@ -14,8 +13,17 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SearchableDropdown from '@/components/SearchableDropdown';
+import { FacebookIcon, GoogleIcon } from '@/components/SocialAuthIcons';
 
-const MOBILE_PATTERN = /^(?:\+8801[3-9]\d{8}|01[3-9]\d{8})$/;
+const MOBILE_PATTERN = /^01[3-9]\d{8}$/;
+
+function normalizeMobileInput(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (digits.startsWith('8801') && digits.length === 13) {
+    return `0${digits.slice(3)}`;
+  }
+  return digits;
+}
 
 export default function Header() {
   type CheckoutField =
@@ -45,11 +53,12 @@ export default function Header() {
     selectedItemCount,
     selectedCartItems,
     isPricingAuthoritative,
+    cartPricingError,
     subtotal,
     linePricingById,
     closeCart,
     toggleCart,
-    setItemSelection,
+    setItemsSelection,
     updateQuantity,
     removeFromCart,
   } = useCart();
@@ -81,7 +90,6 @@ export default function Header() {
     thana: '',
     address: '',
   });
-  const [locationDivisions, setLocationDivisions] = useState<string[]>([]);
   const [locationDistricts, setLocationDistricts] = useState<string[]>([]);
   const [locationAreas, setLocationAreas] = useState<string[]>([]);
   const desktopSearchRef = useRef<HTMLDivElement | null>(null);
@@ -136,7 +144,6 @@ export default function Header() {
   const hasRequiredCheckoutFields =
     checkoutForm.firstName.trim() !== '' &&
     checkoutForm.customerMobile.trim() !== '' &&
-    checkoutForm.division.trim() !== '' &&
     checkoutForm.district.trim() !== '' &&
     checkoutForm.thana.trim() !== '' &&
     checkoutForm.address.trim() !== '' &&
@@ -161,8 +168,6 @@ export default function Header() {
     touchedFields.receiverMobile &&
     checkoutForm.receiverMobile.trim() !== '' &&
     (!isReceiverMobileValid || !isReceiverDifferentFromCustomer);
-  const isDivisionInvalid =
-    touchedFields.division && checkoutForm.division.trim() === '';
   const isDistrictInvalid =
     touchedFields.district && checkoutForm.district.trim() === '';
   const isThanaInvalid = touchedFields.thana && checkoutForm.thana.trim() === '';
@@ -173,6 +178,7 @@ export default function Header() {
     checkoutForm.district,
     locationAreas,
   );
+  const groupedDistrictOptions = getGroupedDistrictOptions(locationDistricts);
 
   const navLinks = [
     { href: '/', label: 'Home' },
@@ -180,7 +186,10 @@ export default function Header() {
     { href: '#', label: 'Categories' },
     { href: '/checkout', label: 'Cart' },
     ...(isCustomerLoggedIn
-      ? [{ href: '#', label: 'Logout' }]
+      ? [
+          { href: '/account', label: 'Account' },
+          { href: '#', label: 'Logout' },
+        ]
       : [{ href: '/login', label: 'Login' }]),
     { href: '#', label: 'Support' },
   ];
@@ -206,9 +215,6 @@ export default function Header() {
         subtotalBeforeDiscount: number;
         subtotalAfterDiscount: number;
         discount: number;
-        bundleDiscountPercent: number | null;
-        bundleOffersText: string[];
-        appliedBundleDiscounts: { title: string; amount: number }[];
       }
     >();
 
@@ -223,21 +229,9 @@ export default function Header() {
         subtotalBeforeDiscount: 0,
         subtotalAfterDiscount: 0,
         discount: 0,
-        bundleDiscountPercent: null,
-        bundleOffersText: [],
-        appliedBundleDiscounts: [],
       };
 
       group.lines.push(item);
-      const fallbackActiveOffers = (item.bundleOffers ?? []).filter((offer) => offer.isActive);
-      for (const offer of fallbackActiveOffers) {
-        const offerText = offer.title?.trim()
-          ? offer.title.trim()
-          : `Buy Min ${offer.minTotalQty} get ${offer.discountPercent}% OFF!!!`;
-        if (!group.bundleOffersText.includes(offerText)) {
-          group.bundleOffersText.push(offerText);
-        }
-      }
       if (item.selected) {
         const linePricing = linePricingById[item.id];
         const lineSubtotal =
@@ -247,28 +241,6 @@ export default function Header() {
         group.subtotalBeforeDiscount += lineSubtotal;
         group.subtotalAfterDiscount += lineTotal;
         group.discount += lineDiscount;
-        if (typeof linePricing?.bundleDiscountPercent === 'number') {
-          group.bundleDiscountPercent = Math.max(
-            group.bundleDiscountPercent ?? 0,
-            linePricing.bundleDiscountPercent,
-          );
-        }
-        if (linePricing?.bundleTitle && !group.bundleOffersText.includes(linePricing.bundleTitle)) {
-          group.bundleOffersText.push(linePricing.bundleTitle);
-        }
-        if (linePricing?.bundleTitle && lineDiscount > 0) {
-          const existing = group.appliedBundleDiscounts.find(
-            (entry) => entry.title === linePricing.bundleTitle,
-          );
-          if (existing) {
-            existing.amount += lineDiscount;
-          } else {
-            group.appliedBundleDiscounts.push({
-              title: linePricing.bundleTitle,
-              amount: lineDiscount,
-            });
-          }
-        }
       } else {
         group.allSelected = false;
       }
@@ -284,12 +256,9 @@ export default function Header() {
   }, []);
 
   useEffect(() => {
-    const rawPhone = checkoutForm.customerMobile.trim();
-    const normalizedPhone = rawPhone.startsWith('+880')
-      ? `0${rawPhone.slice(4)}`
-      : rawPhone;
+    const normalizedPhone = normalizeMobileInput(checkoutForm.customerMobile);
 
-    if (!MOBILE_PATTERN.test(rawPhone) || !normalizedPhone) return;
+    if (!MOBILE_PATTERN.test(normalizedPhone)) return;
     if (lastAutofillPhoneRef.current === normalizedPhone) return;
 
     const timer = setTimeout(async () => {
@@ -343,21 +312,18 @@ export default function Header() {
 
     async function loadSearchProducts() {
       try {
-        const payload = await fetchStorefrontCatalogClient();
+        const response = await fetch('/api/storefront/search');
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          products?: {
+            id: string;
+            name: string;
+            image: string;
+            variantCount: number;
+          }[];
+        };
         if (!isMounted) return;
-        setSearchableProducts(
-          (payload.products ?? []).map((product) => ({
-            id: product.id,
-            name: product.name,
-            image: product.image,
-            variantCount:
-              typeof product.variantCount === 'number'
-                ? product.variantCount
-                : Array.isArray(product.variants)
-                  ? product.variants.length
-                  : 0,
-          })),
-        );
+        setSearchableProducts(payload.products ?? []);
       } catch {
         // Keep search suggestions empty when loading fails.
       }
@@ -379,43 +345,9 @@ export default function Header() {
       };
     }
 
-    async function loadDivisions() {
-      try {
-        const response = await fetch('/api/delivery-locations');
-        if (!response.ok) return;
-        const payload = (await response.json()) as { items: string[] };
-        if (!isMounted) return;
-        setLocationDivisions(payload.items ?? []);
-      } catch {
-        if (!isMounted) return;
-        setLocationDivisions([]);
-      }
-    }
-
-    void loadDivisions();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [shouldLoadCheckoutLocations]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    if (!shouldLoadCheckoutLocations || !checkoutForm.division) {
-      setLocationDistricts([]);
-      return () => {
-        isMounted = false;
-      };
-    }
-
     async function loadDistricts() {
       try {
-        const query = new URLSearchParams({
-          type: 'districts',
-          division: checkoutForm.division,
-        });
-        const response = await fetch(`/api/delivery-locations?${query.toString()}`);
+        const response = await fetch('/api/delivery-locations?type=districts');
         if (!response.ok) return;
         const payload = (await response.json()) as { items: string[] };
         if (!isMounted) return;
@@ -431,12 +363,12 @@ export default function Header() {
     return () => {
       isMounted = false;
     };
-  }, [checkoutForm.division, shouldLoadCheckoutLocations]);
+  }, [shouldLoadCheckoutLocations]);
 
   useEffect(() => {
     let isMounted = true;
 
-    if (!shouldLoadCheckoutLocations || !checkoutForm.division || !checkoutForm.district) {
+    if (!shouldLoadCheckoutLocations || !checkoutForm.district) {
       setLocationAreas([]);
       return () => {
         isMounted = false;
@@ -447,7 +379,6 @@ export default function Header() {
       try {
         const query = new URLSearchParams({
           type: 'areas',
-          division: checkoutForm.division,
           district: checkoutForm.district,
         });
         const response = await fetch(`/api/delivery-locations?${query.toString()}`);
@@ -466,7 +397,7 @@ export default function Header() {
     return () => {
       isMounted = false;
     };
-  }, [checkoutForm.district, checkoutForm.division, shouldLoadCheckoutLocations]);
+  }, [checkoutForm.district, shouldLoadCheckoutLocations]);
 
   useEffect(() => {
     function handleOutsideClick(event: MouseEvent) {
@@ -580,8 +511,7 @@ export default function Header() {
     setCheckoutForm((current) => ({
       ...current,
       [name]: normalizedValue,
-      ...(name === 'division' && { district: '', thana: '' }),
-      ...(name === 'district' && { thana: '' }),
+      ...(name === 'district' && { division: '', thana: '' }),
     }));
   }
 
@@ -593,14 +523,13 @@ export default function Header() {
   }
 
   function handleCheckoutLocationSelect(
-    field: 'division' | 'district' | 'thana',
+    field: 'district' | 'thana',
     value: string,
   ) {
     setCheckoutForm((current) => ({
       ...current,
       [field]: value,
-      ...(field === 'division' && { district: '', thana: '' }),
-      ...(field === 'district' && { thana: '' }),
+      ...(field === 'district' && { division: '', thana: '' }),
     }));
   }
 
@@ -692,8 +621,16 @@ export default function Header() {
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as
-          | { error?: string }
+          | { code?: string; error?: string; redirectTo?: string }
           | null;
+        if (
+          response.status === 403 &&
+          errorPayload?.code === 'CUSTOMER_BLOCKED'
+        ) {
+          handleCloseCart();
+          router.push(errorPayload.redirectTo || '/unauthorized');
+          return;
+        }
         setPlaceOrderError(
           errorPayload?.error || 'Could not place order. Please try again.',
         );
@@ -1304,31 +1241,6 @@ export default function Header() {
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <motion.div
                       animate={
-                        isFieldFilled(checkoutForm.division)
-                          ? { scale: 1.01, y: -1 }
-                          : { scale: 1, y: 0 }
-                      }
-                      transition={fieldSpringTransition}
-                    >
-                      <SearchableDropdown
-                        value={checkoutForm.division}
-                        options={locationDivisions}
-                        placeholder="Select division *"
-                        onSelect={(value) =>
-                          handleCheckoutLocationSelect('division', value)
-                        }
-                        onBlur={() => handleCheckoutFieldBlur('division')}
-                        className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 ${
-                          isDivisionInvalid
-                            ? invalidFieldGlow
-                            : isFieldFilled(checkoutForm.division)
-                              ? completedFieldGlow
-                              : 'border-slate-200'
-                        }`}
-                      />
-                    </motion.div>
-                    <motion.div
-                      animate={
                         isFieldFilled(checkoutForm.district)
                           ? { scale: 1.01, y: -1 }
                           : { scale: 1, y: 0 }
@@ -1337,9 +1249,8 @@ export default function Header() {
                     >
                       <SearchableDropdown
                         value={checkoutForm.district}
-                        options={locationDistricts}
+                        options={groupedDistrictOptions}
                         placeholder="Select district *"
-                        disabled={!checkoutForm.division}
                         onSelect={(value) =>
                           handleCheckoutLocationSelect('district', value)
                         }
@@ -1454,9 +1365,9 @@ export default function Header() {
                     </span>
                   </div>
                 </div>
-                {!isPricingAuthoritative && selectedItemCount > 0 && (
+                {!isPricingAuthoritative && selectedItemCount > 0 && cartPricingError && (
                   <p className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                    Pricing unavailable. Reconnecting to server. Please wait before placing order.
+                    {cartPricingError}
                   </p>
                 )}
                   <button
@@ -1491,9 +1402,10 @@ export default function Header() {
                               type="checkbox"
                               checked={group.allSelected}
                               onChange={(event) => {
-                                group.lines.forEach((line) => {
-                                  setItemSelection(line.id, event.target.checked);
-                                });
+                                setItemsSelection(
+                                  group.lines.map((line) => line.id),
+                                  event.target.checked,
+                                );
                               }}
                               aria-label={`Select ${group.productName} for checkout`}
                               className="h-4 w-4 rounded border-slate-300 text-[#2d5db3] focus:ring-[#2d5db3]"
@@ -1521,11 +1433,6 @@ export default function Header() {
                               >
                                 {group.productName}
                               </Link>
-                              {group.bundleOffersText.map((offerText) => (
-                                <p key={offerText} className="mt-1 text-xs font-semibold text-emerald-700">
-                                  {offerText}
-                                </p>
-                              ))}
                             </div>
                           </div>
                           <div className="col-span-2 mt-2 w-full space-y-2">
@@ -1589,15 +1496,6 @@ export default function Header() {
                             </div>
                             {group.discount > 0 && (
                               <>
-                                {group.appliedBundleDiscounts.map((entry) => (
-                                  <div
-                                    key={entry.title}
-                                    className="flex items-center justify-between text-emerald-700/90"
-                                  >
-                                    <span className="line-clamp-1 text-[11px]">{entry.title}</span>
-                                    <span className="text-[11px]">-৳{entry.amount.toFixed(2)}</span>
-                                  </div>
-                                ))}
                                 <div className="flex items-center justify-between text-emerald-700">
                                   <span>Bundle discount</span>
                                   <span>-৳{group.discount.toFixed(2)}</span>
@@ -1670,9 +1568,9 @@ export default function Header() {
                     ৳{subtotal.toFixed(2)}
                   </span>
                 </div>
-                {!isPricingAuthoritative && selectedItemCount > 0 && (
+                {!isPricingAuthoritative && selectedItemCount > 0 && cartPricingError && (
                   <p className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                    Pricing unavailable. Reconnecting to server. Checkout is temporarily disabled.
+                    {cartPricingError}
                   </p>
                 )}
                 <button
@@ -1684,7 +1582,15 @@ export default function Header() {
                       : 'pointer-events-none bg-slate-300 !text-white'
                   }`}
                 >
-                  Proceed Checkout
+                  <span>Proceed Checkout</span>
+                  <span className="ml-3 flex items-center gap-1.5" aria-hidden="true">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
+                      <GoogleIcon className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
+                      <FacebookIcon className="h-4 w-4" />
+                    </span>
+                  </span>
                 </button>
               </div>
             </>

@@ -55,3 +55,9 @@ export async function getCustomerSession(): Promise<CustomerSession | null> {
   const sessionToken = cookieStore.get(CUSTOMER_SESSION_COOKIE)?.value;
   return getSessionFromCookie(sessionToken);
 }
+
+export async function getCustomerSessionFromToken(
+  sessionToken: string | undefined,
+): Promise<CustomerSession | null> {
+  return getSessionFromCookie(sessionToken);
+}

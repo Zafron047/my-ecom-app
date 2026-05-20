@@ -108,7 +108,9 @@ model AdminUser {
   updatedAt                  DateTime                  @updatedAt
   sessions                   AdminSession[]
   auditLogs                  AuditLog[]                @relation("AuditLogActorAdmin")
+  orderEvents                OrderEvent[]
   orderNotes                 OrderNote[]
+  orderReturns               OrderReturn[]
   purchaseOrderEvents        PurchaseOrderEvent[]
   purchaseOrderNotes         PurchaseOrderNote[]
   passwordResetTokens        AdminPasswordResetToken[] @relation("AdminPasswordResetTarget")
@@ -184,9 +186,27 @@ model Customer {
   updatedAt     DateTime              @updatedAt
   orders        Order[]
   sessions      CustomerSession[]
+  passwordResetTokens CustomerPasswordResetToken[]
+  socialAccounts CustomerSocialAccount[]
 
   @@index([customerType, isBlocked])
   @@index([createdAt])
+}
+
+model CustomerSocialAccount {
+  id                String   @id @default(cuid())
+  customerId        String
+  provider          String
+  providerAccountId String
+  email             String?
+  name              String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  customer          Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([customerId])
+  @@index([email])
 }
 
 model Product {
@@ -238,6 +258,19 @@ model CustomerSession {
   customer         Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
+  @@index([expiresAt])
+}
+
+model CustomerPasswordResetToken {
+  id         String    @id @default(cuid())
+  customerId String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, expiresAt])
   @@index([expiresAt])
 }
 
@@ -553,7 +586,9 @@ model Order {
   updatedAt   DateTime  @updatedAt
 
   products   OrderProduct[]
+  orderEvents OrderEvent[]
   orderNotes OrderNote[]
+  orderReturns OrderReturn[]
 
   @@index([customerId, createdAt])
   @@index([couponId])
@@ -573,6 +608,55 @@ model OrderNote {
 
   @@index([orderId, createdAt])
   @@index([createdByAdminId])
+}
+
+model OrderEvent {
+  id               String     @id @default(cuid())
+  orderId          String
+  order            Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  eventType        String
+  message          String
+  createdByAdminId String?
+  createdByAdmin   AdminUser? @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  createdByName    String
+  createdAt        DateTime   @default(now())
+
+  @@index([orderId, createdAt])
+  @@index([createdByAdminId])
+  @@index([eventType, createdAt])
+}
+
+model OrderReturn {
+  id               String            @id @default(cuid())
+  orderId          String
+  order            Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reason           String?
+  refundAmount     Decimal           @default(0) @db.Decimal(12, 2)
+  refundMethod     String?
+  refundReferenceNote String?
+  createdByAdminId String?
+  createdByAdmin   AdminUser?        @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  createdByName    String
+  createdAt        DateTime          @default(now())
+
+  lines OrderReturnLine[]
+
+  @@index([orderId, createdAt])
+  @@index([createdByAdminId])
+}
+
+model OrderReturnLine {
+  id             String       @id @default(cuid())
+  orderReturnId  String
+  orderReturn    OrderReturn  @relation(fields: [orderReturnId], references: [id], onDelete: Cascade)
+  orderProductId String
+  orderProduct   OrderProduct @relation(fields: [orderProductId], references: [id], onDelete: Restrict)
+  quantity       Int
+  restocked      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([orderReturnId])
+  @@index([orderProductId])
 }
 
 model AbandonedCheckout {
@@ -715,6 +799,16 @@ model InventoryAllocation {
   @@index([variantId, releasedAt])
 }
 
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+}
+
 model OrderProduct {
   id      String @id @default(cuid())
   orderId String
@@ -741,6 +835,7 @@ model OrderProduct {
   createdAt DateTime @default(now())
 
   inventoryAllocations InventoryAllocation[]
+  returnLines          OrderReturnLine[]
 
   @@index([orderId])
   @@index([productId])

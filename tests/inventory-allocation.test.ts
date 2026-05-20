@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { releaseInventoryAllocationsForOrderProducts } from '@/lib/inventory-allocation';
+import {
+  allocateInventoryForOrderProduct,
+  releaseInventoryAllocationsForOrderProducts,
+  releaseInventoryQuantityForOrderProduct,
+} from '@/lib/inventory-allocation';
 
 type Allocation = {
   id: string;
@@ -8,6 +12,12 @@ type Allocation = {
   quantity: number;
   unitCost: unknown;
   variantId: string;
+};
+
+type Batch = {
+  id: string;
+  remainingQuantity: number;
+  unitCost: unknown;
 };
 
 function createInventoryTx(
@@ -22,6 +32,7 @@ function createInventoryTx(
 
   return {
     inventoryAllocation: {
+      create: vi.fn(async () => ({})),
       findMany: vi.fn(async () => allocations),
       updateMany: vi.fn(async () => ({
         count: remainingUpdateCounts.shift() ?? 1,
@@ -37,6 +48,111 @@ function createInventoryTx(
     },
   };
 }
+
+function createAllocationTx(batches: Batch[], updateCounts?: number[]) {
+  const remainingUpdateCounts = [...(updateCounts ?? batches.map(() => 1))];
+
+  return {
+    inventoryAllocation: {
+      create: vi.fn(async () => ({})),
+    },
+    inventoryBatch: {
+      findMany: vi.fn(async () => batches),
+      updateMany: vi.fn(async () => ({
+        count: remainingUpdateCounts.shift() ?? 1,
+      })),
+    },
+    productVariant: {
+      update: vi.fn(async () => ({})),
+    },
+  };
+}
+
+describe('allocateInventoryForOrderProduct', () => {
+  it('creates inventory allocation records for a placed order product', async () => {
+    const batches: Batch[] = [
+      { id: 'batch-a', remainingQuantity: 2, unitCost: '120.00' },
+      { id: 'batch-b', remainingQuantity: 5, unitCost: '125.00' },
+    ];
+    const tx = createAllocationTx(batches);
+
+    await allocateInventoryForOrderProduct(tx as never, {
+      orderProductId: 'line-1',
+      quantity: 4,
+      variantId: 'variant-1',
+    });
+
+    expect(tx.inventoryBatch.findMany).toHaveBeenCalledWith({
+      orderBy: [{ receivedAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        remainingQuantity: true,
+        unitCost: true,
+      },
+      where: {
+        remainingQuantity: { gt: 0 },
+        status: 'available',
+        variantId: 'variant-1',
+      },
+    });
+    expect(tx.inventoryAllocation.create).toHaveBeenNthCalledWith(1, {
+      data: {
+        inventoryBatchId: 'batch-a',
+        orderProductId: 'line-1',
+        quantity: 2,
+        unitCost: '120.00',
+        variantId: 'variant-1',
+      },
+    });
+    expect(tx.inventoryAllocation.create).toHaveBeenNthCalledWith(2, {
+      data: {
+        inventoryBatchId: 'batch-b',
+        orderProductId: 'line-1',
+        quantity: 2,
+        unitCost: '125.00',
+        variantId: 'variant-1',
+      },
+    });
+    expect(tx.productVariant.update).toHaveBeenCalledWith({
+      data: {
+        stockQuantity: {
+          decrement: 4,
+        },
+      },
+      where: { id: 'variant-1' },
+    });
+  });
+
+  it('rejects competing allocations when stock was already claimed', async () => {
+    const tx = createAllocationTx(
+      [{ id: 'batch-a', remainingQuantity: 1, unitCost: '120.00' }],
+      [0],
+    );
+
+    await expect(
+      allocateInventoryForOrderProduct(tx as never, {
+        orderProductId: 'line-2',
+        quantity: 1,
+        variantId: 'variant-1',
+      }),
+    ).rejects.toThrow('Stock changed while saving order. Please retry.');
+
+    expect(tx.inventoryBatch.updateMany).toHaveBeenCalledWith({
+      data: {
+        remainingQuantity: {
+          decrement: 1,
+        },
+        status: 'depleted',
+      },
+      where: {
+        id: 'batch-a',
+        remainingQuantity: { gte: 1 },
+      },
+    });
+    expect(tx.inventoryAllocation.create).not.toHaveBeenCalled();
+    expect(tx.productVariant.update).not.toHaveBeenCalled();
+  });
+});
 
 describe('releaseInventoryAllocationsForOrderProducts', () => {
   it('restores each released allocation to the same inventory batch', async () => {
@@ -188,5 +304,60 @@ describe('releaseInventoryAllocationsForOrderProducts', () => {
     ).rejects.toThrow('Inventory batch did not match the released allocation.');
 
     expect(tx.productVariant.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('releaseInventoryQuantityForOrderProduct', () => {
+  it('restores only the requested quantity for a partial return', async () => {
+    const allocations: Allocation[] = [
+      {
+        id: 'alloc-a',
+        inventoryBatchId: 'batch-a',
+        orderProductId: 'line-1',
+        quantity: 5,
+        unitCost: '120.00',
+        variantId: 'variant-1',
+      },
+    ];
+    const tx = createInventoryTx(allocations);
+
+    await releaseInventoryQuantityForOrderProduct(tx as never, {
+      orderProductId: 'line-1',
+      quantity: 2,
+      reason: 'order-return-return-1',
+    });
+
+    expect(tx.inventoryAllocation.updateMany).toHaveBeenCalledWith({
+      data: {
+        quantity: {
+          decrement: 2,
+        },
+      },
+      where: {
+        id: 'alloc-a',
+        quantity: { gte: 2 },
+        releasedAt: null,
+      },
+    });
+    expect(tx.inventoryAllocation.create).toHaveBeenCalledWith({
+      data: {
+        inventoryBatchId: 'batch-a',
+        orderProductId: 'line-1',
+        quantity: 2,
+        releasedAt: expect.any(Date),
+        releaseReason: 'order-return-return-1',
+        unitCost: '120.00',
+        variantId: 'variant-1',
+      },
+    });
+    expect(tx.inventoryBatch.updateMany).toHaveBeenCalledWith({
+      data: {
+        remainingQuantity: {
+          increment: 2,
+        },
+        status: 'available',
+      },
+      where: { id: 'batch-a', variantId: 'variant-1' },
+    });
   });
 });
