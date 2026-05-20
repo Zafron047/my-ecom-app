@@ -5,12 +5,22 @@ import {
   useCart,
 } from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
-import { getGroupedAreaOptions } from '@/lib/location-presenter';
+import { getGroupedAreaOptions, getGroupedDistrictOptions } from '@/lib/location-presenter';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import SearchableDropdown from '@/components/SearchableDropdown';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+const MOBILE_PATTERN = /^01[3-9]\d{8}$/;
+
+function normalizeMobileInput(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (digits.startsWith('8801') && digits.length === 13) {
+    return `0${digits.slice(3)}`;
+  }
+  return digits;
+}
 
 export default function Checkout() {
   const router = useRouter();
@@ -34,6 +44,7 @@ export default function Checkout() {
   });
   const [locationDistricts, setLocationDistricts] = useState<string[]>([]);
   const [locationAreas, setLocationAreas] = useState<string[]>([]);
+  const lastAutofillPhoneRef = useRef('');
 
   const shippingCharge = useMemo(() => {
     return getShippingCharge({
@@ -49,6 +60,7 @@ export default function Checkout() {
     formData.district,
     locationAreas,
   );
+  const groupedDistrictOptions = getGroupedDistrictOptions(locationDistricts);
 
   const handlePlaceOrder = async () => {
     // Basic validation
@@ -108,8 +120,15 @@ export default function Checkout() {
       });
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as
-          | { error?: string }
+          | { code?: string; error?: string; redirectTo?: string }
           | null;
+        if (
+          response.status === 403 &&
+          errorPayload?.code === 'CUSTOMER_BLOCKED'
+        ) {
+          router.push(errorPayload.redirectTo || '/unauthorized');
+          return;
+        }
         setPlaceOrderError(
           errorPayload?.error || 'Could not place order. Please try again.',
         );
@@ -196,6 +215,55 @@ export default function Checkout() {
       isMounted = false;
     };
   }, [formData.district]);
+
+  useEffect(() => {
+    const normalizedPhone = normalizeMobileInput(formData.customerMobile);
+
+    if (!MOBILE_PATTERN.test(normalizedPhone)) return;
+    if (lastAutofillPhoneRef.current === normalizedPhone) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const query = new URLSearchParams({ phone: normalizedPhone });
+        const response = await fetch(`/api/customers/by-phone?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          customer: {
+            firstName: string;
+            lastName: string | null;
+            email: string | null;
+            phone: string;
+            division: string | null;
+            district: string | null;
+            thana: string | null;
+            address: string | null;
+          } | null;
+        };
+        if (!payload.customer) {
+          lastAutofillPhoneRef.current = normalizedPhone;
+          return;
+        }
+        setFormData((current) => ({
+          ...current,
+          customerMobile: current.customerMobile,
+          firstName: payload.customer?.firstName ?? current.firstName,
+          lastName: payload.customer?.lastName ?? current.lastName,
+          email: payload.customer?.email ?? current.email,
+          division: payload.customer?.division ?? current.division,
+          district: payload.customer?.district ?? current.district,
+          thana: payload.customer?.thana ?? current.thana,
+          address: payload.customer?.address ?? current.address,
+        }));
+        lastAutofillPhoneRef.current = normalizedPhone;
+      } catch {
+        // Checkout remains usable if the saved customer lookup is unavailable.
+      }
+    }, 320);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [formData.customerMobile]);
 
   const handleInputChange = (
     e: React.ChangeEvent<
@@ -387,7 +455,7 @@ export default function Checkout() {
                 </label>
                 <SearchableDropdown
                   value={formData.district}
-                  options={locationDistricts}
+                  options={groupedDistrictOptions}
                   placeholder="Select District"
                   onSelect={(value) => handleLocationSelect('district', value)}
                   className="w-full border border-gray-300 rounded-xl px-4 py-3 pr-10 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white disabled:bg-gray-50 disabled:cursor-not-allowed"

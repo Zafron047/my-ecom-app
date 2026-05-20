@@ -474,16 +474,16 @@ function VariantImagePicker({
     selectedValues.has(option.value),
   );
   const firstSelectedOption = selectedOptions[0];
+  const previewOption = hoveredOption ?? firstSelectedOption ?? mediaOptions[0] ?? null;
 
   return (
-    <div className="relative">
+    <div onClick={(event) => event.stopPropagation()}>
       <input type="hidden" name={name} value={value} />
       <button
         type="button"
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((current) => !current)}
-        onBlur={() => setTimeout(() => setIsOpen(false), 120)}
         className="flex h-11 w-full items-center gap-2 rounded-xl border border-slate-300 bg-white px-2.5 pr-12 text-slate-700 transition hover:border-slate-400"
       >
         {firstSelectedOption ? (
@@ -503,7 +503,7 @@ function VariantImagePicker({
             </span>
             <span className="ml-auto text-slate-400">
               <svg
-                className="h-4 w-4"
+                className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
                 viewBox="0 0 20 20"
                 fill="currentColor"
                 aria-hidden="true"
@@ -522,7 +522,7 @@ function VariantImagePicker({
             </span>
             <span className="ml-auto text-slate-400">
               <svg
-                className="h-4 w-4"
+                className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
                 viewBox="0 0 20 20"
                 fill="currentColor"
                 aria-hidden="true"
@@ -535,117 +535,171 @@ function VariantImagePicker({
       </button>
       <AnimatePresence>
         {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -6, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute left-0 top-[calc(100%+8px)] z-20 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl shadow-slate-200/70"
-            role="listbox"
-          >
-            <div className="grid grid-cols-4 gap-2">
-              <button
-                type="button"
-                role="option"
-                aria-selected={selectedValues.size === 0}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  onChange('');
-                  setIsOpen(false);
-                }}
-                className={`flex aspect-square items-center justify-center rounded-xl border text-xl font-semibold transition ${
-                  selectedValues.size === 0
-                    ? 'border-slate-900 bg-slate-100 text-slate-900'
-                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
-                }`}
-              >
-                +
-              </button>
-              {mediaOptions.map((option) => {
-                const tiedVariantLabels = option.assignedVariantLabels ?? [];
-                const tiedVariantSummary = tiedVariantLabels.join(', ');
-
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="option"
-                    aria-selected={selectedValues.has(option.value)}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => setHoveredOption(option)}
-                    onMouseLeave={() => setHoveredOption(null)}
-                    onClick={() => {
-                      const nextValues = new Set(selectedValues);
-                      if (nextValues.has(option.value)) {
-                        nextValues.delete(option.value);
-                      } else {
-                        nextValues.add(option.value);
-                      }
-                      onChange([...nextValues].join(','));
-                    }}
-                    className={`relative aspect-square overflow-hidden rounded-xl border transition ${
-                      selectedValues.has(option.value)
-                        ? 'border-slate-900 bg-slate-100'
-                        : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100'
-                    }`}
-                    title={
-                      tiedVariantSummary
-                        ? `${option.label} tied to ${tiedVariantSummary}`
-                        : option.label
-                    }
-                  >
-                    <Image
-                      src={option.previewUrl}
-                      alt={option.label}
-                      fill
-                      unoptimized
-                      sizes="56px"
-                      className="object-contain p-1"
-                    />
-                    {tiedVariantLabels.length > 0 ? (
-                      <span className="absolute inset-x-1 bottom-1 truncate rounded bg-white/90 px-1 py-0.5 text-[9px] font-semibold text-slate-700">
-                        {tiedVariantLabels.length} tied
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-            {hoveredOption ? (
-              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2">
-                <div className="relative h-36 w-full overflow-hidden rounded-md bg-white">
-                  <Image
-                    src={hoveredOption.previewUrl}
-                    alt={hoveredOption.label}
-                    fill
-                    unoptimized
-                    sizes="256px"
-                    className="object-contain p-2"
-                  />
+          <>
+            <motion.button
+              type="button"
+              aria-label="Close image selector"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.16 }}
+              onClick={() => setIsOpen(false)}
+              className="fixed inset-0 z-40 cursor-default bg-slate-950/25"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="fixed left-1/2 top-1/2 z-50 h-[min(720px,78vh)] w-[min(960px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    Choose variant images
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {selectedOptions.length} selected
+                  </p>
                 </div>
-                <p className="mt-2 truncate text-[11px] font-semibold text-slate-700">
-                  {hoveredOption.label}
-                </p>
-                {(hoveredOption.assignedVariantLabels ?? []).length > 0 ? (
-                  <div className="mt-2 rounded-md border border-slate-200 bg-white px-2 py-1.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                      Tied variants
-                    </p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {(hoveredOption.assignedVariantLabels ?? []).map((label, index) => (
-                        <span
-                          key={`${label}-${index}`}
-                          className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700"
-                        >
-                          {label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                  aria-label="Close image selector"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M5 5l10 10M15 5 5 15" />
+                  </svg>
+                </button>
               </div>
-            ) : null}
-          </motion.div>
+              <div className="grid h-[calc(100%-65px)] gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="grid auto-rows-[88px] grid-cols-3 gap-2 overflow-auto pr-1 sm:grid-cols-5 md:grid-cols-6">
+                  <button
+                    type="button"
+                    aria-pressed={selectedValues.size === 0}
+                    onClick={() => {
+                      onChange('');
+                      setHoveredOption(null);
+                    }}
+                    className={`flex h-full items-center justify-center rounded-xl border text-2xl font-semibold transition ${
+                      selectedValues.size === 0
+                        ? 'border-slate-900 bg-slate-100'
+                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    +
+                  </button>
+                  {mediaOptions.map((option) => {
+                    const tiedVariantLabels = option.assignedVariantLabels ?? [];
+                    const tiedVariantSummary = tiedVariantLabels.join(', ');
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={selectedValues.has(option.value)}
+                        onMouseEnter={() => setHoveredOption(option)}
+                        onFocus={() => setHoveredOption(option)}
+                        onClick={() => {
+                          const nextValues = new Set(selectedValues);
+                          if (nextValues.has(option.value)) {
+                            nextValues.delete(option.value);
+                          } else {
+                            nextValues.add(option.value);
+                          }
+                          onChange([...nextValues].join(','));
+                        }}
+                        className={`relative h-full overflow-hidden rounded-xl border transition ${
+                          selectedValues.has(option.value)
+                            ? 'border-slate-900 bg-slate-100 ring-2 ring-slate-900/10'
+                            : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100'
+                        }`}
+                        title={
+                          tiedVariantSummary
+                            ? `${option.label} tied to ${tiedVariantSummary}`
+                            : option.label
+                        }
+                      >
+                        <Image
+                          src={option.previewUrl}
+                          alt={option.label}
+                          fill
+                          unoptimized
+                          sizes="88px"
+                          className="object-contain p-1.5"
+                        />
+                        {selectedValues.has(option.value) ? (
+                          <span className="absolute right-1 top-1 rounded-full bg-slate-950 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                            ✓
+                          </span>
+                        ) : null}
+                        {tiedVariantLabels.length > 0 ? (
+                          <span className="absolute inset-x-1 bottom-1 truncate rounded bg-white/90 px-1 py-0.5 text-[9px] font-semibold text-slate-700">
+                            {tiedVariantLabels.length} tied
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex min-h-0 flex-col rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  {previewOption ? (
+                    <>
+                      <div className="relative h-64 w-full shrink-0 overflow-hidden rounded-lg bg-white">
+                        <Image
+                          src={previewOption.previewUrl}
+                          alt={previewOption.label}
+                          fill
+                          unoptimized
+                          sizes="320px"
+                          className="object-contain p-3"
+                        />
+                      </div>
+                      <p className="mt-3 truncate text-xs font-semibold text-slate-700">
+                        {previewOption.label}
+                      </p>
+                      <div className="mt-3 min-h-20 overflow-auto rounded-md border border-slate-200 bg-white px-2 py-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          Tied variants
+                        </p>
+                        {(previewOption.assignedVariantLabels ?? []).length > 0 ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {(previewOption.assignedVariantLabels ?? []).map((label, index) => (
+                              <span
+                                key={`${label}-${index}`}
+                                className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1 text-[10px] font-medium text-slate-400">
+                            None
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex h-64 items-center justify-center rounded-lg bg-white text-xs font-semibold text-slate-500">
+                      Upload product images first.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </div>

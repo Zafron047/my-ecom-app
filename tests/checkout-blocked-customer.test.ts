@@ -104,7 +104,9 @@ describe('checkout blocked customers', () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
+      code: 'CUSTOMER_BLOCKED',
       error: 'This customer account cannot place new orders.',
+      redirectTo: '/unauthorized',
     });
     expect(mocks.customerCreate).not.toHaveBeenCalled();
     expect(mocks.customerUpdate).not.toHaveBeenCalled();

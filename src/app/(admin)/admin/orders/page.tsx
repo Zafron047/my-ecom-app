@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { OrderStatus, PaymentMethod } from '@prisma/client';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
+import { formatSalesOrderStatusLabel } from '@/lib/sales-order-status';
 
 type OrdersPageProps = {
   searchParams: Promise<{
@@ -60,6 +61,22 @@ export default async function AdminOrdersPage({ searchParams }: OrdersPageProps)
       _count: {
         select: {
           products: true,
+        },
+      },
+      products: {
+        select: {
+          id: true,
+          quantity: true,
+        },
+      },
+      orderReturns: {
+        select: {
+          lines: {
+            select: {
+              orderProductId: true,
+              quantity: true,
+            },
+          },
         },
       },
     },
@@ -150,7 +167,30 @@ export default async function AdminOrdersPage({ searchParams }: OrdersPageProps)
           </thead>
           <tbody className="divide-y divide-slate-100">
             {orders.length > 0 ? (
-              orders.map((order) => (
+              orders.map((order) => {
+                const orderedQuantity = order.products.reduce(
+                  (sum, item) => sum + item.quantity,
+                  0,
+                );
+                const returnedQuantity = order.orderReturns.reduce(
+                  (sum, orderReturn) =>
+                    sum +
+                    orderReturn.lines.reduce(
+                      (lineSum, line) => lineSum + line.quantity,
+                      0,
+                    ),
+                  0,
+                );
+                const isPartialReturn =
+                  returnedQuantity > 0 && returnedQuantity < orderedQuantity;
+                const statusLabel = isPartialReturn
+                  ? 'Partial return'
+                  : formatSalesOrderStatusLabel(order.status);
+                const statusClass = isPartialReturn
+                  ? statusStyles.returned
+                  : statusStyles[order.status];
+
+                return (
                 <tr key={order.id} className="align-top transition hover:bg-slate-50">
                   <td className="relative px-3 py-3 font-medium text-slate-900">
                     <Link
@@ -168,9 +208,9 @@ export default async function AdminOrdersPage({ searchParams }: OrdersPageProps)
                   </td>
                   <td className="px-3 py-3">
                     <span
-                      className={`rounded-md px-2 py-1 text-xs font-semibold ${statusStyles[order.status]}`}
+                      className={`rounded-md px-2 py-1 text-xs font-semibold ${statusClass}`}
                     >
-                      {order.status}
+                      {statusLabel}
                     </span>
                   </td>
                   <td className="px-3 py-3 text-slate-600">
@@ -186,7 +226,8 @@ export default async function AdminOrdersPage({ searchParams }: OrdersPageProps)
                     {order.placedAt.toLocaleString()}
                   </td>
                 </tr>
-              ))
+                );
+              })
             ) : (
               <tr>
                 <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>

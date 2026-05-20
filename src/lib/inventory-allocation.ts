@@ -1,19 +1,11 @@
-import { Prisma, type OrderStatus } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import {
+  STOCK_HOLDING_ORDER_STATUSES,
+  isStockHoldingOrderStatus,
+} from '@/lib/sales-order-status';
 
 type InventoryTx = Prisma.TransactionClient;
-
-export const STOCK_HOLDING_ORDER_STATUSES = new Set<OrderStatus>([
-  'pending',
-  'confirmed',
-  'processing',
-  'onHold',
-  'shipped',
-  'delivered',
-]);
-
-export function isStockHoldingOrderStatus(status: OrderStatus | string) {
-  return STOCK_HOLDING_ORDER_STATUSES.has(status as OrderStatus);
-}
+export { STOCK_HOLDING_ORDER_STATUSES, isStockHoldingOrderStatus };
 
 export async function allocateInventoryForOrderProduct(
   tx: InventoryTx,
@@ -124,6 +116,47 @@ export async function releaseInventoryAllocationsForOrderProducts(
 
   await releaseInventoryAllocations(tx, {
     allocations,
+    reason: input.reason,
+  });
+}
+
+export async function releaseInventoryQuantityForOrderProduct(
+  tx: InventoryTx,
+  input: {
+    orderProductId: string;
+    quantity: number;
+    reason: string;
+  },
+) {
+  if (input.quantity <= 0) return;
+
+  const allocations = await tx.inventoryAllocation.findMany({
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: {
+      id: true,
+      inventoryBatchId: true,
+      orderProductId: true,
+      quantity: true,
+      unitCost: true,
+      variantId: true,
+    },
+    where: {
+      orderProductId: input.orderProductId,
+      releasedAt: null,
+    },
+  });
+
+  const allocatedQuantity = allocations.reduce(
+    (sum, allocation) => sum + allocation.quantity,
+    0,
+  );
+  if (allocatedQuantity < input.quantity) {
+    throw new Error('Return quantity exceeds currently allocated stock.');
+  }
+
+  await releaseInventoryQuantity(tx, {
+    allocations,
+    quantity: input.quantity,
     reason: input.reason,
   });
 }

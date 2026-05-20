@@ -4,6 +4,7 @@ import CustomerPasswordChangeForm from '@/components/CustomerPasswordChangeForm'
 import CustomerSessionManagementForm from '@/components/CustomerSessionManagementForm';
 import { getCustomerSession } from '@/lib/customer-session';
 import { prisma } from '@/lib/prisma';
+import { formatSalesOrderStatusLabel } from '@/lib/sales-order-status';
 
 function formatMoney(value: { toNumber: () => number }) {
   return `Tk ${value.toNumber().toLocaleString('en-BD', {
@@ -183,7 +184,7 @@ export default async function AccountPage() {
                             statusStyles[order.status] ?? statusStyles.pending
                           }`}
                         >
-                          {order.status}
+                          {formatSalesOrderStatusLabel(order.status)}
                         </span>
                       </td>
                       <td className="px-3 py-3 text-right text-slate-700">

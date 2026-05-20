@@ -195,12 +195,6 @@ export default function HomePageClient({
       {/* All Products */}
       <section className="bg-gradient-to-b from-slate-100 to-white py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-7">
-            <h2 className="mb-4 text-2xl font-semibold text-gray-900">
-              More to love
-            </h2>
-          </div>
-
           <HomeProductListSection
             title="More to love"
             products={allProducts.slice(0, visibleProductCount)}

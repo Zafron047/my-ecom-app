@@ -2,8 +2,15 @@
 
 import { useMemo, useRef, useState, useTransition } from 'react';
 import { useEffect } from 'react';
-import { updateOrderDetailsAction } from '@/app/(admin)/admin/orders/[id]/actions';
+import {
+  processOrderRefundAction,
+  processOrderReturnAction,
+  updateOrderDetailsAction,
+} from '@/app/(admin)/admin/orders/[id]/actions';
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
+import { getGroupedAreaOptions, getGroupedDistrictOptions } from '@/lib/location-presenter';
+import { getAllowedNextSalesOrderStatuses } from '@/lib/sales-order-status';
+import SearchableDropdown from '@/components/SearchableDropdown';
 import SafeImage from '@/components/SafeImage';
 
 type EditableOrderItem = {
@@ -49,6 +56,7 @@ type EditableOrder = {
   notes: string;
   noteHistory: Array<{
     id: string;
+    kind: 'event' | 'note';
     note: string;
     createdByName: string;
     createdAt: string;
@@ -59,6 +67,21 @@ type EditableOrder = {
   deliveryCharge: number;
   totalAmount: number;
   paidAmount: number;
+  returns: Array<{
+    id: string;
+    reason: string;
+    refundAmount: number;
+    refundMethod: string;
+    refundReferenceNote: string;
+    createdByName: string;
+    createdAt: string;
+    lines: Array<{
+      id: string;
+      orderProductId: string;
+      quantity: number;
+      restocked: boolean;
+    }>;
+  }>;
   variantCatalog: Array<{
     variantId: string;
     productId: string;
@@ -75,6 +98,13 @@ type OrderDetailsEditorProps = {
   initialOrder: EditableOrder;
 };
 
+type ReturnDraftLine = {
+  orderProductId: string;
+  quantity: number;
+  restock: boolean;
+  restockOnly?: boolean;
+};
+
 const ORDER_STATUS_OPTIONS = [
   { value: 'pending', label: 'Unfulfilled' },
   { value: 'confirmed', label: 'Confirmed' },
@@ -82,12 +112,54 @@ const ORDER_STATUS_OPTIONS = [
   { value: 'onHold', label: 'On Hold' },
   { value: 'shipped', label: 'Shipped' },
   { value: 'delivered', label: 'Delivered' },
-  { value: 'returned', label: 'Returned' },
+  { value: 'returned', label: 'Return' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
 function formatMoney(value: number) {
-  return `৳${value.toLocaleString('en-BD', { maximumFractionDigits: 0 })}`;
+  return `Tk ${value.toLocaleString('en-BD', { maximumFractionDigits: 0 })}`;
+}
+
+function formatRefundMethod(value: string) {
+  if (value === 'NAGAD') return 'Nagad';
+  if (value === 'BKASH') return 'bKash';
+  if (value === 'BANK') return 'Bank';
+  return value;
+}
+
+function PencilIcon({ className = 'h-3.5 w-3.5' }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={`h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
 }
 
 function formatNoteDate(value: string) {
@@ -103,10 +175,18 @@ function formatNoteDate(value: string) {
   }).format(date);
 }
 
+function formatTimelineActor(name: string) {
+  return `@${name.trim() || 'Admin'}`;
+}
+
 function sanitizeNumberInput(value: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 0;
   return parsed;
+}
+
+function sanitizeWholeNumberInput(value: string) {
+  return Math.floor(sanitizeNumberInput(value));
 }
 
 function recomputeBundleDiscounts(items: EditableOrderItem[]) {
@@ -165,6 +245,12 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
   const [isEditingItemsOnly, setIsEditingItemsOnly] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState('');
+  const [statusChangeNote, setStatusChangeNote] = useState('');
+  const [returnReason, setReturnReason] = useState('');
+  const [activeRefundId, setActiveRefundId] = useState<string | null>(null);
+  const [refundPaymentMethod, setRefundPaymentMethod] = useState('BKASH');
+  const [refundReferenceNote, setRefundReferenceNote] = useState('');
+  const [returnLines, setReturnLines] = useState<ReturnDraftLine[]>([]);
   const [order, setOrder] = useState(initialOrder);
   const [draft, setDraft] = useState(initialOrder);
   const [orderDiscountType, setOrderDiscountType] = useState<'amount' | 'percent'>('amount');
@@ -176,14 +262,13 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
   const [addItemSearch, setAddItemSearch] = useState('');
   const [expandedAddItemProductId, setExpandedAddItemProductId] = useState<string | null>(null);
   const [isCustomerCardOpen, setIsCustomerCardOpen] = useState(false);
-  const [locationDivisions, setLocationDivisions] = useState<string[]>([]);
   const [locationDistricts, setLocationDistricts] = useState<string[]>([]);
   const [locationThanas, setLocationThanas] = useState<string[]>([]);
   const addItemDropdownRef = useRef<HTMLDivElement | null>(null);
   const isItemsEditing = isEditingAll || isEditingItemsOnly;
   const isCustomerEditing = isEditingAll || isEditingCustomerOnly;
   const isAnyEditing = isEditingAll || isEditingCustomerOnly || isEditingItemsOnly;
-  const isDeliveredLocked =
+  const isFulfillmentLocked =
     order.orderStatus === 'shipped' || order.orderStatus === 'delivered';
 
   const previewSubtotal = useMemo(
@@ -345,6 +430,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
         notes: draft.notes,
         noteHistory: draft.noteHistory.map((entry) => ({
           id: entry.id,
+          kind: entry.kind,
           note: entry.note,
           createdAt: entry.createdAt,
         })),
@@ -373,6 +459,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
         notes: order.notes,
         noteHistory: order.noteHistory.map((entry) => ({
           id: entry.id,
+          kind: entry.kind,
           note: entry.note,
           createdAt: entry.createdAt,
         })),
@@ -391,18 +478,106 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
     draft.paymentMethod !== order.paymentMethod ||
     draft.paymentStatus !== order.paymentStatus ||
     draft.orderStatus !== order.orderStatus;
+  const hasOrderStatusChange = draft.orderStatus !== order.orderStatus;
+  const isDraftingReturnStatus =
+    hasOrderStatusChange && draft.orderStatus === 'returned';
   const hasPendingNote = draft.notes.trim().length > 0;
-  const orderStatusOptions = isDeliveredLocked
-    ? ORDER_STATUS_OPTIONS.filter(
-        (option) => option.value === order.orderStatus || option.value === 'returned',
-      )
-    : ORDER_STATUS_OPTIONS;
+  const allowedOrderStatuses = new Set([
+    order.orderStatus,
+    ...getAllowedNextSalesOrderStatuses(order.orderStatus),
+  ]);
+  const returnedQuantityByItemId = useMemo(() => {
+    const returned = new Map<string, number>();
+    for (const orderReturn of order.returns) {
+      for (const line of orderReturn.lines) {
+        returned.set(
+          line.orderProductId,
+          (returned.get(line.orderProductId) ?? 0) + line.quantity,
+        );
+      }
+    }
+    return returned;
+  }, [order.returns]);
+  const totalOrderedQuantity = order.items.reduce(
+    (sum, item) => sum + item.quantity,
+    0,
+  );
+  const totalReturnedQuantity = [...returnedQuantityByItemId.values()].reduce(
+    (sum, quantity) => sum + quantity,
+    0,
+  );
+  const hasPartialReturn =
+    totalReturnedQuantity > 0 && totalReturnedQuantity < totalOrderedQuantity;
+  const orderStatusOptions = ORDER_STATUS_OPTIONS.filter((option) =>
+    allowedOrderStatuses.has(option.value as never),
+  ).map((option) =>
+    hasPartialReturn && option.value === order.orderStatus
+      ? { ...option, label: 'Partial return' }
+      : option,
+  );
+  const pendingRestockQuantityByItemId = useMemo(() => {
+    const pendingRestock = new Map<string, number>();
+    for (const orderReturn of order.returns) {
+      for (const line of orderReturn.lines) {
+        if (line.restocked) continue;
+        pendingRestock.set(
+          line.orderProductId,
+          (pendingRestock.get(line.orderProductId) ?? 0) + line.quantity,
+        );
+      }
+    }
+    return pendingRestock;
+  }, [order.returns]);
+  const isReturnEligible =
+    order.orderStatus === 'shipped' ||
+    order.orderStatus === 'delivered' ||
+    order.orderStatus === 'returned';
+  const returnableItems = order.items.map((item) => ({
+    ...item,
+    returnedQuantity: returnedQuantityByItemId.get(item.id) ?? 0,
+    returnableQuantity: Math.max(
+      0,
+      item.quantity - (returnedQuantityByItemId.get(item.id) ?? 0),
+    ),
+    pendingRestockQuantity: pendingRestockQuantityByItemId.get(item.id) ?? 0,
+  }));
+  const hasReturnableItems = returnableItems.some((item) => item.returnableQuantity > 0);
+  const hasPendingRestockItems = returnableItems.some(
+    (item) => item.pendingRestockQuantity > 0,
+  );
+  const calculatedReturnRefundAmount = returnLines.reduce((sum, line) => {
+    if (line.restockOnly) return sum;
+    const item = returnableItems.find(
+      (returnableItem) => returnableItem.id === line.orderProductId,
+    );
+    const refundableUnitPrice = item ? item.lineTotal / item.quantity : 0;
+    return sum + refundableUnitPrice * line.quantity;
+  }, 0);
+  const refundableReturnAmount = Math.max(0, calculatedReturnRefundAmount);
+  const pendingRefunds = order.returns.filter(
+    (orderReturn) => orderReturn.refundAmount > 0 && !orderReturn.refundMethod,
+  );
+  const activeRefund =
+    order.returns.find((orderReturn) => orderReturn.id === activeRefundId) ??
+    pendingRefunds[0] ??
+    null;
+  const returnUnavailableMessage = !isReturnEligible
+    ? 'Refunds can be processed after the order is shipped or delivered.'
+    : !hasReturnableItems && !hasPendingRestockItems
+      ? 'All order item quantities have already been returned and restocked.'
+      : '';
+  const groupedLocationThanas = getGroupedAreaOptions(
+    draft.division,
+    draft.district,
+    locationThanas,
+  );
+  const groupedLocationDistricts = getGroupedDistrictOptions(locationDistricts);
 
   useEffect(() => {
     function handleEditRequest(event: Event) {
       const customEvent = event as CustomEvent<{ orderId?: string }>;
       if (!customEvent.detail?.orderId || customEvent.detail.orderId !== order.id) return;
-      if (isDeliveredLocked) return;
+      if (isFulfillmentLocked) return;
       setIsEditingAll(true);
       setIsEditingCustomerOnly(false);
       setIsEditingItemsOnly(false);
@@ -419,7 +594,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
         handleEditRequest as EventListener,
       );
     };
-  }, [isDeliveredLocked, order.id]);
+  }, [isFulfillmentLocked, order.id]);
 
   useEffect(() => {
     window.dispatchEvent(
@@ -445,30 +620,9 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
   }, [isAddItemDropdownOpen]);
 
   useEffect(() => {
-    async function loadDivisions() {
-      try {
-        const response = await fetch('/api/delivery-locations');
-        const payload = (await response.json()) as { items?: string[] };
-        setLocationDivisions(payload.items ?? []);
-      } catch {
-        setLocationDivisions([]);
-      }
-    }
-    void loadDivisions();
-  }, []);
-
-  useEffect(() => {
     async function loadDistricts() {
-      if (!draft.division) {
-        setLocationDistricts([]);
-        return;
-      }
       try {
-        const query = new URLSearchParams({
-          type: 'districts',
-          division: draft.division,
-        });
-        const response = await fetch(`/api/delivery-locations?${query.toString()}`);
+        const response = await fetch('/api/delivery-locations?type=districts');
         const payload = (await response.json()) as { items?: string[] };
         setLocationDistricts(payload.items ?? []);
       } catch {
@@ -476,18 +630,17 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
       }
     }
     void loadDistricts();
-  }, [draft.division]);
+  }, []);
 
   useEffect(() => {
     async function loadThanas() {
-      if (!draft.division || !draft.district) {
+      if (!draft.district) {
         setLocationThanas([]);
         return;
       }
       try {
         const query = new URLSearchParams({
           type: 'areas',
-          division: draft.division,
           district: draft.district,
         });
         const response = await fetch(`/api/delivery-locations?${query.toString()}`);
@@ -498,7 +651,53 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
       }
     }
     void loadThanas();
-  }, [draft.division, draft.district]);
+  }, [draft.district]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!draft.district) return () => {
+      isMounted = false;
+    };
+
+    async function resolveDivision() {
+      try {
+        const query = new URLSearchParams({
+          type: 'division',
+          district: draft.district,
+        });
+        const response = await fetch(`/api/delivery-locations?${query.toString()}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as { division?: string };
+        if (!isMounted) return;
+        setDraft((current) =>
+          current.district === draft.district
+            ? {
+                ...current,
+                division: payload.division?.trim() ? payload.division : current.division,
+              }
+            : current,
+        );
+      } catch {
+        // Saving also resolves division server-side; keep the editor usable if lookup fails.
+      }
+    }
+
+    void resolveDivision();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [draft.district]);
+
+  function handleCustomerDistrictSelect(district: string) {
+    setDraft((prev) => ({
+      ...prev,
+      division: '',
+      district,
+      thana: '',
+    }));
+  }
 
   function toggleVariantSelection(variantId: string) {
     setSelectedVariantIdsToAdd((current) =>
@@ -512,6 +711,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
     setDraft(order);
     setOrderDiscountType('amount');
     setOrderDiscountInput(order.orderLevelDiscount.toString());
+    setStatusChangeNote('');
     setError('');
     setIsEditingAll(false);
     setIsEditingCustomerOnly(false);
@@ -525,6 +725,9 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
       paymentStatus: order.paymentStatus,
       orderStatus: order.orderStatus,
     }));
+    setStatusChangeNote('');
+    setReturnLines([]);
+    setReturnReason('');
     setError('');
   }
 
@@ -534,13 +737,19 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
   }
 
   function handleUpdate() {
-    const isLockedReturnOnlyUpdate =
-      isDeliveredLocked &&
-      draft.orderStatus === 'returned' &&
+    if (isDraftingReturnStatus) {
+      handleProcessReturn();
+      return;
+    }
+
+    const isLockedStatusOnlyUpdate =
+      isFulfillmentLocked &&
+      allowedOrderStatuses.has(draft.orderStatus as never) &&
+      draft.orderStatus !== order.orderStatus &&
       draft.paymentMethod === order.paymentMethod &&
       draft.paymentStatus === order.paymentStatus;
-    if (isDeliveredLocked && !isLockedReturnOnlyUpdate) {
-      setError('Shipped or delivered orders can only be marked returned.');
+    if (isFulfillmentLocked && !isLockedStatusOnlyUpdate) {
+      setError('Shipped or delivered orders can only update to the next allowed status.');
       setIsEditingAll(false);
       setIsEditingCustomerOnly(false);
       setIsEditingItemsOnly(false);
@@ -549,6 +758,11 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
     setError('');
     startTransition(async () => {
       try {
+        const pendingStatusNote = hasOrderStatusChange ? statusChangeNote.trim() : '';
+        const pendingTimelineNote = draft.notes.trim();
+        const updateNote = [pendingStatusNote, pendingTimelineNote]
+          .filter(Boolean)
+          .join('\n\n');
         const updated = await updateOrderDetailsAction(order.id, {
           expectedUpdatedAt: order.updatedAt,
           orderStatus: draft.orderStatus,
@@ -563,7 +777,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
           district: draft.district,
           thana: draft.thana,
           address: draft.address,
-          notes: draft.notes,
+          notes: updateNote,
           orderLevelDiscount: Math.max(0, computedOrderLevelDiscount),
           paidAmount: Math.max(0, draft.paidAmount),
           items: draft.items.map((item) => ({
@@ -586,6 +800,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
         setIsEditingAll(false);
         setIsEditingCustomerOnly(false);
         setIsEditingItemsOnly(false);
+        setStatusChangeNote('');
       } catch (actionError) {
         setError(
           actionError instanceof Error
@@ -646,6 +861,268 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
     });
   }
 
+  function updateReturnLine(
+    orderProductId: string,
+    nextQuantity: number,
+    returnableQuantity: number,
+  ) {
+    const quantity = Math.max(0, Math.min(returnableQuantity, Math.floor(nextQuantity)));
+    setReturnLines((current) => {
+      const existing = current.find(
+        (line) => line.orderProductId === orderProductId && !line.restockOnly,
+      );
+      if (quantity <= 0) {
+        return current.filter(
+          (line) => line.orderProductId !== orderProductId || line.restockOnly,
+        );
+      }
+      if (!existing) {
+        return [...current, { orderProductId, quantity, restock: false }];
+      }
+      return current.map((line) =>
+        line.orderProductId === orderProductId && !line.restockOnly
+          ? { ...line, quantity }
+          : line,
+      );
+    });
+  }
+
+  function updateReturnRestock(orderProductId: string, restock: boolean) {
+    setReturnLines((current) =>
+      current.map((line) =>
+        line.orderProductId === orderProductId && !line.restockOnly
+          ? { ...line, restock }
+          : line,
+      ),
+    );
+  }
+
+  function updatePendingRestockLine(
+    orderProductId: string,
+    quantity: number,
+    restock: boolean,
+  ) {
+    setReturnLines((current) => {
+      const next = current.filter(
+        (line) => line.orderProductId !== orderProductId || !line.restockOnly,
+      );
+      return restock
+        ? [...next, { orderProductId, quantity, restock: true, restockOnly: true }]
+        : next;
+    });
+  }
+
+  function handleReturnCancel() {
+    setReturnLines([]);
+    setReturnReason('');
+    setError('');
+  }
+
+  function handleProcessReturn() {
+    setError('');
+    if (returnLines.length === 0) {
+      setError('Add at least one returned item.');
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const updated = await processOrderReturnAction(order.id, {
+          expectedUpdatedAt: order.updatedAt,
+          lines: returnLines,
+          reason: [returnReason.trim(), statusChangeNote.trim()]
+            .filter(Boolean)
+            .join('\n\n'),
+          refundAmount: Math.max(0, refundableReturnAmount),
+        });
+        const next: EditableOrder = {
+          ...order,
+          ...updated,
+          variantCatalog: order.variantCatalog,
+        };
+        setOrder(next);
+        setDraft(next);
+        setOrderDiscountInput(next.orderLevelDiscount.toString());
+        setStatusChangeNote('');
+        handleReturnCancel();
+      } catch (actionError) {
+        setError(
+          actionError instanceof Error
+            ? actionError.message
+            : 'Unable to process return right now.',
+        );
+      }
+    });
+  }
+
+  function handleRefundCancel() {
+    setActiveRefundId(null);
+    setRefundPaymentMethod('BKASH');
+    setRefundReferenceNote('');
+    setError('');
+  }
+
+  function handlePayRefund(orderReturnId: string) {
+    setError('');
+    startTransition(async () => {
+      try {
+        const updated = await processOrderRefundAction(order.id, {
+          expectedUpdatedAt: order.updatedAt,
+          orderReturnId,
+          refundMethod: refundPaymentMethod,
+          referenceNote: refundReferenceNote,
+        });
+        const next: EditableOrder = {
+          ...order,
+          ...updated,
+          variantCatalog: order.variantCatalog,
+        };
+        setOrder(next);
+        setDraft(next);
+        setOrderDiscountInput(next.orderLevelDiscount.toString());
+        handleRefundCancel();
+      } catch (actionError) {
+        setError(
+          actionError instanceof Error
+            ? actionError.message
+            : 'Unable to pay refund right now.',
+        );
+      }
+    });
+  }
+
+  function renderReturnPanel() {
+    return (
+      <div className="space-y-3 rounded-lg border border-orange-100 bg-orange-50/40 p-3">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-orange-100 text-sm">
+            <thead className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-2 py-2">Product</th>
+                <th className="px-2 py-2 text-right">Price</th>
+                <th className="px-2 py-2 text-right">Ordered</th>
+                <th className="px-2 py-2 text-right">Returned</th>
+                <th className="px-2 py-2 text-right">Pending stock</th>
+                <th className="px-2 py-2 text-right">Return</th>
+                <th className="px-2 py-2 text-right">Total</th>
+                <th className="px-2 py-2 text-center">Restock now</th>
+                <th className="px-2 py-2 text-center">Receive stock</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-orange-100">
+              {returnableItems.map((item) => {
+                const draftLine = returnLines.find(
+                  (line) => line.orderProductId === item.id && !line.restockOnly,
+                );
+                const pendingRestockLine = returnLines.find(
+                  (line) => line.orderProductId === item.id && line.restockOnly,
+                );
+                const returnQuantity = draftLine?.quantity ?? 0;
+                const refundableUnitPrice = item.lineTotal / item.quantity;
+                const returnLineTotal = refundableUnitPrice * returnQuantity;
+                return (
+                  <tr key={item.id}>
+                    <td className="px-2 py-2">
+                      <p className="font-medium text-slate-900">{item.productName}</p>
+                        <p className="text-xs text-slate-500">{item.variantLabel}</p>
+                      </td>
+                    <td className="px-2 py-2 text-right text-slate-700">
+                      {formatMoney(item.unitPrice)}
+                    </td>
+                    <td className="px-2 py-2 text-right text-slate-700">
+                      {item.quantity}
+                    </td>
+                    <td className="px-2 py-2 text-right text-slate-700">
+                      {item.returnedQuantity}
+                    </td>
+                    <td className="px-2 py-2 text-right text-slate-700">
+                      {item.pendingRestockQuantity}
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      <input
+                        type="number"
+                        min={0}
+                        max={item.returnableQuantity}
+                        step={1}
+                        inputMode="numeric"
+                        disabled={item.returnableQuantity <= 0 || isPending}
+                        value={draftLine?.quantity ?? 0}
+                        onFocus={(event) => event.target.select()}
+                        onChange={(event) =>
+                          updateReturnLine(
+                            item.id,
+                            sanitizeWholeNumberInput(event.target.value),
+                            item.returnableQuantity,
+                          )
+                        }
+                        className="h-8 w-20 rounded-md border border-orange-100 bg-white px-2 text-right text-xs text-slate-900 disabled:bg-slate-50"
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-right font-semibold text-slate-900">
+                      {formatMoney(returnLineTotal)}
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        disabled={!draftLine || isPending}
+                        checked={draftLine?.restock ?? false}
+                        onChange={(event) =>
+                          updateReturnRestock(item.id, event.target.checked)
+                        }
+                        className="h-4 w-4 accent-orange-600"
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      {item.pendingRestockQuantity > 0 ? (
+                        <label className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                          <input
+                            type="checkbox"
+                            disabled={isPending}
+                            checked={Boolean(pendingRestockLine)}
+                            onChange={(event) =>
+                              updatePendingRestockLine(
+                                item.id,
+                                item.pendingRestockQuantity,
+                                event.target.checked,
+                              )
+                            }
+                            className="h-4 w-4 accent-emerald-600"
+                          />
+                          Received
+                        </label>
+                      ) : (
+                        <span className="text-xs text-slate-400">-</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-[1fr_180px]">
+          <label className="text-[11px] font-medium text-slate-600">
+            Return note
+            <input
+              type="text"
+              value={returnReason}
+              disabled={isPending}
+              onChange={(event) => setReturnReason(event.target.value)}
+              className="mt-0.5 h-8 w-full rounded-md border border-orange-100 bg-white px-2 py-1 text-xs text-slate-900 disabled:bg-slate-50"
+              placeholder="Reason or customer note"
+            />
+          </label>
+          <label className="text-[11px] font-medium text-slate-600">
+            Refund due
+            <div className="mt-0.5 flex h-8 w-full items-center justify-end rounded-md border border-orange-100 bg-white px-2 py-1 text-xs font-semibold text-slate-900">
+              {formatMoney(refundableReturnAmount)}
+            </div>
+          </label>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <section className="space-y-4">
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -655,7 +1132,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
             Payment Method
             <select
               value={draft.paymentMethod}
-              disabled={isDeliveredLocked || isPending}
+              disabled={isFulfillmentLocked || isPending}
               onChange={(event) =>
                 setDraft((prev) => ({
                   ...prev,
@@ -672,7 +1149,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
             Payment Status
             <select
               value={draft.paymentStatus}
-              disabled={isDeliveredLocked || isPending}
+              disabled={isFulfillmentLocked || isPending}
               onChange={(event) =>
                 setDraft((prev) => ({
                   ...prev,
@@ -707,23 +1184,56 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
           </label>
         </div>
         {hasStatusChanges ? (
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={handleUpdate}
-              className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
-            >
-              {isPending ? 'Updating...' : 'Update'}
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={handleStatusCancel}
-              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-            >
-              Cancel
-            </button>
+          <div className="mt-4 space-y-3">
+            {hasOrderStatusChange && !isDraftingReturnStatus ? (
+              <label className="block text-[11px] font-medium text-slate-600">
+                Timeline note
+                <input
+                  type="text"
+                  value={statusChangeNote}
+                  disabled={isPending}
+                  onChange={(event) => setStatusChangeNote(event.target.value)}
+                  className="mt-0.5 h-8 w-full rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-900 disabled:bg-slate-50"
+                  placeholder="Optional note for this status change"
+                />
+              </label>
+            ) : null}
+            {isDraftingReturnStatus ? (
+              hasReturnableItems || hasPendingRestockItems ? (
+                renderReturnPanel()
+              ) : (
+                <p className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                  {returnUnavailableMessage}
+                </p>
+              )
+            ) : null}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={
+                  isPending ||
+                  (isDraftingReturnStatus && !hasReturnableItems && !hasPendingRestockItems)
+                }
+                onClick={isDraftingReturnStatus ? handleProcessReturn : handleUpdate}
+                className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+              >
+                {isPending
+                  ? isDraftingReturnStatus
+                    ? 'Processing...'
+                    : 'Updating...'
+                  : isDraftingReturnStatus
+                    ? 'Submit Return'
+                    : 'Update'}
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={handleStatusCancel}
+                className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         ) : null}
       </section>
@@ -782,24 +1292,25 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-slate-500">{isCustomerCardOpen ? '▴' : '▾'}</span>
-            {!isEditingAll ? (
+            <span className="text-slate-500">
+              <ChevronIcon open={isCustomerCardOpen} />
+            </span>
+            {!isCustomerEditing ? (
             <button
               type="button"
-              onClick={() => {
+              onClick={(event) => {
+                event.stopPropagation();
                 setIsCustomerCardOpen(true);
-                if (isDeliveredLocked) return;
+                if (isFulfillmentLocked) return;
                 setIsEditingCustomerOnly(true);
                 setIsEditingAll(false);
                 setIsEditingItemsOnly(false);
               }}
               aria-label="Edit customer details"
-              disabled={isDeliveredLocked}
+              disabled={isFulfillmentLocked}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
             >
-              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
-                <path d="M14.69 2.86a1.5 1.5 0 0 1 2.12 2.12l-8.3 8.3-3.35.85.84-3.35 8.7-7.92Zm-9 9.6 1.86 1.86" />
-              </svg>
+              <PencilIcon />
             </button>
             ) : null}
           </div>
@@ -853,72 +1364,33 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
               />
             </label>
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <label className="text-[11px] font-medium text-slate-600">
-              Division
-              <select
-                value={draft.division}
-                disabled={!isCustomerEditing}
-                onChange={(event) =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    division: event.target.value,
-                    district: '',
-                    thana: '',
-                  }))
-                }
-                className="mt-0.5 h-8 w-full rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-900 disabled:bg-slate-50"
-              >
-                <option value="">Select Division</option>
-                {locationDivisions.map((division) => (
-                  <option key={division} value={division}>
-                    {division}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="grid gap-2 sm:grid-cols-2">
             <label className="text-[11px] font-medium text-slate-600">
               District
-              <select
+              <SearchableDropdown
                 value={draft.district}
-                disabled={!isCustomerEditing || !draft.division}
-                onChange={(event) =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    district: event.target.value,
-                    thana: '',
-                  }))
-                }
+                options={groupedLocationDistricts}
+                placeholder="Select District"
+                disabled={!isCustomerEditing}
+                onSelect={handleCustomerDistrictSelect}
                 className="mt-0.5 h-8 w-full rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-900 disabled:bg-slate-50"
-              >
-                <option value="">Select District</option>
-                {locationDistricts.map((district) => (
-                  <option key={district} value={district}>
-                    {district}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="text-[11px] font-medium text-slate-600">
               Thana / Upozila
-              <select
+              <SearchableDropdown
                 value={draft.thana}
+                options={groupedLocationThanas}
+                placeholder="Select Thana / Upozila"
                 disabled={!isCustomerEditing || !draft.district}
-                onChange={(event) =>
+                onSelect={(value) =>
                   setDraft((prev) => ({
                     ...prev,
-                    thana: event.target.value,
+                    thana: value,
                   }))
                 }
                 className="mt-0.5 h-8 w-full rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-900 disabled:bg-slate-50"
-              >
-                <option value="">Select Thana / Upozila</option>
-                {locationThanas.map((thana) => (
-                  <option key={thana} value={thana}>
-                    {thana}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
           </div>
           <label className="sm:col-span-2 text-[11px] font-medium text-slate-600">
@@ -975,24 +1447,22 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
             <button
               type="button"
               onClick={() => {
-                if (isDeliveredLocked) return;
+                if (isFulfillmentLocked) return;
                 setIsEditingCustomerOnly(false);
                 setIsEditingItemsOnly(true);
               }}
               aria-label="Edit item discounts and totals"
-              disabled={isDeliveredLocked}
+              disabled={isFulfillmentLocked}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
             >
-              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
-                <path d="M14.69 2.86a1.5 1.5 0 0 1 2.12 2.12l-8.3 8.3-3.35.85.84-3.35 8.7-7.92Zm-9 9.6 1.86 1.86" />
-              </svg>
+              <PencilIcon />
             </button>
           ) : null}
         </div>
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4">
           {isItemsEditing ? (
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <div ref={addItemDropdownRef} className="relative min-w-[320px]">
+            <div className="relative z-40 mb-3 flex flex-wrap items-start gap-2 overflow-visible">
+              <div ref={addItemDropdownRef} className="relative z-40 w-full max-w-3xl sm:min-w-[520px] sm:flex-1 lg:flex-none">
                 <input
                   type="text"
                   value={addItemSearch}
@@ -1019,7 +1489,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
                   </button>
                 ) : null}
                 {isAddItemDropdownOpen ? (
-                  <div className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
+                  <div className="absolute left-0 top-[calc(100%+4px)] z-[90] max-h-80 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-xl shadow-slate-200/70">
                     {addItemProducts.map((product) => {
                       const isExpanded = expandedAddItemProductId === product.productId;
                       const productVariantIds = product.variants.map((variant) => variant.variantId);
@@ -1070,7 +1540,9 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
                                 </div>
                                 <span className="truncate">{product.productName}</span>
                               </div>
-                              <span className="text-slate-500">{isExpanded ? '▴' : '▾'}</span>
+                              <span className="text-slate-500">
+                                <ChevronIcon open={isExpanded} />
+                              </span>
                             </button>
                           </div>
                           {isExpanded ? (
@@ -1126,6 +1598,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
               </button>
             </div>
           ) : null}
+          <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
@@ -1192,10 +1665,12 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
                         <input
                           type="number"
                           min={0}
-                          step="0.01"
+                          step={1}
+                          inputMode="numeric"
                           value={item.discountAmount}
+                          onFocus={(event) => event.target.select()}
                           onChange={(event) => {
-                            const nextValue = Math.max(0, sanitizeNumberInput(event.target.value));
+                            const nextValue = Math.max(0, sanitizeWholeNumberInput(event.target.value));
                             setDraft((prev) => {
                               const nextItems = [...prev.items];
                               nextItems[index] = { ...nextItems[index], discountAmount: nextValue };
@@ -1210,22 +1685,15 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
                           <button
                             type="button"
                             onClick={() => {
-                              if (isDeliveredLocked) return;
+                              if (isFulfillmentLocked) return;
                               setIsEditingCustomerOnly(false);
                               setIsEditingItemsOnly(true);
                             }}
                             aria-label={`Edit unit discount for ${item.productName}`}
-                            disabled={isDeliveredLocked}
+                            disabled={isFulfillmentLocked}
                             className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
                           >
-                            <svg
-                              viewBox="0 0 20 20"
-                              className="h-3 w-3"
-                              fill="currentColor"
-                              aria-hidden="true"
-                            >
-                              <path d="M14.69 2.86a1.5 1.5 0 0 1 2.12 2.12l-8.3 8.3-3.35.85.84-3.35 8.7-7.92Zm-9 9.6 1.86 1.86" />
-                            </svg>
+                            <PencilIcon className="h-3 w-3" />
                           </button>
                         </span>
                       )}
@@ -1249,6 +1717,7 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
               })}
             </tbody>
           </table>
+          </div>
         </div>
 
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
@@ -1278,9 +1747,15 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
                   <input
                     type="number"
                     min={0}
-                    step="0.01"
+                    step={1}
+                    inputMode="numeric"
                     value={orderDiscountInput}
-                    onChange={(event) => setOrderDiscountInput(event.target.value)}
+                    onFocus={(event) => event.target.select()}
+                    onChange={(event) =>
+                      setOrderDiscountInput(
+                        Math.max(0, sanitizeWholeNumberInput(event.target.value)).toString(),
+                      )
+                    }
                     className="w-24 rounded-md border border-slate-200 px-1.5 py-1 text-right text-xs text-slate-900"
                   />
                 </div>
@@ -1303,12 +1778,14 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
                 <input
                   type="number"
                   min={0}
-                  step="0.01"
+                  step={1}
+                  inputMode="numeric"
                   value={draft.paidAmount}
+                  onFocus={(event) => event.target.select()}
                   onChange={(event) =>
                     setDraft((prev) => ({
                       ...prev,
-                      paidAmount: Math.max(0, sanitizeNumberInput(event.target.value)),
+                      paidAmount: Math.max(0, sanitizeWholeNumberInput(event.target.value)),
                     }))
                   }
                   className="w-24 rounded-md border border-slate-200 px-1.5 py-1 text-right text-xs text-slate-900"
@@ -1325,9 +1802,9 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
         </div>
 
         {error ? <p className="mt-3 text-xs font-medium text-rose-600">{error}</p> : null}
-        {isDeliveredLocked ? (
+        {isFulfillmentLocked ? (
           <p className="mt-3 text-xs font-medium text-amber-700">
-            This order is shipped/delivered and locked from edits except marking it returned.
+            This order is shipped/delivered and locked from edits except moving to the next allowed status.
           </p>
         ) : null}
 
@@ -1354,25 +1831,170 @@ export default function OrderDetailsEditor({ initialOrder }: OrderDetailsEditorP
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-slate-900">Notes</h3>
-        {draft.noteHistory.length > 0 ? (
-          <div className="mt-3 space-y-2">
-            {draft.noteHistory.map((entry) => (
-              <div key={entry.id} className="rounded-md border border-slate-200 bg-slate-50 p-2">
-                <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                  <span className="font-medium text-slate-700">{entry.createdByName}</span>
-                  <span>{formatNoteDate(entry.createdAt)}</span>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Refunds</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              {pendingRefunds.length > 0
+                ? `${pendingRefunds.length} refund payment${pendingRefunds.length === 1 ? '' : 's'} pending`
+                : order.returns.length > 0
+                  ? 'All recorded refunds are paid.'
+                  : returnUnavailableMessage || 'No refunds recorded yet.'}
+            </p>
+          </div>
+          {activeRefund && activeRefundId !== activeRefund.id ? (
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => {
+                setActiveRefundId(activeRefund.id);
+                setRefundPaymentMethod(activeRefund.refundMethod || 'BKASH');
+                setRefundReferenceNote(activeRefund.refundReferenceNote || '');
+              }}
+              className="rounded-md border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100 disabled:opacity-50"
+            >
+              Pay refund
+            </button>
+          ) : null}
+        </div>
+
+        {activeRefundId && activeRefund ? (
+          <div className="mt-4 rounded-lg border border-orange-100 bg-orange-50/40 p-3">
+            <div className="grid gap-2 sm:grid-cols-[160px_180px_1fr]">
+              <label className="text-[11px] font-medium text-slate-600">
+                Payment method
+                <select
+                  value={refundPaymentMethod}
+                  disabled={isPending}
+                  onChange={(event) => setRefundPaymentMethod(event.target.value)}
+                  className="mt-0.5 h-8 w-full rounded-md border border-orange-100 bg-white px-2 py-1 text-xs text-slate-900 disabled:bg-slate-50"
+                >
+                  <option value="NAGAD">Nagad</option>
+                  <option value="BKASH">bKash</option>
+                  <option value="BANK">Bank</option>
+                </select>
+              </label>
+              <label className="text-[11px] font-medium text-slate-600">
+                Amount
+                <div className="mt-0.5 flex h-8 w-full items-center justify-end rounded-md border border-orange-100 bg-white px-2 py-1 text-xs font-semibold text-slate-900">
+                  {formatMoney(activeRefund.refundAmount)}
                 </div>
-                <p className="text-xs text-slate-800">{entry.note}</p>
+              </label>
+              <label className="text-[11px] font-medium text-slate-600">
+                Reference Note
+                <input
+                  type="text"
+                  value={refundReferenceNote}
+                  disabled={isPending}
+                  onChange={(event) => setRefundReferenceNote(event.target.value)}
+                  className="mt-0.5 h-8 w-full rounded-md border border-orange-100 bg-white px-2 py-1 text-xs text-slate-900 disabled:bg-slate-50"
+                  placeholder="Transaction ID, bank ref, or cash note"
+                />
+              </label>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => handlePayRefund(activeRefund.id)}
+                className="rounded-md border border-orange-200 bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-700 disabled:opacity-50"
+              >
+                {isPending ? 'Refunding...' : 'Confirm Refund'}
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={handleRefundCancel}
+                className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {order.returns.length > 0 ? (
+          <div className="mt-4 space-y-2">
+            {order.returns.map((orderReturn) => (
+              <div key={orderReturn.id} className="rounded-md border border-slate-200 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="font-semibold text-slate-900">
+                    {formatNoteDate(orderReturn.createdAt)}
+                  </span>
+                  <span className="text-slate-500">
+                    {orderReturn.createdByName}
+                    {orderReturn.refundAmount > 0
+                      ? ` - ${
+                          orderReturn.refundMethod ? 'Refunded' : 'Refund due'
+                        } ${formatMoney(orderReturn.refundAmount)}${
+                          orderReturn.refundMethod
+                            ? ` via ${formatRefundMethod(orderReturn.refundMethod)}`
+                            : ''
+                        }`
+                      : ''}
+                  </span>
+                </div>
+                {orderReturn.refundReferenceNote ? (
+                  <p className="mt-1 text-xs text-slate-600">
+                    Reference: {orderReturn.refundReferenceNote}
+                  </p>
+                ) : null}
+                {orderReturn.reason ? (
+                  <p className="mt-1 text-xs text-slate-600">{orderReturn.reason}</p>
+                ) : null}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {orderReturn.lines.map((line) => {
+                    const item = order.items.find(
+                      (orderItem) => orderItem.id === line.orderProductId,
+                    );
+                    return (
+                      <span
+                        key={line.id}
+                        className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700"
+                      >
+                        {item?.productName ?? 'Order item'} x {line.quantity}
+                        {line.restocked ? ' restocked' : ''}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>
+        ) : null}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-slate-900">Timeline</h3>
+        {draft.noteHistory.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {draft.noteHistory.map((entry) =>
+              entry.kind === 'event' ? (
+                <div
+                  key={entry.id}
+                  className="mx-auto w-fit max-w-full rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-center"
+                >
+                  <p className="text-xs font-medium text-blue-950">
+                    {formatTimelineActor(entry.createdByName)} {entry.note}.
+                  </p>
+                </div>
+              ) : (
+                <div key={entry.id} className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                    <span className="font-medium text-slate-700">{entry.createdByName}</span>
+                    <span>{formatNoteDate(entry.createdAt)}</span>
+                  </div>
+                  <p className="text-xs text-slate-800">{entry.note}</p>
+                </div>
+              ),
+            )}
+          </div>
         ) : (
-          <p className="mt-3 text-xs text-slate-500">No notes added yet.</p>
+          <p className="mt-3 text-xs text-slate-500">No lifecycle entries or notes yet.</p>
         )}
         <textarea
           value={draft.notes}
-          disabled={isDeliveredLocked || isPending}
+          disabled={isFulfillmentLocked || isPending}
           onChange={(event) =>
             setDraft((prev) => ({
               ...prev,

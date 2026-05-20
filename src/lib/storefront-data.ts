@@ -44,14 +44,9 @@ async function loadCatalogCardProducts() {
           isPrimary: true,
           sortOrder: true,
         },
-        orderBy: [
-          {
-            isPrimary: 'desc',
-          },
-          {
-            sortOrder: 'asc',
-          },
-        ],
+        orderBy: {
+          sortOrder: 'asc',
+        },
       },
       variants: {
         where: {
@@ -551,9 +546,6 @@ async function loadProductDetail(productId: string) {
       },
       images: {
         orderBy: [
-          {
-            isPrimary: 'desc',
-          },
           {
             sortOrder: 'asc',
           },

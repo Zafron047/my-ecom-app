@@ -5,7 +5,7 @@ import {
   useCart,
 } from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
-import { getGroupedAreaOptions } from '@/lib/location-presenter';
+import { getGroupedAreaOptions, getGroupedDistrictOptions } from '@/lib/location-presenter';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
 import Image from 'next/image';
@@ -15,7 +15,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import SearchableDropdown from '@/components/SearchableDropdown';
 import { FacebookIcon, GoogleIcon } from '@/components/SocialAuthIcons';
 
-const MOBILE_PATTERN = /^(?:\+8801[3-9]\d{8}|01[3-9]\d{8})$/;
+const MOBILE_PATTERN = /^01[3-9]\d{8}$/;
+
+function normalizeMobileInput(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (digits.startsWith('8801') && digits.length === 13) {
+    return `0${digits.slice(3)}`;
+  }
+  return digits;
+}
 
 export default function Header() {
   type CheckoutField =
@@ -170,6 +178,7 @@ export default function Header() {
     checkoutForm.district,
     locationAreas,
   );
+  const groupedDistrictOptions = getGroupedDistrictOptions(locationDistricts);
 
   const navLinks = [
     { href: '/', label: 'Home' },
@@ -206,9 +215,6 @@ export default function Header() {
         subtotalBeforeDiscount: number;
         subtotalAfterDiscount: number;
         discount: number;
-        bundleDiscountPercent: number | null;
-        bundleOffersText: string[];
-        appliedBundleDiscounts: { title: string; amount: number }[];
       }
     >();
 
@@ -223,21 +229,9 @@ export default function Header() {
         subtotalBeforeDiscount: 0,
         subtotalAfterDiscount: 0,
         discount: 0,
-        bundleDiscountPercent: null,
-        bundleOffersText: [],
-        appliedBundleDiscounts: [],
       };
 
       group.lines.push(item);
-      const fallbackActiveOffers = (item.bundleOffers ?? []).filter((offer) => offer.isActive);
-      for (const offer of fallbackActiveOffers) {
-        const offerText = offer.title?.trim()
-          ? offer.title.trim()
-          : `Buy Min ${offer.minTotalQty} get ${offer.discountPercent}% OFF!!!`;
-        if (!group.bundleOffersText.includes(offerText)) {
-          group.bundleOffersText.push(offerText);
-        }
-      }
       if (item.selected) {
         const linePricing = linePricingById[item.id];
         const lineSubtotal =
@@ -247,28 +241,6 @@ export default function Header() {
         group.subtotalBeforeDiscount += lineSubtotal;
         group.subtotalAfterDiscount += lineTotal;
         group.discount += lineDiscount;
-        if (typeof linePricing?.bundleDiscountPercent === 'number') {
-          group.bundleDiscountPercent = Math.max(
-            group.bundleDiscountPercent ?? 0,
-            linePricing.bundleDiscountPercent,
-          );
-        }
-        if (linePricing?.bundleTitle && !group.bundleOffersText.includes(linePricing.bundleTitle)) {
-          group.bundleOffersText.push(linePricing.bundleTitle);
-        }
-        if (linePricing?.bundleTitle && lineDiscount > 0) {
-          const existing = group.appliedBundleDiscounts.find(
-            (entry) => entry.title === linePricing.bundleTitle,
-          );
-          if (existing) {
-            existing.amount += lineDiscount;
-          } else {
-            group.appliedBundleDiscounts.push({
-              title: linePricing.bundleTitle,
-              amount: lineDiscount,
-            });
-          }
-        }
       } else {
         group.allSelected = false;
       }
@@ -284,12 +256,9 @@ export default function Header() {
   }, []);
 
   useEffect(() => {
-    const rawPhone = checkoutForm.customerMobile.trim();
-    const normalizedPhone = rawPhone.startsWith('+880')
-      ? `0${rawPhone.slice(4)}`
-      : rawPhone;
+    const normalizedPhone = normalizeMobileInput(checkoutForm.customerMobile);
 
-    if (!MOBILE_PATTERN.test(rawPhone) || !normalizedPhone) return;
+    if (!MOBILE_PATTERN.test(normalizedPhone)) return;
     if (lastAutofillPhoneRef.current === normalizedPhone) return;
 
     const timer = setTimeout(async () => {
@@ -652,8 +621,16 @@ export default function Header() {
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as
-          | { error?: string }
+          | { code?: string; error?: string; redirectTo?: string }
           | null;
+        if (
+          response.status === 403 &&
+          errorPayload?.code === 'CUSTOMER_BLOCKED'
+        ) {
+          handleCloseCart();
+          router.push(errorPayload.redirectTo || '/unauthorized');
+          return;
+        }
         setPlaceOrderError(
           errorPayload?.error || 'Could not place order. Please try again.',
         );
@@ -1272,7 +1249,7 @@ export default function Header() {
                     >
                       <SearchableDropdown
                         value={checkoutForm.district}
-                        options={locationDistricts}
+                        options={groupedDistrictOptions}
                         placeholder="Select district *"
                         onSelect={(value) =>
                           handleCheckoutLocationSelect('district', value)
@@ -1456,11 +1433,6 @@ export default function Header() {
                               >
                                 {group.productName}
                               </Link>
-                              {group.bundleOffersText.map((offerText) => (
-                                <p key={offerText} className="mt-1 text-xs font-semibold text-emerald-700">
-                                  {offerText}
-                                </p>
-                              ))}
                             </div>
                           </div>
                           <div className="col-span-2 mt-2 w-full space-y-2">
@@ -1524,15 +1496,6 @@ export default function Header() {
                             </div>
                             {group.discount > 0 && (
                               <>
-                                {group.appliedBundleDiscounts.map((entry) => (
-                                  <div
-                                    key={entry.title}
-                                    className="flex items-center justify-between text-emerald-700/90"
-                                  >
-                                    <span className="line-clamp-1 text-[11px]">{entry.title}</span>
-                                    <span className="text-[11px]">-৳{entry.amount.toFixed(2)}</span>
-                                  </div>
-                                ))}
                                 <div className="flex items-center justify-between text-emerald-700">
                                   <span>Bundle discount</span>
                                   <span>-৳{group.discount.toFixed(2)}</span>

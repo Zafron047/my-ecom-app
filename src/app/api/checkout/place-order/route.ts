@@ -72,6 +72,17 @@ const PLACE_ORDER_RATE_LIMIT = {
   windowMs: 60_000,
 };
 
+function blockedCustomerResponse() {
+  return Response.json(
+    {
+      code: 'CUSTOMER_BLOCKED',
+      error: 'This customer account cannot place new orders.',
+      redirectTo: '/unauthorized',
+    },
+    withPrivateNoStoreHeaders({ status: 403 }),
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const rateLimit = await checkDistributedRateLimit({
@@ -279,10 +290,7 @@ export async function POST(request: Request) {
         })
       : null;
     if (sessionCustomer?.isBlocked) {
-      return Response.json(
-        { error: 'This customer account cannot place new orders.' },
-        withPrivateNoStoreHeaders({ status: 403 }),
-      );
+      return blockedCustomerResponse();
     }
 
     const existingCustomerByPhone = await prisma.customer.findFirst({
@@ -291,10 +299,7 @@ export async function POST(request: Request) {
       },
     });
     if (existingCustomerByPhone?.isBlocked) {
-      return Response.json(
-        { error: 'This customer account cannot place new orders.' },
-        withPrivateNoStoreHeaders({ status: 403 }),
-      );
+      return blockedCustomerResponse();
     }
 
     const customer =

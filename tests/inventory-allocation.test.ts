@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   allocateInventoryForOrderProduct,
   releaseInventoryAllocationsForOrderProducts,
+  releaseInventoryQuantityForOrderProduct,
 } from '@/lib/inventory-allocation';
 
 type Allocation = {
@@ -31,6 +32,7 @@ function createInventoryTx(
 
   return {
     inventoryAllocation: {
+      create: vi.fn(async () => ({})),
       findMany: vi.fn(async () => allocations),
       updateMany: vi.fn(async () => ({
         count: remainingUpdateCounts.shift() ?? 1,
@@ -302,5 +304,60 @@ describe('releaseInventoryAllocationsForOrderProducts', () => {
     ).rejects.toThrow('Inventory batch did not match the released allocation.');
 
     expect(tx.productVariant.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('releaseInventoryQuantityForOrderProduct', () => {
+  it('restores only the requested quantity for a partial return', async () => {
+    const allocations: Allocation[] = [
+      {
+        id: 'alloc-a',
+        inventoryBatchId: 'batch-a',
+        orderProductId: 'line-1',
+        quantity: 5,
+        unitCost: '120.00',
+        variantId: 'variant-1',
+      },
+    ];
+    const tx = createInventoryTx(allocations);
+
+    await releaseInventoryQuantityForOrderProduct(tx as never, {
+      orderProductId: 'line-1',
+      quantity: 2,
+      reason: 'order-return-return-1',
+    });
+
+    expect(tx.inventoryAllocation.updateMany).toHaveBeenCalledWith({
+      data: {
+        quantity: {
+          decrement: 2,
+        },
+      },
+      where: {
+        id: 'alloc-a',
+        quantity: { gte: 2 },
+        releasedAt: null,
+      },
+    });
+    expect(tx.inventoryAllocation.create).toHaveBeenCalledWith({
+      data: {
+        inventoryBatchId: 'batch-a',
+        orderProductId: 'line-1',
+        quantity: 2,
+        releasedAt: expect.any(Date),
+        releaseReason: 'order-return-return-1',
+        unitCost: '120.00',
+        variantId: 'variant-1',
+      },
+    });
+    expect(tx.inventoryBatch.updateMany).toHaveBeenCalledWith({
+      data: {
+        remainingQuantity: {
+          increment: 2,
+        },
+        status: 'available',
+      },
+      where: { id: 'batch-a', variantId: 'variant-1' },
+    });
   });
 });

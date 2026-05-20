@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { redirect } from 'next/navigation';
 import path from 'path';
 import sharp from 'sharp';
@@ -27,6 +27,19 @@ const PRODUCT_IMAGE_VARIANTS = [
   { suffix: 'detail', width: 1200, quality: 78 },
   { suffix: 'zoom', width: 1800, quality: 75 },
 ] as const;
+
+function revalidateStorefrontProduct(productId?: string) {
+  revalidateTag('storefront-catalog', 'max');
+  revalidateTag('storefront-products', 'max');
+  revalidateTag('storefront-categories', 'max');
+  revalidatePath('/');
+  revalidatePath('/products');
+  revalidatePath('/api/storefront/catalog');
+  if (productId) {
+    revalidatePath(`/products/${productId}`);
+    revalidatePath(`/api/storefront/products/${productId}`);
+  }
+}
 
 function getProductStorageFolder(productId: string) {
   return `${PRODUCT_STORAGE_FOLDER}/${productId}`;
@@ -1358,6 +1371,7 @@ export async function createProduct(formData: FormData) {
   }
 
   revalidatePath('/admin/products');
+  revalidateStorefrontProduct(productId);
   return {
     productId,
     redirectTo: `/admin/products/${productId}/edit`,
@@ -1973,6 +1987,7 @@ export async function updateProduct(formData: FormData) {
 
   revalidatePath('/admin/products');
   revalidatePath(`/admin/products/${productId}/edit`);
+  revalidateStorefrontProduct(productId);
   redirect(`/admin/products/${productId}/edit`);
 }
 

@@ -63,28 +63,33 @@ export default function ProductCard({ product }: { product: Product }) {
       .split('?')[0]
       .replace(/-(thumb|detail|zoom)(\.[a-z0-9]+)$/i, '$2');
 
-  const selectedVariant =
-    variants.find(
-      (variant) =>
-        (variant.images ?? [variant.image]).some(
-          (imagePath) =>
-            normalizeImagePath(imagePath) === normalizeImagePath(activeImage),
-        ),
-    ) ?? variants[0];
+  const tiedVariants = variants.filter((variant) =>
+    getExplicitVariantImages(variant).some(
+      (imagePath) =>
+        normalizeImagePath(imagePath) === normalizeImagePath(activeImage),
+    ),
+  );
+  const hasVariantChoice =
+    tiedVariants.length > 1 || (tiedVariants.length === 0 && variants.length > 1);
+  const choiceVariants = tiedVariants.length > 1 ? tiedVariants : variants;
+  const tiedVariant = tiedVariants.length === 1 ? tiedVariants[0] : null;
+  const selectedVariant = hasVariantChoice ? undefined : tiedVariant ?? variants[0];
   const selectedBundleOffer =
-    (product.bundleOffers ?? [])
-      .filter(
-        (offer) =>
-          offer.isActive &&
-          Boolean(selectedVariant?.id) &&
-          offer.variantIds.includes(selectedVariant!.id),
-      )
-      .sort((a, b) => {
-        if (b.discountPercent !== a.discountPercent) {
-          return b.discountPercent - a.discountPercent;
-        }
-        return b.minTotalQty - a.minTotalQty;
-      })[0] ?? null;
+    hasVariantChoice
+      ? null
+      : (product.bundleOffers ?? [])
+          .filter(
+            (offer) =>
+              offer.isActive &&
+              Boolean(selectedVariant?.id) &&
+              offer.variantIds.includes(selectedVariant!.id),
+          )
+          .sort((a, b) => {
+            if (b.discountPercent !== a.discountPercent) {
+              return b.discountPercent - a.discountPercent;
+            }
+            return b.minTotalQty - a.minTotalQty;
+          })[0] ?? null;
   const selectedVariantCartItem = productCartItems.find(
     (item) => item.variantId === selectedVariant?.id,
   );
@@ -92,7 +97,12 @@ export default function ProductCard({ product }: { product: Product }) {
     activeImage ?? selectedVariant?.image ?? product.image ?? '';
   const activeVariantQuantity = selectedVariantCartItem?.quantity ?? 0;
   const hasMultipleImages = productImages.length > 1;
-  const activeVariantLabel = selectedVariant
+  const activeVariantLabel = hasVariantChoice
+    ? `${choiceVariants.length} variants`
+    : tiedVariant
+      ? formatVariantLabel(tiedVariant.color, tiedVariant.size)
+      : '';
+  const cartVariantLabel = selectedVariant
     ? formatVariantLabel(selectedVariant.color, selectedVariant.size)
     : '';
   const activeBundleLabel =
@@ -100,17 +110,26 @@ export default function ProductCard({ product }: { product: Product }) {
     product.bundleDisplayText?.trim() ||
     '';
 
-  const activePrice = selectedVariant?.price ?? product.price;
-  const activeSalePrice = selectedVariant
-    ? selectedVariant.salePrice
-    : product.salePrice;
-  const activeStockQuantity = selectedVariant?.stockQuantity ?? 0;
-  const isActiveVariantSoldOut = activeStockQuantity <= 0;
+  const variantChoicePriceRange = hasVariantChoice
+    ? getVariantPriceRange(choiceVariants)
+    : null;
+  const activePrice = variantChoicePriceRange?.min ?? selectedVariant?.price ?? product.price;
+  const activeSalePrice = hasVariantChoice
+    ? undefined
+    : selectedVariant
+      ? selectedVariant.salePrice
+      : product.salePrice;
+  const activeStockQuantity = hasVariantChoice
+    ? choiceVariants.reduce((total, variant) => total + variant.stockQuantity, 0)
+    : selectedVariant?.stockQuantity ?? 0;
+  const isActiveVariantSoldOut = !hasVariantChoice && activeStockQuantity <= 0;
   const canIncreaseActiveVariant =
-    Boolean(selectedVariant) && activeVariantQuantity < activeStockQuantity;
+    !hasVariantChoice &&
+    Boolean(selectedVariant) &&
+    activeVariantQuantity < activeStockQuantity;
 
   const discount =
-    activeSalePrice && activePrice > activeSalePrice
+    !hasVariantChoice && activeSalePrice && activePrice > activeSalePrice
       ? Math.round(((activePrice - activeSalePrice) / activePrice) * 100)
       : 0;
 
@@ -220,7 +239,11 @@ export default function ProductCard({ product }: { product: Product }) {
 
       <div className="min-h-[52px]">
         <div className="flex min-h-[1.75rem] items-center justify-center gap-2">
-          {activeSalePrice ? (
+          {variantChoicePriceRange ? (
+            <span className="text-center text-[0.96rem] font-medium text-gray-900">
+              {formatVariantPriceRange(variantChoicePriceRange)}
+            </span>
+          ) : activeSalePrice ? (
             <>
               <span className="text-[0.85rem] text-gray-500 line-through">
                 BDT {activePrice.toFixed(2)}
@@ -238,7 +261,14 @@ export default function ProductCard({ product }: { product: Product }) {
       </div>
 
       <div className="relative mt-4">
-        {isActiveVariantSoldOut ? (
+        {hasVariantChoice ? (
+          <Link
+            href={`/products/${product.detailId ?? product.id}`}
+            className="flex w-full items-center justify-center rounded-full border border-[#2d5db3] bg-[#2d5db3] px-4 py-2.5 text-[0.78rem] font-semibold uppercase tracking-[0.12em] !text-white transition visited:!text-white hover:bg-[#244d96] hover:!text-white"
+          >
+            See details
+          </Link>
+        ) : isActiveVariantSoldOut ? (
           <div className="flex w-full items-center justify-center rounded-full border border-slate-300 bg-slate-100 px-4 py-2.5 text-[0.78rem] font-semibold uppercase tracking-[0.12em] text-slate-500">
             Sold Out
           </div>
@@ -274,7 +304,7 @@ export default function ProductCard({ product }: { product: Product }) {
                   {
                     ...product,
                     variantId: selectedVariant?.id,
-                    variantLabel: activeVariantLabel,
+                    variantLabel: cartVariantLabel,
                     image: cartImage,
                     price: activePrice,
                     salePrice: activeSalePrice,
@@ -307,5 +337,33 @@ export default function ProductCard({ product }: { product: Product }) {
     </div>
   );
 }
-  const formatVariantLabel = (color?: string, size?: string) =>
-    [color?.trim(), size?.trim()].filter(Boolean).join(' / ');
+
+const getExplicitVariantImages = (variant: Product['variants'][number]) =>
+  variant.images?.filter((imagePath) => Boolean(imagePath?.trim())) ?? [];
+
+function getVariantPriceRange(variants: Product['variants']) {
+  const prices = variants
+    .map((variant) => variant.salePrice ?? variant.price)
+    .filter((price) => Number.isFinite(price));
+
+  if (prices.length === 0) return null;
+
+  return {
+    max: Math.max(...prices),
+    min: Math.min(...prices),
+  };
+}
+
+function formatVariantPriceRange({
+  max,
+  min,
+}: {
+  max: number;
+  min: number;
+}) {
+  if (min === max) return `BDT ${min.toFixed(2)}`;
+  return `BDT ${min.toFixed(2)} - BDT ${max.toFixed(2)}`;
+}
+
+const formatVariantLabel = (color?: string, size?: string) =>
+  [color?.trim(), size?.trim()].filter(Boolean).join(' / ');
