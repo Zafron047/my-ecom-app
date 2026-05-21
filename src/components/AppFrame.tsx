@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { CartProvider } from '@/components/CartProvider';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import type { StorefrontBusinessProfile } from '@/lib/storefront-types';
 
 function isStorefrontPath(pathname: string) {
   return !(
@@ -13,7 +14,13 @@ function isStorefrontPath(pathname: string) {
   );
 }
 
-export default function AppFrame({ children }: { children: React.ReactNode }) {
+export default function AppFrame({
+  businessProfile,
+  children,
+}: {
+  businessProfile: StorefrontBusinessProfile;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const shouldUseStorefrontFrame = isStorefrontPath(pathname);
 
@@ -23,9 +30,9 @@ export default function AppFrame({ children }: { children: React.ReactNode }) {
 
   return (
     <CartProvider>
-      <Header />
+      <Header businessProfile={businessProfile} />
       <main className="flex-1">{children}</main>
-      <Footer />
+      <Footer businessProfile={businessProfile} />
     </CartProvider>
   );
 }

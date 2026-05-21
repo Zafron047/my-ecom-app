@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { requireAdminRole } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 
@@ -37,8 +37,10 @@ function parseLayout(value: string) {
 }
 
 function revalidateHomepageSectionPaths() {
+  revalidateTag('storefront-homepage-sections', 'max');
   revalidatePath('/admin/settings/homepage-sections');
   revalidatePath('/');
+  revalidatePath('/api/storefront/catalog');
 }
 
 function getHomepageSectionDelegate() {
@@ -182,7 +184,7 @@ export async function updateHomepageSection(formData: FormData) {
 
 export async function reorderHomepageSections(formData: FormData) {
   await requireAdminRole('/admin/settings/homepage-sections', ['admin']);
-  const orderedIds = getStringList(formData, 'orderedSectionIds');
+  const orderedIds = Array.from(new Set(getStringList(formData, 'orderedSectionIds')));
   if (orderedIds.length === 0) return;
 
   await prisma.$transaction(

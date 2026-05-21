@@ -51,6 +51,37 @@ export interface StorefrontHomepageSection {
   ctaHref?: string;
 }
 
+export interface StorefrontHeroSlide {
+  id: string;
+  title: string;
+  subtitle?: string;
+  imageUrl: string;
+  ctaLabel?: string;
+  ctaHref?: string;
+  secondaryLabel?: string;
+  secondaryHref?: string;
+}
+
+export interface StorefrontBusinessProfile {
+  businessName: string;
+  tagline: string;
+  logoUrl: string;
+  logoAlt: string;
+  bannerUrl?: string;
+  bannerAlt?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  facebookUrl?: string;
+  instagramUrl?: string;
+  websiteUrl?: string;
+  returnRefundPolicy?: string;
+  metaTitle?: string;
+  metaDescription?: string;
+  metaKeywords?: string;
+  ogImageUrl?: string;
+}
+
 export interface StorefrontProductDetail {
   id: string;
   name: string;

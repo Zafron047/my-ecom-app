@@ -8,12 +8,12 @@ import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
 import { getGroupedAreaOptions, getGroupedDistrictOptions } from '@/lib/location-presenter';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SearchableDropdown from '@/components/SearchableDropdown';
 import { FacebookIcon, GoogleIcon } from '@/components/SocialAuthIcons';
+import type { StorefrontBusinessProfile } from '@/lib/storefront-types';
 
 const MOBILE_PATTERN = /^01[3-9]\d{8}$/;
 
@@ -25,7 +25,11 @@ function normalizeMobileInput(value: string) {
   return digits;
 }
 
-export default function Header() {
+export default function Header({
+  businessProfile,
+}: {
+  businessProfile: StorefrontBusinessProfile;
+}) {
   type CheckoutField =
     | 'firstName'
     | 'lastName'
@@ -719,14 +723,13 @@ export default function Header() {
               </button>
 
               {/* Logo */}
-              <Link href="/" className="flex items-center">
-                <div className="relative h-[2.1rem] w-[3rem] overflow-hidden rounded-md border border-blue-200 bg-[#2d5db3] shadow-sm sm:h-11 sm:w-16 sm:rounded-lg">
-                  <Image
-                    src="/shop-easy-logo.svg"
-                    alt="Shop Easy logo"
-                    fill
-                    sizes="(max-width: 639px) 51px, 64px"
-                    className="object-contain p-0.5"
+              <Link href="/" className="flex shrink-0 items-center">
+                <div className="relative h-8 w-[4.9rem] shrink-0 overflow-hidden rounded-[0.35rem] sm:h-10 sm:w-[5.95rem]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={businessProfile.logoUrl}
+                    alt={businessProfile.logoAlt}
+                    className="h-full w-full object-contain"
                     loading="eager"
                     fetchPriority="high"
                   />
@@ -764,7 +767,7 @@ export default function Header() {
                       setIsSearchOpen(true);
                     }}
                     onFocus={() => setIsSearchOpen(true)}
-                    placeholder="Global Finds at Deshi Price"
+                    placeholder={businessProfile.tagline}
                     aria-label="Search products"
                     autoComplete="off"
                     className="w-full appearance-none !rounded-none !border-0 !bg-transparent !p-0 !text-xs !text-gray-700 !shadow-none outline-none placeholder:!text-gray-400 focus:!border-0 focus:!shadow-none"

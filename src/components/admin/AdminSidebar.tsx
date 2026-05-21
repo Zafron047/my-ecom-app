@@ -155,6 +155,16 @@ const adminNavGroups: AdminNavGroup[] = [
         allowedRoles: ['admin'],
       },
       {
+        href: '/admin/settings/business-profile',
+        label: 'Business Profile',
+        allowedRoles: ['admin'],
+      },
+      {
+        href: '/admin/settings/ui',
+        label: 'UI Management',
+        allowedRoles: ['admin'],
+      },
+      {
         href: '/admin/settings/homepage-sections',
         label: 'Homepage Sections',
         allowedRoles: ['admin'],

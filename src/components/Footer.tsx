@@ -1,7 +1,14 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import type { StorefrontBusinessProfile } from '@/lib/storefront-types';
 
-export default function Footer() {
+export default function Footer({
+  businessProfile,
+}: {
+  businessProfile: StorefrontBusinessProfile;
+}) {
+  const currentYear = new Date().getFullYear();
+
   return (
     <footer className="border-t border-[#0f2448] bg-[radial-gradient(circle_at_top,_rgba(71,121,255,0.18),_transparent_34%),linear-gradient(180deg,#07111f_0%,#09172a_52%,#0b1930_100%)] text-white">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -10,22 +17,21 @@ export default function Footer() {
             <div className="flex flex-col items-center gap-5 text-center md:flex-row md:items-center md:justify-between md:text-left">
               <div className="flex flex-col items-center gap-3 md:flex-row md:items-center">
                 <Link href="/" className="inline-flex items-center">
-                  <div className="relative h-12 w-[4.5rem] overflow-hidden rounded-xl border border-blue-200/60 bg-[#2d5db3] shadow-[0_10px_24px_rgba(45,93,179,0.35)]">
-                    <Image
-                      src="/shop-easy-logo.svg"
-                      alt="Shop Easy logo"
-                      fill
-                      sizes="72px"
-                      className="object-contain p-1"
+                  <div className="relative h-10 w-[4.8rem] overflow-hidden rounded-md md:h-11 md:w-[5.25rem]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={businessProfile.logoUrl}
+                      alt={businessProfile.logoAlt}
+                      className="h-full w-full object-contain"
                     />
                   </div>
                 </Link>
                 <div>
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-blue-200/90">
-                    Shop Easy
+                    {businessProfile.businessName}
                   </p>
                   <p className="mt-1 text-sm text-white" style={{ color: '#fff' }}>
-                    (c) 2026 Shop Easy. All rights reserved.
+                    (c) {currentYear} {businessProfile.businessName}. All rights reserved.
                   </p>
                 </div>
               </div>
@@ -46,10 +52,10 @@ export default function Footer() {
                   Terms of Service
                 </a>
                 <a
-                  href="https://shopeasy.com.bd"
+                  href={businessProfile.facebookUrl || businessProfile.websiteUrl || '#'}
                   target="_blank"
                   rel="noreferrer"
-                  aria-label="Shop Easy website"
+                  aria-label={`${businessProfile.businessName} Facebook`}
                   style={{ color: '#fff' }}
                   className="flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white transition hover:-translate-y-0.5 hover:border-white hover:bg-white/16 hover:text-white"
                 >
@@ -62,8 +68,10 @@ export default function Footer() {
                   </svg>
                 </a>
                 <a
-                  href="#"
+                  href={businessProfile.instagramUrl || '#'}
                   aria-label="Instagram"
+                  target={businessProfile.instagramUrl ? '_blank' : undefined}
+                  rel={businessProfile.instagramUrl ? 'noreferrer' : undefined}
                   style={{ color: '#fff' }}
                   className="flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white transition hover:-translate-y-0.5 hover:border-white hover:bg-white/16 hover:text-white"
                 >

@@ -1,4 +1,4 @@
-// Prisma schema for Shop Easy admin authentication domain
+// Prisma schema for BDBuyEasy admin authentication domain
 
 generator client {
   provider = "prisma-client-js"
@@ -92,6 +92,65 @@ enum HomepageSectionSourceType {
   super_sale
   category
   tag
+}
+
+model BusinessProfile {
+  id                 String   @id @default(cuid())
+  businessName       String   @default("BDBuyEasy")
+  tagline            String?
+  logoUrl            String?
+  logoAlt            String?
+  bannerUrl          String?
+  bannerAlt          String?
+  phone              String?
+  email              String?
+  address            String?
+  facebookUrl        String?
+  instagramUrl       String?
+  websiteUrl         String?
+  returnRefundPolicy String?
+  metaTitle          String?
+  metaDescription    String?
+  metaKeywords       String?
+  ogImageUrl         String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model BusinessImage {
+  id           String   @id @default(cuid())
+  imageType    String
+  title        String?
+  altText      String?
+  storagePath  String
+  publicUrl    String
+  fileName     String?
+  contentType  String?
+  sizeBytes    Int?
+  displayOrder Int      @default(1)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([imageType, isActive, displayOrder])
+  @@index([createdAt])
+}
+
+model HeroSlide {
+  id           String   @id @default(cuid())
+  title        String
+  subtitle     String?
+  imageUrl     String
+  ctaLabel     String?
+  ctaHref      String?
+  secondaryLabel String?
+  secondaryHref  String?
+  displayOrder Int      @default(1)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive, displayOrder])
 }
 
 model AdminUser {
