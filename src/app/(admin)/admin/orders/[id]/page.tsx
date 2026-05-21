@@ -316,8 +316,8 @@ export default async function AdminOrderDetailsPage({
             <div className="mb-1 flex items-start justify-between leading-tight">
               <div className="h-14 w-20 overflow-hidden bg-white">
                 <img
-                  src="/logo.png"
-                  alt="BuyEasy logo"
+                  src="/business-logo.png"
+                  alt="BDBuyEasy logo"
                   className="h-full w-full object-contain"
                 />
               </div>
@@ -442,7 +442,7 @@ export default async function AdminOrderDetailsPage({
 
           <div className="mt-12 text-center text-[18px] leading-tight">
             <p>Thank you for shopping with us!</p>
-            <p className="mt-3 font-bold">BuyEasy</p>
+            <p className="mt-3 font-bold">BDBuyEasy</p>
             <p>Oli Miar Tek, Shewrapara, Mirpur, Dhaka</p>
             <p>01712345678</p>
           </div>

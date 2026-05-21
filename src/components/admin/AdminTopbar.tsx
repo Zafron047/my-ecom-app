@@ -56,8 +56,8 @@ export default function AdminTopbar({ onMenuToggle, session }: AdminTopbarProps)
             className="relative h-8 w-12 shrink-0 overflow-hidden rounded-md border border-blue-200/40 bg-[#2d5db3] transition hover:border-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
             <Image
-              src="/shop-easy-logo.svg"
-              alt="Shop Easy logo"
+              src="/business-logo.png"
+              alt="BDBuyEasy logo"
               fill
               sizes="48px"
               className="object-contain p-0.5"
@@ -112,8 +112,8 @@ export default function AdminTopbar({ onMenuToggle, session }: AdminTopbarProps)
             className="relative h-8 w-12 overflow-hidden rounded-md border border-blue-200/40 bg-[#2d5db3] transition hover:border-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
             <Image
-              src="/shop-easy-logo.svg"
-              alt="Shop Easy logo"
+              src="/business-logo.png"
+              alt="BDBuyEasy logo"
               fill
               sizes="48px"
               className="object-contain p-0.5"

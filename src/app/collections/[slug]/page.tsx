@@ -3,6 +3,7 @@ import { slugifyCategory } from '@/lib/category-slug';
 import { getStorefrontCatalog } from '@/lib/storefront-data';
 import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 import { notFound } from 'next/navigation';
+import { connection } from 'next/server';
 
 const collectionConfig = {
   'super-sale': {
@@ -17,6 +18,7 @@ export default async function CollectionPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  await connection();
   const { slug } = await params;
   const collection = collectionConfig[slug as keyof typeof collectionConfig];
   const catalog = await getStorefrontCatalog();

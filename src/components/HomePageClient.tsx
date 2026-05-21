@@ -5,6 +5,7 @@ import HeroSlider from '@/components/HeroSlider';
 import { slugifyCategory } from '@/lib/category-slug';
 import type {
   StorefrontCatalogProduct,
+  StorefrontHeroSlide,
   StorefrontHomepageSection,
 } from '@/lib/storefront-types';
 import Link from 'next/link';
@@ -13,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 interface HomePageClientProps {
   catalogProducts: StorefrontCatalogProduct[];
   catalogCategories: string[];
+  heroSlides: StorefrontHeroSlide[];
   homepageSections: StorefrontHomepageSection[];
   categoryThumbnails: Record<string, string>;
 }
@@ -20,6 +22,7 @@ interface HomePageClientProps {
 export default function HomePageClient({
   catalogProducts,
   catalogCategories,
+  heroSlides,
   homepageSections,
   categoryThumbnails,
 }: HomePageClientProps) {
@@ -112,7 +115,7 @@ export default function HomePageClient({
   return (
     <div className="bg-white">
       {/* Hero Slider */}
-      <HeroSlider />
+      <HeroSlider slides={heroSlides} />
 
       {computedHomepageSections.map((section, index) => (
         <div key={section.id} id={index === 0 ? 'featured' : undefined}>

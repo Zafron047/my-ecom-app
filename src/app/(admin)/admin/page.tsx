@@ -90,7 +90,7 @@ export default async function AdminDashboardPage() {
       <div>
         <h2 className="text-xl font-semibold text-slate-900">Dashboard</h2>
         <p className="text-sm text-slate-600">
-          Central operations overview for Shop Easy.
+          Central operations overview for BDBuyEasy.
         </p>
       </div>
 
