@@ -1,9 +1,16 @@
 'use client';
 
 import ProductCard from '@/components/ProductCard';
+import {
+  buildCollectionNavigation,
+  buildMobileCollectionChips,
+  getCollectionDescription,
+  getDisplayCategoryName,
+  getDisplayProductName,
+} from '@/lib/collection-display';
 import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 interface ProductCollectionViewProps {
   title: string;
@@ -24,6 +31,34 @@ export default function ProductCollectionView({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(
     initialCategory ?? null,
   );
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+
+  const collectionNavigation = useMemo(
+    () => buildCollectionNavigation(categories),
+    [categories],
+  );
+  const visibleCategories = showAllCategories
+    ? collectionNavigation
+    : collectionNavigation.slice(0, 6);
+  const mobileCategoryChips = useMemo(
+    () => buildMobileCollectionChips(collectionNavigation),
+    [collectionNavigation],
+  );
+  const selectedCategoryLabel =
+    collectionNavigation.find((item) => item.rawName === selectedCategory)
+      ?.displayName ??
+    (initialCategory ? getDisplayCategoryName(initialCategory) : 'All products');
+  const displayTitle = initialCategory
+    ? getDisplayCategoryName(initialCategory)
+    : title;
+
+  const selectCategory = (rawName: string, closeMobileFilters = false) => {
+    setSelectedCategory(rawName === 'All' ? null : rawName);
+    if (closeMobileFilters) {
+      setMobileFiltersOpen(false);
+    }
+  };
 
   const filteredProducts =
     selectedCategory && selectedCategory !== 'All'
@@ -43,106 +78,189 @@ export default function ProductCollectionView({
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="mb-8">
+    <div className="mx-auto max-w-[88rem] px-4 py-6 sm:px-6 sm:py-16 lg:px-10 lg:py-20">
+      <div className="mb-5 max-w-4xl sm:mb-16">
         <Link
           href="/"
-          className="text-blue-600 hover:text-blue-700 text-sm mb-4 inline-block"
+          className="mb-5 hidden text-sm font-medium text-zinc-500 transition hover:text-zinc-900 sm:inline-block"
         >
-          {'< Back to Home'}
+          Back to home
         </Link>
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">{title}</h1>
-        <p className="text-gray-600">{description}</p>
+        <p className="mb-3 hidden text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:block">
+          Curated collection
+        </p>
+        <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 sm:mb-4 sm:text-4xl lg:text-5xl">
+          {displayTitle}
+        </h1>
+        <p className="hidden max-w-2xl text-base leading-7 text-zinc-600 sm:block sm:text-lg">
+          {initialCategory ? getCollectionDescription(initialCategory) : description}
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-1">
-          <div className="bg-gray-50 rounded-lg p-6 sticky top-24">
-            <h3 className="font-semibold text-gray-900 mb-4">Categories</h3>
-            <div className="space-y-2 mb-6">
-              {categories.map((cat) => (
+      <div className="mb-4 lg:hidden">
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+          {mobileCategoryChips.map((category) => (
+            <button
+              key={category.rawName}
+              type="button"
+              onClick={() => selectCategory(category.rawName)}
+              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                (category.rawName === 'All' && !selectedCategory) ||
+                category.rawName === selectedCategory
+                  ? 'border-zinc-950 bg-zinc-950 text-white'
+                  : 'border-zinc-200 bg-white text-zinc-700'
+              }`}
+            >
+              {category.displayName}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen(true)}
+            className="shrink-0 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-950"
+          >
+            All categories
+          </button>
+        </div>
+      </div>
+
+      {mobileFiltersOpen ? (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-zinc-950/30"
+            aria-label="Close categories"
+            onClick={() => setMobileFiltersOpen(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[78vh] overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-sm font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                All categories
+              </p>
+              <button
+                type="button"
+                onClick={() => setMobileFiltersOpen(false)}
+                className="rounded-full border border-zinc-200 px-3 py-1.5 text-sm font-semibold text-zinc-950"
+              >
+                Close
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {collectionNavigation.map((category) => (
                 <button
-                  key={cat}
-                  onClick={() =>
-                    setSelectedCategory(cat === 'All' ? null : cat)
-                  }
-                  className={`block w-full text-left px-3 py-2 rounded transition ${
-                    (cat === 'All' && !selectedCategory) ||
-                    cat === selectedCategory
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 hover:bg-gray-200'
+                  key={category.rawName}
+                  type="button"
+                  onClick={() => selectCategory(category.rawName, true)}
+                  className={`block w-full rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
+                    (category.rawName === 'All' && !selectedCategory) ||
+                    category.rawName === selectedCategory
+                      ? 'bg-zinc-950 text-white'
+                      : 'bg-zinc-50 text-zinc-700'
                   }`}
                 >
-                  {cat}
+                  {category.displayName}
                 </button>
               ))}
             </div>
-
-            <h3 className="font-semibold text-gray-900 mb-4">Price Range</h3>
-            <div className="space-y-2 text-sm">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="rounded" />
-                <span className="text-gray-700">Under ৳20</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="rounded" />
-                <span className="text-gray-700">৳20 - ৳40</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="rounded" />
-                <span className="text-gray-700">Over ৳40</span>
-              </label>
-            </div>
-
-            <h3 className="font-semibold text-gray-900 mt-6 mb-4">
-              Stock Status
-            </h3>
-            <div className="space-y-2 text-sm">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="rounded" defaultChecked />
-                <span className="text-gray-700">In Stock</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="rounded" />
-                <span className="text-gray-700">On Sale</span>
-              </label>
-            </div>
           </div>
         </div>
+      ) : null}
 
-        <div className="lg:col-span-3">
-          <div className="flex justify-between items-center mb-8">
-            <p className="text-gray-600">
-              Showing{' '}
-              <span className="font-semibold">{sortedProducts.length}</span>{' '}
-              products
-            </p>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-600"
-            >
-              <option value="featured">Featured</option>
-              <option value="price-low">Price: Low to High</option>
-              <option value="price-high">Price: High to Low</option>
-              <option value="newest">Newest</option>
-            </select>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-14 xl:gap-16">
+        <div className="hidden lg:col-span-1 lg:block">
+          <aside className="sticky top-24 rounded-2xl border border-zinc-200 bg-white/80 p-4 shadow-[0_18px_48px_rgba(24,24,27,0.06)] backdrop-blur sm:p-5">
+            <div className="mb-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                Shop by collection
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-zinc-950">
+                Curated edits
+              </h2>
+            </div>
+            <div className="space-y-1.5">
+              {visibleCategories.map((category) => (
+                <button
+                  key={category.rawName}
+                  type="button"
+                  onClick={() => selectCategory(category.rawName)}
+                  className={`block w-full rounded-xl px-3.5 py-3 text-left text-sm transition ${
+                    (category.rawName === 'All' && !selectedCategory) ||
+                    category.rawName === selectedCategory
+                      ? 'bg-zinc-950 text-white shadow-sm'
+                      : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950'
+                  }`}
+                >
+                  {category.displayName}
+                </button>
+              ))}
+            </div>
+            {collectionNavigation.length > visibleCategories.length ? (
+              <button
+                type="button"
+                onClick={() => setShowAllCategories(true)}
+                className="mt-4 text-sm font-semibold text-zinc-950 underline-offset-4 transition hover:underline"
+              >
+                View all categories
+              </button>
+            ) : null}
+            {showAllCategories && collectionNavigation.length > 6 ? (
+              <button
+                type="button"
+                onClick={() => setShowAllCategories(false)}
+                className="mt-4 block text-sm font-semibold text-zinc-500 underline-offset-4 transition hover:text-zinc-950 hover:underline"
+              >
+                Show fewer
+              </button>
+            ) : null}
+          </aside>
+        </div>
+
+        <div>
+          <div className="mb-5 flex items-center justify-between gap-3 border-b border-zinc-200 pb-4 lg:mb-10 lg:items-end lg:pb-6">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                {selectedCategoryLabel}
+              </p>
+              <p className="mt-1 text-sm text-zinc-500 lg:mt-2">
+                <span className="font-semibold text-zinc-950">
+                  {sortedProducts.length}
+                </span>{' '}
+                products
+              </p>
+            </div>
+            <label className="flex shrink-0 flex-col gap-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:w-auto lg:gap-2 lg:text-xs">
+              <span className="sr-only lg:not-sr-only">Sort</span>
+              <select
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value)}
+                className="max-w-[9rem] rounded-full border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold normal-case tracking-normal text-zinc-900 shadow-sm outline-none transition hover:border-zinc-300 focus:border-zinc-950 focus:ring-2 focus:ring-zinc-950/10 lg:min-w-48 lg:max-w-none lg:px-4 lg:py-3"
+              >
+                <option value="featured">Featured</option>
+                <option value="price-low">Price: Low to High</option>
+                <option value="price-high">Price: High to Low</option>
+                <option value="newest">Newest</option>
+              </select>
+            </label>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-8 xl:grid-cols-3 xl:gap-x-7 xl:gap-y-10">
             {sortedProducts.map((product) => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard
+                key={product.id}
+                product={{ ...product, name: getDisplayProductName(product.name) }}
+                variant="catalog"
+              />
             ))}
           </div>
 
           {sortedProducts.length === 0 && (
-            <div className="text-center py-16">
-              <p className="text-gray-600 text-lg mb-4">No products found</p>
+            <div className="py-16 text-center">
+              <p className="mb-4 text-lg text-zinc-600">No products found</p>
               <button
                 onClick={() => setSelectedCategory(null)}
-                className="text-blue-600 hover:text-blue-700 font-medium"
+                className="font-medium text-zinc-950 underline-offset-4 hover:underline"
               >
-                Clear filters
+                View all products
               </button>
             </div>
           )}

@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import AppFrame from '@/components/AppFrame';
-import { getBusinessProfile } from '@/lib/storefront-data';
+import { getBusinessProfile, getStorefrontCategories } from '@/lib/storefront-data';
 import './globals.css';
 
 const siteName = 'BDBuyEasy';
-const siteTitle = 'BDBuyEasy - Trending AliExpress Finds';
+const siteTitle = 'BDBuyEasy - Practical Home & Kitchen Finds';
 const siteDescription =
-  'Shop trending gadgets, home finds, accessories, and everyday AliExpress picks.';
+  'Shop home tools, kitchen finds, decor, and useful gadgets for easier everyday living.';
 const fallbackSiteUrl = 'https://bdbuyeasy.com.bd';
 
 function getSiteUrl() {
@@ -102,12 +103,63 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const businessProfile = await getBusinessProfile();
+  const [businessProfile, categoryData] = await Promise.all([
+    getBusinessProfile(),
+    getStorefrontCategories(),
+  ]);
 
   return (
     <html lang="en" data-scroll-behavior="smooth" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-white">
-        <AppFrame businessProfile={businessProfile}>{children}</AppFrame>
+        <Script id="strip-extension-button-attrs" strategy="beforeInteractive">
+          {`
+            (() => {
+              const attributeName = 'fdprocessedid';
+
+              const stripAttribute = (root) => {
+                if (!root) return;
+
+                if (root.nodeType === Node.ELEMENT_NODE && root.hasAttribute?.(attributeName)) {
+                  root.removeAttribute(attributeName);
+                }
+
+                root.querySelectorAll?.('[' + attributeName + ']').forEach((element) => {
+                  element.removeAttribute(attributeName);
+                });
+              };
+
+              stripAttribute(document.documentElement);
+
+              const observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                  if (mutation.type === 'attributes') {
+                    stripAttribute(mutation.target);
+                    continue;
+                  }
+
+                  mutation.addedNodes.forEach(stripAttribute);
+                }
+              });
+
+              observer.observe(document.documentElement, {
+                attributeFilter: [attributeName],
+                attributes: true,
+                childList: true,
+                subtree: true,
+              });
+
+              window.addEventListener('load', () => {
+                window.setTimeout(() => observer.disconnect(), 5000);
+              }, { once: true });
+            })();
+          `}
+        </Script>
+        <AppFrame
+          businessProfile={businessProfile}
+          catalogCategories={categoryData.categories}
+        >
+          {children}
+        </AppFrame>
       </body>
     </html>
   );

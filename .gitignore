@@ -13,6 +13,7 @@
 
 # testing
 /coverage
+/.codex/
 /.headless-edge/
 
 # next.js

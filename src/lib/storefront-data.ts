@@ -11,7 +11,6 @@ import type {
 
 export const STOREFRONT_REVALIDATE_SECONDS = 300;
 const shouldBypassStorefrontCache =
-  process.env.NODE_ENV === 'development' ||
   process.env.NEXT_DISABLE_STOREFRONT_CACHE === 'true';
 
 type CatalogCardProduct = Awaited<ReturnType<typeof loadCatalogCardProducts>>[number];
@@ -42,8 +41,8 @@ const defaultBusinessProfile: StorefrontBusinessProfile = {
   logoAlt: 'BDBuyEasy logo',
   logoUrl: '/business-logo.png',
   metaDescription:
-    'Shop trending gadgets, home finds, accessories, and everyday AliExpress picks.',
-  metaTitle: 'BDBuyEasy - Trending AliExpress Finds',
+    'Shop home tools, kitchen finds, decor, and useful gadgets for easier everyday living.',
+  metaTitle: 'BDBuyEasy - Practical Home & Kitchen Finds',
   websiteUrl: 'https://bdbuyeasy.com.bd',
 };
 
@@ -53,7 +52,7 @@ export const defaultHeroSlides: StorefrontHeroSlide[] = [
     imageUrl:
       'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=1920&h=1080&fit=crop',
     title: 'Trending Gadgets & Daily Finds',
-    subtitle: 'Fresh AliExpress-style picks for tech, travel, home, and more',
+    subtitle: 'Useful home tools, kitchen finds, decor, and practical gadgets',
     ctaLabel: 'Shop Now',
     ctaHref: '/products',
     secondaryLabel: 'Explore More',
@@ -63,7 +62,7 @@ export const defaultHeroSlides: StorefrontHeroSlide[] = [
     id: 'default-home-upgrades',
     imageUrl:
       'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=1920&h=1080&fit=crop',
-    title: 'Home Upgrades Under Budget',
+    title: 'Smart Home Upgrades',
     subtitle: 'Smart little upgrades that make your space more useful and fun',
     ctaLabel: 'Explore Home',
     ctaHref: '/products',
@@ -74,9 +73,9 @@ export const defaultHeroSlides: StorefrontHeroSlide[] = [
     id: 'default-accessories',
     imageUrl:
       'https://images.unsplash.com/photo-1511556820780-d912e42b4980?w=1920&h=1080&fit=crop',
-    title: 'Accessories That Sell Fast',
+    title: 'Useful Finds For Every Room',
     subtitle:
-      'Popular add-ons and impulse buys your customers keep coming back for',
+      'Home tools, kitchen helpers, decor, and everyday gadgets worth keeping close',
     ctaLabel: 'Browse Bestsellers',
     ctaHref: '/products',
     secondaryLabel: 'Explore More',
@@ -86,9 +85,9 @@ export const defaultHeroSlides: StorefrontHeroSlide[] = [
     id: 'default-category-picks',
     imageUrl:
       'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=1920&h=1080&fit=crop',
-    title: 'Top Picks From Every Category',
+    title: 'Organized Picks For Daily Needs',
     subtitle:
-      'Discover mix-and-match products across gadgets, lifestyle, and home',
+      'Browse practical household finds across kitchen, cleaning, decor, and gadgets',
     ctaLabel: 'View Collection',
     ctaHref: '/products',
     secondaryLabel: 'Explore More',
@@ -529,7 +528,7 @@ export const getHomepageSections = cacheStorefrontLoader(
           {
             id: 'default-featured',
             title: 'Featured Products',
-            eyebrow: 'Fresh Picks',
+            eyebrow: 'Useful Finds',
             variant: 'default',
             layout: 'carousel',
             sourceType: 'latest',
@@ -538,7 +537,7 @@ export const getHomepageSections = cacheStorefrontLoader(
           },
           {
             id: 'default-super-sale',
-            title: 'Super Sale',
+            title: "Today's Deals",
             eyebrow: 'Limited-Time Offers',
             variant: 'sale',
             layout: 'carousel',

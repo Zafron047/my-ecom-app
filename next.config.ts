@@ -81,6 +81,10 @@ const nextConfig: NextConfig = {
           unoptimized: disableImageOptimization,
           remotePatterns: [
             {
+              hostname: 'images.unsplash.com',
+              protocol: 'https',
+            },
+            {
               hostname: supabaseStorageHostname,
               pathname: '/storage/v1/object/public/**',
               protocol: 'https',
@@ -91,6 +95,12 @@ const nextConfig: NextConfig = {
     : {
         images: {
           unoptimized: disableImageOptimization,
+          remotePatterns: [
+            {
+              hostname: 'images.unsplash.com',
+              protocol: 'https',
+            },
+          ],
         },
       }),
 };
