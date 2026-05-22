@@ -8,16 +8,23 @@ export default function Footer({
   businessProfile: StorefrontBusinessProfile;
 }) {
   const currentYear = new Date().getFullYear();
+  const footerAssurances = [
+    'Cash on Delivery',
+    'Fast Dhaka delivery',
+    'Secure checkout',
+    'Practical home finds',
+  ];
 
   return (
-    <footer className="border-t border-[#0f2448] bg-[radial-gradient(circle_at_top,_rgba(71,121,255,0.18),_transparent_34%),linear-gradient(180deg,#07111f_0%,#09172a_52%,#0b1930_100%)] text-white">
+    <footer className="border-t border-zinc-200 bg-[linear-gradient(180deg,#f7f7f8_0%,#fff_100%)] text-zinc-950">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="overflow-hidden rounded-[30px] border border-white/10 bg-white/5 shadow-[0_28px_70px_rgba(2,8,23,0.45)] backdrop-blur-sm">
+        <div className="overflow-hidden rounded-[28px] border border-zinc-200 bg-white shadow-[0_24px_70px_rgba(24,24,27,0.08)]">
           <div className="flex flex-col gap-6 px-5 py-6 sm:px-7 sm:py-7">
-            <div className="flex flex-col items-center gap-5 text-center md:flex-row md:items-center md:justify-between md:text-left">
-              <div className="flex flex-col items-center gap-3 md:flex-row md:items-center">
+            <div className="grid gap-6 md:grid-cols-[1.2fr_1fr] md:items-start">
+              <div className="flex flex-col items-start gap-4 text-left">
+                <div className="flex items-center gap-3">
                 <Link href="/" className="inline-flex items-center">
-                  <div className="relative h-10 w-[4.8rem] overflow-hidden rounded-md md:h-11 md:w-[5.25rem]">
+                  <div className="relative h-11 w-[5.4rem] overflow-hidden rounded-xl bg-white ring-1 ring-zinc-900/10">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={businessProfile.logoUrl}
@@ -27,37 +34,46 @@ export default function Footer({
                   </div>
                 </Link>
                 <div>
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-blue-200/90">
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-zinc-500">
                     {businessProfile.businessName}
                   </p>
-                  <p className="mt-1 text-sm text-white" style={{ color: '#fff' }}>
-                    (c) {currentYear} {businessProfile.businessName}. All rights reserved.
+                  <p className="mt-1 max-w-md text-sm font-medium leading-6 text-zinc-600">
+                    Kitchen, decor and daily essentials selected for simpler
+                    home routines.
                   </p>
                 </div>
               </div>
+                <div className="flex flex-wrap gap-2">
+                  {footerAssurances.map((assurance) => (
+                    <span
+                      key={assurance}
+                      className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-zinc-600"
+                    >
+                      {assurance}
+                    </span>
+                  ))}
+                </div>
+              </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-3 text-sm font-medium text-white md:justify-end">
+              <div className="flex flex-wrap items-center justify-start gap-3 text-sm font-semibold text-zinc-700 md:justify-end">
                 <a
                   href="#"
-                  style={{ color: '#fff' }}
-                  className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-white transition hover:border-white hover:bg-white/16 hover:text-white"
+                  className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-zinc-700 transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
                 >
-                  Contact Us
+                  Support
                 </a>
                 <a
                   href="#"
-                  style={{ color: '#fff' }}
-                  className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-white transition hover:border-white hover:bg-white/16 hover:text-white"
+                  className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-zinc-700 transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
                 >
-                  Terms of Service
+                  Delivery
                 </a>
                 <a
                   href={businessProfile.facebookUrl || businessProfile.websiteUrl || '#'}
                   target="_blank"
                   rel="noreferrer"
                   aria-label={`${businessProfile.businessName} Facebook`}
-                  style={{ color: '#fff' }}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white transition hover:-translate-y-0.5 hover:border-white hover:bg-white/16 hover:text-white"
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-700 transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
                 >
                   <svg
                     className="h-4 w-4"
@@ -72,8 +88,7 @@ export default function Footer({
                   aria-label="Instagram"
                   target={businessProfile.instagramUrl ? '_blank' : undefined}
                   rel={businessProfile.instagramUrl ? 'noreferrer' : undefined}
-                  style={{ color: '#fff' }}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white transition hover:-translate-y-0.5 hover:border-white hover:bg-white/16 hover:text-white"
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-700 transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
                 >
                   <svg
                     className="h-4 w-4"
@@ -86,17 +101,21 @@ export default function Footer({
               </div>
             </div>
 
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-white/12 to-transparent" />
+            <div className="h-px w-full bg-gradient-to-r from-transparent via-zinc-200 to-transparent" />
 
-            <div className="flex flex-wrap items-center justify-center gap-3 text-center">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-center">
+              <span className="text-sm font-medium text-zinc-500">
+                (c) {currentYear} {businessProfile.businessName}. All rights reserved.
+              </span>
+              <div className="flex flex-wrap items-center justify-center gap-3">
               <a
                 href="https://zafron.me"
                 target="_blank"
                 rel="noreferrer"
                 aria-label="Zafron"
-                className="inline-flex transition hover:-translate-y-0.5"
+                className="inline-flex transition duration-300 hover:-translate-y-0.5"
               >
-                <div className="relative h-10 w-10 overflow-hidden rounded-full ring-1 ring-white/15 shadow-[0_10px_24px_rgba(2,8,23,0.35)]">
+                <div className="relative h-9 w-9 overflow-hidden rounded-full ring-1 ring-zinc-200 shadow-[0_10px_24px_rgba(24,24,27,0.10)]">
                   <Image
                     src="/zafron.webp"
                     alt="Zafron"
@@ -106,21 +125,18 @@ export default function Footer({
                   />
                 </div>
               </a>
-              <span className="text-sm text-white" style={{ color: '#fff' }}>
+              <span className="text-sm font-medium text-zinc-500">
                 Designed and developed by
               </span>
               <a
                 href="https://zafron.me"
                 target="_blank"
                 rel="noreferrer"
-                style={{
-                  color: '#fff',
-                  textDecoration: 'none',
-                }}
-                className="inline-flex items-center rounded-full border border-white/30 bg-white/10 px-2.5 py-0.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:border-white hover:bg-white/18 hover:text-white"
+                className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-sm font-semibold text-zinc-700 transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
               >
                 Zafron
               </a>
+              </div>
             </div>
           </div>
         </div>

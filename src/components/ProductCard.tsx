@@ -1,7 +1,7 @@
 'use client';
 
 import { useCart } from '@/components/CartProvider';
-import { AnimatePresence, motion } from 'framer-motion';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -40,9 +40,18 @@ interface Product {
   bundleDisplayText?: string;
 }
 
-export default function ProductCard({ product }: { product: Product }) {
+type ProductCardVariant = 'showcase' | 'catalog';
+
+export default function ProductCard({
+  product,
+  variant = 'showcase',
+}: {
+  product: Product;
+  variant?: ProductCardVariant;
+}) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const { cartItems, addToCart, updateQuantity } = useCart();
+  const isCatalog = variant === 'catalog';
   const productId = product.detailId ?? product.id;
   const productCartItems = cartItems.filter(
     (item) => item.detailId === productId,
@@ -144,49 +153,65 @@ export default function ProductCard({ product }: { product: Product }) {
   };
 
   return (
-    <div className="group flex h-full flex-col">
+    <div
+      className={`group flex h-full flex-col border border-zinc-200/80 bg-white ring-1 ring-transparent transition duration-300 hover:border-zinc-300 ${
+        isCatalog
+          ? 'rounded-2xl shadow-[0_10px_30px_rgba(24,24,27,0.045)] hover:-translate-y-0.5 hover:shadow-[0_16px_40px_rgba(24,24,27,0.08)]'
+          : 'rounded-2xl shadow-[0_16px_48px_rgba(24,24,27,0.065)] hover:-translate-y-1.5 hover:shadow-[0_24px_64px_rgba(24,24,27,0.11)] sm:rounded-3xl'
+      }`}
+    >
       <Link
         href={`/products/${product.detailId ?? product.id}`}
         className="flex flex-1 cursor-pointer flex-col"
       >
-        <div className="mb-4 rounded-md border border-gray-200 bg-slate-200/45 transition group-hover:border-gray-300">
-          <div className="relative m-[6px] aspect-square overflow-hidden bg-white">
-            <AnimatePresence mode="wait">
-              {activeImage ? (
-                <motion.img
-                  key={activeImage}
-                  src={activeImage}
-                  alt={product.name}
-                  initial={{ opacity: 0.35, scale: 0.985 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0.35, scale: 1.015 }}
-                  transition={{ duration: 0.24, ease: 'easeOut' }}
-                  className="h-full w-full object-contain p-2"
-                />
-              ) : (
-                <motion.div
-                  key={`${product.id}-image-placeholder`}
-                  initial={{ opacity: 0.35, scale: 0.985 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0.35, scale: 1.015 }}
-                  transition={{ duration: 0.24, ease: 'easeOut' }}
-                  className="flex h-full w-full items-center justify-center p-2 text-[11px] font-medium text-slate-400"
-                >
-                  No image
-                </motion.div>
-              )}
-            </AnimatePresence>
+        <div
+          className={`overflow-hidden rounded-t-xl bg-zinc-50 ring-1 ring-zinc-900/5 transition group-hover:bg-zinc-100 sm:rounded-t-2xl ${
+            isCatalog ? 'mb-2' : 'mb-2.5 sm:mb-4'
+          }`}
+        >
+          <div
+            className={`relative overflow-hidden rounded-t-xl sm:rounded-t-2xl ${
+              isCatalog ? 'aspect-[1/0.9]' : 'aspect-square'
+            }`}
+          >
+            {activeImage ? (
+              <Image
+                key={activeImage}
+                src={activeImage}
+                alt={product.name}
+                fill
+                sizes={
+                  isCatalog
+                    ? '(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw'
+                    : '(min-width: 1536px) 15vw, (min-width: 1024px) 20vw, (min-width: 640px) 33vw, 50vw'
+                }
+                className={`object-contain transition duration-500 group-hover:scale-[1.16] ${
+                  isCatalog ? 'p-1' : 'p-0'
+                }`}
+              />
+            ) : (
+              <div
+                key={`${product.id}-image-placeholder`}
+                className="flex h-full w-full items-center justify-center p-2 text-[11px] font-medium text-slate-400"
+              >
+                No image
+              </div>
+            )}
             {(isActiveVariantSoldOut || product.badge) && (
               <div
-                className={`absolute left-2 top-2 rounded-sm px-2 py-1 text-[10px] font-medium uppercase tracking-[0.04em] text-white ${
-                  isActiveVariantSoldOut ? 'bg-slate-900' : 'bg-[#e85a73]'
-                }`}
+                className={`absolute left-2 top-2 rounded-sm font-medium uppercase tracking-[0.04em] text-white ${
+                  isActiveVariantSoldOut ? 'bg-zinc-950' : 'bg-rose-500'
+                } ${isCatalog ? 'px-1.5 py-0.5 text-[8.5px]' : 'px-2 py-1 text-[10px]'}`}
               >
                 {isActiveVariantSoldOut ? 'Sold Out' : product.badge}
               </div>
             )}
             {discount > 0 && (
-              <div className="absolute right-2 top-2 rounded-sm bg-[#1f4db8] px-2 py-1 text-[10px] font-medium text-white">
+              <div
+                className={`absolute right-2 top-2 rounded-full bg-zinc-950 font-semibold text-white shadow-sm ${
+                  isCatalog ? 'px-2 py-0.5 text-[9px]' : 'px-2.5 py-1 text-[10px]'
+                }`}
+              >
                 -{discount}%
               </div>
             )}
@@ -198,7 +223,9 @@ export default function ProductCard({ product }: { product: Product }) {
                     event.preventDefault();
                     handleImageSlide('prev');
                   }}
-                  className="absolute left-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow transition hover:bg-white"
+                  className={`absolute left-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white/90 text-slate-700 shadow-sm backdrop-blur transition hover:bg-white ${
+                    isCatalog ? 'h-6 w-6 text-xs' : 'h-7 w-7'
+                  }`}
                   aria-label={`Previous image for ${product.name}`}
                 >
                   ‹
@@ -209,7 +236,9 @@ export default function ProductCard({ product }: { product: Product }) {
                     event.preventDefault();
                     handleImageSlide('next');
                   }}
-                  className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow transition hover:bg-white"
+                  className={`absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white/90 text-slate-700 shadow-sm backdrop-blur transition hover:bg-white ${
+                    isCatalog ? 'h-6 w-6 text-xs' : 'h-7 w-7'
+                  }`}
                   aria-label={`Next image for ${product.name}`}
                 >
                   ›
@@ -219,62 +248,110 @@ export default function ProductCard({ product }: { product: Product }) {
           </div>
         </div>
 
-        <p className="mb-2 min-h-[2.5rem] line-clamp-2 text-center text-[0.8rem] font-normal leading-5 text-gray-900">
+        <p
+          className={`line-clamp-2 px-1.5 text-center font-semibold text-zinc-900 ${
+            isCatalog
+              ? 'mb-1 min-h-[2.35rem] text-[0.78rem] leading-[1.15rem] sm:text-[0.86rem] sm:leading-5'
+              : 'mb-2 min-h-[2.75rem] text-[0.84rem] leading-5 sm:text-[0.9rem]'
+          }`}
+        >
           {product.name}
         </p>
 
         {activeVariantLabel ? (
-          <div className="text-center text-[0.72rem] font-medium text-slate-700">
+          <div
+            className={`text-center font-medium text-zinc-500 ${
+              isCatalog ? 'text-[0.66rem] leading-4' : 'text-[0.72rem] leading-5'
+            }`}
+          >
             {activeVariantLabel}
           </div>
         ) : null}
         {activeBundleLabel ? (
-          <div className="bundle-title-shine mb-2 bg-gradient-to-r from-purple-800 via-fuchsia-700 to-pink-700 bg-clip-text text-center text-[0.72rem] font-semibold text-transparent">
+          <div
+            className={`bundle-title-shine bg-gradient-to-r from-purple-800 via-fuchsia-700 to-pink-700 bg-clip-text px-2 text-center font-semibold text-transparent ${
+              isCatalog ? 'mb-1 text-[0.66rem] leading-4' : 'mb-2 text-[0.72rem] leading-5'
+            }`}
+          >
             {activeBundleLabel}
           </div>
         ) : (
-          <div className="mb-2" />
+          <div className={isCatalog ? 'mb-1' : 'mb-2'} />
         )}
       </Link>
 
-      <div className="min-h-[52px]">
-        <div className="flex min-h-[1.75rem] items-center justify-center gap-2">
+      <div className={isCatalog ? 'min-h-[32px]' : 'min-h-[44px]'}>
+        <div
+          className={`flex items-center justify-center gap-2 ${
+            isCatalog ? 'min-h-[1.45rem]' : 'min-h-[1.75rem]'
+          }`}
+        >
           {variantChoicePriceRange ? (
-            <span className="text-center text-[0.96rem] font-medium text-gray-900">
+            <span
+              className={`text-center font-semibold text-zinc-950 ${
+                isCatalog ? 'text-[0.82rem] leading-tight' : 'text-[0.95rem]'
+              }`}
+            >
               {formatVariantPriceRange(variantChoicePriceRange)}
             </span>
           ) : activeSalePrice ? (
             <>
-              <span className="text-[0.85rem] text-gray-500 line-through">
+              <span
+                className={`text-zinc-400 line-through ${
+                  isCatalog ? 'text-[0.68rem]' : 'text-[0.78rem]'
+                }`}
+              >
                 BDT {activePrice.toFixed(2)}
               </span>
-              <span className="text-[0.96rem] font-medium text-gray-900">
+              <span
+                className={`font-semibold text-zinc-950 ${
+                  isCatalog ? 'text-[0.84rem]' : 'text-[0.98rem]'
+                }`}
+              >
                 BDT {activeSalePrice.toFixed(2)}
               </span>
             </>
           ) : (
-            <span className="text-[0.96rem] font-medium text-gray-900">
+            <span
+              className={`font-semibold text-zinc-950 ${
+                isCatalog ? 'text-[0.84rem]' : 'text-[0.98rem]'
+              }`}
+            >
               BDT {activePrice.toFixed(2)}
             </span>
           )}
         </div>
       </div>
 
-      <div className="relative mt-4">
+      <div className={`relative ${isCatalog ? 'mt-2' : 'mt-3.5 sm:mt-4'}`}>
         {hasVariantChoice ? (
           <Link
             href={`/products/${product.detailId ?? product.id}`}
-            className="flex w-full items-center justify-center rounded-full border border-[#2d5db3] bg-[#2d5db3] px-4 py-2.5 text-[0.78rem] font-semibold uppercase tracking-[0.12em] !text-white transition visited:!text-white hover:bg-[#244d96] hover:!text-white"
+            className={`flex w-full items-center justify-center rounded-full border border-zinc-300 bg-white font-semibold uppercase tracking-[0.12em] text-zinc-900 transition visited:text-zinc-900 hover:border-zinc-950 hover:bg-zinc-950 hover:!text-white ${
+              isCatalog
+                ? 'min-h-10 px-3 py-2 text-[0.6rem]'
+                : 'px-4 py-[0.58rem] text-[0.7rem]'
+            }`}
           >
             See details
           </Link>
         ) : isActiveVariantSoldOut ? (
-          <div className="flex w-full items-center justify-center rounded-full border border-slate-300 bg-slate-100 px-4 py-2.5 text-[0.78rem] font-semibold uppercase tracking-[0.12em] text-slate-500">
+          <div
+            className={`flex w-full items-center justify-center rounded-full border border-slate-300 bg-slate-100 font-semibold uppercase tracking-[0.12em] text-slate-500 ${
+              isCatalog
+                ? 'min-h-10 px-3 py-2 text-[0.62rem]'
+                : 'px-4 py-[0.58rem] text-[0.74rem]'
+            }`}
+          >
             Sold Out
           </div>
         ) : (
         <div
-          className="flex w-full items-center justify-between rounded-full border border-[#2d5db3] bg-[#2d5db3] px-4 py-2.5 text-[0.9rem] font-semibold text-white"
+          className={`flex w-full items-center justify-between rounded-full border border-zinc-900 bg-zinc-900 font-semibold text-white shadow-[0_8px_22px_rgba(24,24,27,0.14)] transition group-hover:bg-zinc-950 ${
+            isCatalog
+              ? 'min-h-10 px-3 py-2 text-[0.76rem]'
+              : 'px-4 py-[0.58rem] text-[0.86rem]'
+          }`}
           style={{ display: 'flex' }}
         >
           <button
@@ -292,7 +369,7 @@ export default function ProductCard({ product }: { product: Product }) {
           >
             -
           </button>
-          <span style={{ fontSize: '1.12rem', lineHeight: 1 }}>
+          <span style={{ fontSize: isCatalog ? '0.98rem' : '1.12rem', lineHeight: 1 }}>
             {activeVariantQuantity}
           </span>
           <button
