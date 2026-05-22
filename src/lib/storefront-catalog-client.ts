@@ -17,7 +17,7 @@ export type StorefrontCatalogClientPayload = {
 let catalogPromise: Promise<StorefrontCatalogClientPayload> | null = null;
 
 export function fetchStorefrontCatalogClient() {
-  catalogPromise ??= fetch('/api/storefront/catalog', { cache: 'no-store' }).then(
+  catalogPromise ??= fetch('/api/storefront/catalog').then(
     async (response) => {
       if (!response.ok) {
         catalogPromise = null;

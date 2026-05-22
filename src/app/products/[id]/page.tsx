@@ -4,16 +4,22 @@ import {
   getProductDetail,
 } from '@/lib/storefront-data';
 import { notFound } from 'next/navigation';
-import { connection } from 'next/server';
 
 export const revalidate = 300;
+
+export async function generateStaticParams() {
+  const products = await getCatalogCards();
+
+  return products.map((product) => ({
+    id: product.id,
+  }));
+}
 
 export default async function ProductDetail({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await connection();
   const { id } = await params;
   const product = await getProductDetail(id);
 

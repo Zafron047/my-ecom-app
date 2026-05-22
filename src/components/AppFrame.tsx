@@ -16,9 +16,11 @@ function isStorefrontPath(pathname: string) {
 
 export default function AppFrame({
   businessProfile,
+  catalogCategories,
   children,
 }: {
   businessProfile: StorefrontBusinessProfile;
+  catalogCategories: string[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -30,8 +32,13 @@ export default function AppFrame({
 
   return (
     <CartProvider>
-      <Header businessProfile={businessProfile} />
-      <main className="flex-1">{children}</main>
+      <Header
+        businessProfile={businessProfile}
+        catalogCategories={catalogCategories}
+      />
+      <main className="flex-1 pt-[5.75rem] sm:pt-[6.25rem] lg:pt-[6.75rem]">
+        {children}
+      </main>
       <Footer businessProfile={businessProfile} />
     </CartProvider>
   );

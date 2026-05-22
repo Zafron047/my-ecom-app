@@ -6,7 +6,6 @@ import {
 import { getStorefrontCatalog } from '@/lib/storefront-data';
 
 const shouldBypassCatalogCache =
-  process.env.NODE_ENV === 'development' ||
   process.env.NEXT_DISABLE_STOREFRONT_CACHE === 'true';
 
 function catalogHeaders() {
