@@ -6,6 +6,11 @@ import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { ProductStatus } from '@prisma/client';
+import {
+  ALLOWED_PRODUCT_IMAGE_MIME_TYPE_SET,
+  MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES,
+  MAX_PRODUCT_IMAGE_FILES,
+} from '@/lib/product-media/constants';
 
 type CategoryOption = {
   id: string;
@@ -111,14 +116,6 @@ const PRODUCT_FORM_FLASH_KEY = 'admin-product-form-flash';
 const SHOW_PRODUCT_BUNDLE_EDITOR = false;
 const PRODUCT_NAME_WORD_LIMIT = 6;
 const SHORT_DESCRIPTION_WORD_LIMIT = 40;
-const MAX_PRODUCT_IMAGE_FILES = 10;
-const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 4 * 1024 * 1024;
-const ALLOWED_PRODUCT_IMAGE_MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/avif',
-]);
 const fieldClass =
   'w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-normal text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-500 focus:shadow-md focus:ring-2 focus:ring-slate-200';
 const readOnlyFieldClass =
@@ -1309,20 +1306,23 @@ export default function ProductForm({
       setSubmitError(
         `You can upload up to ${MAX_PRODUCT_IMAGE_FILES} images per product.`,
       );
+      syncFileInputWithImageItems(imageItems);
       return;
     }
 
     for (const file of incomingFiles) {
-      if (!ALLOWED_PRODUCT_IMAGE_MIME_TYPES.has(file.type)) {
+      if (!ALLOWED_PRODUCT_IMAGE_MIME_TYPE_SET.has(file.type)) {
         setSubmitError(
           `Unsupported image type "${file.type || 'unknown'}". Allowed: JPG, PNG, WEBP, AVIF.`,
         );
+        syncFileInputWithImageItems(imageItems);
         return;
       }
       if (file.size > MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES) {
         setSubmitError(
           `Image "${file.name}" exceeds ${(MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES / (1024 * 1024)).toFixed(0)}MB limit.`,
         );
+        syncFileInputWithImageItems(imageItems);
         return;
       }
     }

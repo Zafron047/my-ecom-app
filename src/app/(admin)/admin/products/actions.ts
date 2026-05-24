@@ -2,31 +2,21 @@
 
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { redirect } from 'next/navigation';
-import path from 'path';
-import sharp from 'sharp';
 import { Prisma, ProductStatus } from '@prisma/client';
 import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
+import {
+  assertProductImageCountAllowed,
+  deleteProductImageFiles,
+  deleteProductImageFilesBestEffort,
+  getImageSerialByClientIdFromOrder,
+  saveProductImages,
+} from '@/lib/product-media/product-image-service';
+import { getProductStorageFolder } from '@/lib/product-media/storage-keys';
 import { prisma } from '@/lib/prisma';
 
 const productStatuses = Object.values(ProductStatus);
 const PRODUCT_NAME_WORD_LIMIT = 6;
 const SHORT_DESCRIPTION_WORD_LIMIT = 40;
-const PRODUCT_STORAGE_FOLDER = 'products';
-const MAX_PRODUCT_IMAGE_FILES = 10;
-const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 4 * 1024 * 1024;
-const ALLOWED_PRODUCT_IMAGE_MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/avif',
-]);
-const SUPABASE_STORAGE_BUCKET =
-  process.env.SUPABASE_STORAGE_BUCKET || 'product-images';
-const PRODUCT_IMAGE_VARIANTS = [
-  { suffix: 'thumb', width: 320, quality: 72 },
-  { suffix: 'detail', width: 1200, quality: 78 },
-  { suffix: 'zoom', width: 1800, quality: 75 },
-] as const;
 
 function revalidateStorefrontProduct(productId?: string) {
   revalidateTag('storefront-catalog', 'max');
@@ -39,37 +29,6 @@ function revalidateStorefrontProduct(productId?: string) {
     revalidatePath(`/products/${productId}`);
     revalidatePath(`/api/storefront/products/${productId}`);
   }
-}
-
-function getProductStorageFolder(productId: string) {
-  return `${PRODUCT_STORAGE_FOLDER}/${productId}`;
-}
-
-function getSupabaseProjectUrlFromDatabaseUrl() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) return undefined;
-
-  try {
-    const parsedUrl = new URL(databaseUrl);
-    const usernameProjectRef = decodeURIComponent(parsedUrl.username).match(
-      /^postgres\.([a-z0-9]+)$/i,
-    )?.[1];
-    const hostProjectRef = parsedUrl.hostname.match(
-      /^(?:db|pooler)\.([a-z0-9]+)\.supabase\.co$/i,
-    )?.[1];
-    const projectRef = usernameProjectRef ?? hostProjectRef;
-
-    return projectRef ? `https://${projectRef}.supabase.co` : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function getSupabaseUrl() {
-  return (
-    process.env.SUPABASE_URL?.replace(/\/$/, '') ??
-    getSupabaseProjectUrlFromDatabaseUrl()
-  );
 }
 
 function getString(formData: FormData, key: string) {
@@ -92,28 +51,6 @@ function getStringList(formData: FormData, key: string) {
 
 function getImageOrder(formData: FormData) {
   return getStringList(formData, 'imageOrder');
-}
-
-function getImageSerialByClientId(formData: FormData) {
-  const serialByClientId = new Map<string, number>();
-
-  getImageOrder(formData).forEach((item, index) => {
-    if (!item.startsWith('new:')) return;
-    serialByClientId.set(item.slice(4), index + 1);
-  });
-
-  return serialByClientId;
-}
-
-function getImageSerialByClientIdFromOrder(imageOrder: string[]) {
-  const serialByClientId = new Map<string, number>();
-
-  imageOrder.forEach((item, index) => {
-    if (!item.startsWith('new:')) return;
-    serialByClientId.set(item.slice(4), index + 1);
-  });
-
-  return serialByClientId;
 }
 
 function getIndexedStringList(formData: FormData, key: string) {
@@ -629,515 +566,6 @@ function ensureProductReadyForSave(
   }
 }
 
-type IncomingImageFile = {
-  clientId: string;
-  file: File;
-};
-
-type IncomingUploadedImage = {
-  clientId: string;
-  fileName: string;
-  objectKey: string;
-};
-
-function getImageFiles(formData: FormData) {
-  const clientIds = getIndexedStringList(formData, 'productImageClientIds');
-  const uploadedClientIds = getIndexedStringList(
-    formData,
-    'uploadedProductImageClientIds',
-  );
-  const uploadedObjectKeys = getIndexedStringList(
-    formData,
-    'uploadedProductImageObjectKeys',
-  );
-  const uploadedNames = getIndexedStringList(formData, 'uploadedProductImageNames');
-
-  const files: IncomingImageFile[] = formData
-    .getAll('productImages')
-    .map((value, index) => ({
-      clientId: clientIds[index] ?? '',
-      file: value,
-    }))
-    .filter(
-      (value): value is { clientId: string; file: File } =>
-        value.file instanceof File &&
-        value.file.size > 0,
-    );
-
-  const uploadedImages: IncomingUploadedImage[] = uploadedObjectKeys
-    .map((objectKey, index) => ({
-      clientId: uploadedClientIds[index] ?? '',
-      fileName: uploadedNames[index] ?? 'image',
-      objectKey: objectKey.trim(),
-    }))
-    .filter((item) => item.objectKey.length > 0);
-
-  if (files.length + uploadedImages.length > MAX_PRODUCT_IMAGE_FILES) {
-    throw new Error(
-      `You can upload up to ${MAX_PRODUCT_IMAGE_FILES} images per save.`,
-    );
-  }
-
-  for (const { file } of files) {
-    if (!ALLOWED_PRODUCT_IMAGE_MIME_TYPES.has(file.type)) {
-      throw new Error(
-        `Unsupported image type "${file.type || 'unknown'}". Allowed: JPG, PNG, WEBP, AVIF.`,
-      );
-    }
-    if (file.size > MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES) {
-      throw new Error(
-        `Image "${file.name}" exceeds ${(MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES / (1024 * 1024)).toFixed(0)}MB limit.`,
-      );
-    }
-  }
-
-  return {
-    files,
-    uploadedImages,
-  };
-}
-
-function getFileExtension(file: File) {
-  const fromName = path.extname(file.name).toLowerCase();
-  if (fromName) return fromName;
-
-  const fromType = file.type.split('/')[1];
-  return fromType ? `.${fromType}` : '.jpg';
-}
-
-function getSupabaseStorageConfig() {
-  const supabaseUrl = getSupabaseUrl();
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error(
-      'Product image storage operations require SUPABASE_SERVICE_ROLE_KEY. Set SUPABASE_URL too if it cannot be inferred from DATABASE_URL.',
-    );
-  }
-
-  return {
-    bucket: SUPABASE_STORAGE_BUCKET,
-    serviceRoleKey,
-    supabaseUrl,
-  };
-}
-
-function getOptionalSupabaseStorageConfig() {
-  const supabaseUrl = getSupabaseUrl();
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) return null;
-
-  return {
-    bucket: SUPABASE_STORAGE_BUCKET,
-    serviceRoleKey,
-    supabaseUrl,
-  };
-}
-
-function encodeStorageObjectKey(objectKey: string) {
-  return objectKey.split('/').map(encodeURIComponent).join('/');
-}
-
-function getPublicStorageUrl(objectKey: string) {
-  const { bucket, supabaseUrl } = getSupabaseStorageConfig();
-  return `${supabaseUrl}/storage/v1/object/public/${bucket}/${encodeStorageObjectKey(
-    objectKey,
-  )}`;
-}
-
-function getStorageObjectKey(storagePath: string) {
-  const config = getOptionalSupabaseStorageConfig();
-  const bucket = config?.bucket ?? SUPABASE_STORAGE_BUCKET;
-  const supabaseUrl = config?.supabaseUrl;
-
-  const decodeKey = (value: string) => {
-    try {
-      return decodeURIComponent(value);
-    } catch {
-      return value;
-    }
-  };
-
-  // Standard public URL using configured Supabase base URL.
-  if (supabaseUrl) {
-    const publicPrefix = `${supabaseUrl}/storage/v1/object/public/${bucket}/`;
-    if (storagePath.startsWith(publicPrefix)) {
-      return decodeKey(storagePath.slice(publicPrefix.length));
-    }
-  }
-
-  // Public URL from any host/domain that still follows Supabase object path shape.
-  try {
-    const parsed = new URL(storagePath);
-    const publicSegment = `/storage/v1/object/public/${bucket}/`;
-    const segmentIndex = parsed.pathname.indexOf(publicSegment);
-    if (segmentIndex >= 0) {
-      return decodeKey(parsed.pathname.slice(segmentIndex + publicSegment.length));
-    }
-  } catch {
-    // fall through to raw key handling
-  }
-
-  // Raw object key persisted directly.
-  if (storagePath.startsWith(`${PRODUCT_STORAGE_FOLDER}/`)) {
-    return storagePath;
-  }
-
-  return null;
-}
-
-async function uploadStorageObject(objectKey: string, file: File) {
-  const { bucket, serviceRoleKey, supabaseUrl } = getSupabaseStorageConfig();
-  const fileBytes = new Uint8Array(await file.arrayBuffer());
-  const response = await fetch(
-    `${supabaseUrl}/storage/v1/object/${bucket}/${encodeStorageObjectKey(
-      objectKey,
-    )}`,
-    {
-      body: fileBytes,
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        'Cache-Control': '31536000',
-        'Content-Type': file.type || 'application/octet-stream',
-        'x-upsert': 'false',
-      },
-      method: 'POST',
-    },
-  );
-
-  if (response.status === 409) return false;
-  if (!response.ok) {
-    throw new Error(`Failed to upload product image: ${await response.text()}`);
-  }
-
-  return true;
-}
-
-async function uploadStorageBuffer(
-  objectKey: string,
-  bytes: Buffer,
-  contentType: string,
-) {
-  const { bucket, serviceRoleKey, supabaseUrl } = getSupabaseStorageConfig();
-  const bodyBytes = new Uint8Array(bytes);
-  const response = await fetch(
-    `${supabaseUrl}/storage/v1/object/${bucket}/${encodeStorageObjectKey(
-      objectKey,
-    )}`,
-    {
-      body: bodyBytes,
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        'Cache-Control': '31536000',
-        'Content-Type': contentType,
-        'x-upsert': 'true',
-      },
-      method: 'POST',
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to upload optimized product image: ${await response.text()}`,
-    );
-  }
-}
-
-function getVariantObjectKey(objectKey: string, suffix: string) {
-  if (objectKey.includes('/original/')) {
-    const replaced = objectKey.replace('/original/', `/${suffix}/`);
-    return replaced.replace(/\.[^./]+$/i, '.webp');
-  }
-
-  const extension = path.extname(objectKey);
-  const base = extension ? objectKey.slice(0, -extension.length) : objectKey;
-  return `${base}-${suffix}.webp`;
-}
-
-function getOriginalObjectKey(
-  productStorageFolder: string,
-  serialNumber: number,
-  extension: string,
-  suffix = '',
-) {
-  return `${productStorageFolder}/original/img${serialNumber}${suffix}${extension}`;
-}
-
-async function uploadOptimizedImageVariants(objectKey: string, file: File) {
-  const sourceBuffer = Buffer.from(await file.arrayBuffer());
-  await uploadOptimizedImageVariantsFromBuffer(objectKey, sourceBuffer);
-}
-
-async function uploadOptimizedImageVariantsFromBuffer(
-  objectKey: string,
-  sourceBuffer: Buffer,
-) {
-  for (const variant of PRODUCT_IMAGE_VARIANTS) {
-    const optimizedBuffer = await sharp(sourceBuffer)
-      .rotate()
-      .resize({
-        width: variant.width,
-        withoutEnlargement: true,
-      })
-      .webp({ quality: variant.quality })
-      .toBuffer();
-
-    await uploadStorageBuffer(
-      getVariantObjectKey(objectKey, variant.suffix),
-      optimizedBuffer,
-      'image/webp',
-    );
-  }
-}
-
-function getContentTypeFromExtension(extension: string) {
-  const ext = extension.toLowerCase();
-  if (ext === '.png') return 'image/png';
-  if (ext === '.webp') return 'image/webp';
-  if (ext === '.avif') return 'image/avif';
-  return 'image/jpeg';
-}
-
-async function downloadStorageObject(objectKey: string) {
-  const { bucket, serviceRoleKey, supabaseUrl } = getSupabaseStorageConfig();
-  const response = await fetch(
-    `${supabaseUrl}/storage/v1/object/${bucket}/${encodeStorageObjectKey(objectKey)}`,
-    {
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-      },
-      method: 'GET',
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to read uploaded image: ${await response.text()}`);
-  }
-
-  return Buffer.from(await response.arrayBuffer());
-}
-
-async function deleteStorageObjects(objectKeys: string[]) {
-  if (objectKeys.length === 0) return;
-
-  const { bucket, serviceRoleKey, supabaseUrl } = getSupabaseStorageConfig();
-  const response = await fetch(`${supabaseUrl}/storage/v1/object/${bucket}`, {
-    body: JSON.stringify({
-      prefixes: objectKeys,
-    }),
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    method: 'DELETE',
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to delete product image: ${await response.text()}`);
-  }
-}
-
-function getStorageObjectKeysWithVariants(objectKey: string) {
-  return [
-    objectKey,
-    ...PRODUCT_IMAGE_VARIANTS.map((variant) =>
-      getVariantObjectKey(objectKey, variant.suffix),
-    ),
-  ];
-}
-
-async function deleteStorageObjectKeysBestEffort(
-  objectKeys: string[],
-  context: string,
-) {
-  if (objectKeys.length === 0) return;
-
-  try {
-    await deleteStorageObjects(
-      objectKeys.flatMap((objectKey) =>
-        getStorageObjectKeysWithVariants(objectKey),
-      ),
-    );
-  } catch (error) {
-    console.error(context, error);
-  }
-}
-
-async function uploadWithUniqueName(
-  productStorageFolder: string,
-  serialNumber: number,
-  extension: string,
-  file: File,
-  reservedObjectKeys: Set<string>,
-) {
-  let attempt = 1;
-
-  while (true) {
-    const suffix = attempt === 1 ? '' : `-${attempt}`;
-    const objectKey = getOriginalObjectKey(
-      productStorageFolder,
-      serialNumber,
-      extension,
-      suffix,
-    );
-
-    if (!reservedObjectKeys.has(objectKey)) {
-      reservedObjectKeys.add(objectKey);
-      if (await uploadStorageObject(objectKey, file)) {
-        try {
-          await uploadOptimizedImageVariants(objectKey, file);
-          return objectKey;
-        } catch (error) {
-          await deleteStorageObjectKeysBestEffort(
-            [objectKey],
-            'Failed to clean up partially processed product image:',
-          );
-          throw error;
-        }
-      }
-    }
-
-    attempt += 1;
-  }
-}
-
-async function deleteProductImageFiles(storagePaths: string[]) {
-  const objectKeys = storagePaths
-    .map((storagePath) => getStorageObjectKey(storagePath))
-    .filter((objectKey): objectKey is string => Boolean(objectKey))
-    .flatMap((objectKey) => getStorageObjectKeysWithVariants(objectKey));
-
-  if (objectKeys.length === 0) return;
-
-  if (!getOptionalSupabaseStorageConfig()) {
-    throw new Error(
-      'Product image storage deletion requires SUPABASE_SERVICE_ROLE_KEY. Set SUPABASE_URL too if it cannot be inferred from DATABASE_URL.',
-    );
-  }
-
-  const maxAttempts = 4;
-  let lastError: unknown = null;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      await deleteStorageObjects(objectKeys);
-      return;
-    } catch (error) {
-      lastError = error;
-      if (attempt < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, attempt * 300));
-      }
-    }
-  }
-
-  throw new Error(
-    `Failed to delete product image(s) from storage after ${maxAttempts} attempts.${lastError instanceof Error ? ` ${lastError.message}` : ''}`,
-  );
-}
-
-async function deleteProductImageFilesBestEffort(storagePaths: string[]) {
-  if (storagePaths.length === 0) return;
-
-  try {
-    await deleteProductImageFiles(storagePaths);
-  } catch (error) {
-    console.error('Failed to delete removed product image files:', error);
-  }
-}
-
-async function saveProductImages(
-  formData: FormData,
-  productStorageFolder: string,
-  _imageNameBase: string,
-  serialByClientId = getImageSerialByClientId(formData),
-) {
-  const { files, uploadedImages } = getImageFiles(formData);
-  if (files.length === 0 && uploadedImages.length === 0) return [];
-
-  const reservedObjectKeys = new Set<string>();
-  const savedImages: Array<{
-    clientId: string;
-    storagePath: string;
-    altText: string | null;
-    sortOrder: number;
-  }> = [];
-
-  try {
-    for (const [index, { clientId, file }] of files.entries()) {
-      const extension = getFileExtension(file);
-      const serialNumber = serialByClientId.get(clientId) ?? index + 1;
-      const objectKey = await uploadWithUniqueName(
-        productStorageFolder,
-        serialNumber,
-        extension,
-        file,
-        reservedObjectKeys,
-      );
-
-      savedImages.push({
-        clientId,
-        storagePath: getPublicStorageUrl(objectKey),
-        altText: file.name.replace(/\.[^.]+$/, '') || null,
-        sortOrder: serialNumber - 1,
-      });
-    }
-
-    const savedFileCount = savedImages.length;
-    for (const [index, { clientId, fileName, objectKey }] of uploadedImages.entries()) {
-      const serialNumber =
-        serialByClientId.get(clientId) ?? savedFileCount + index + 1;
-      const extension = path.extname(objectKey) || '.jpg';
-      const sourceBuffer = await downloadStorageObject(objectKey);
-      const uniqueSuffix = `-${crypto.randomUUID().slice(0, 8)}`;
-      const finalObjectKey = getOriginalObjectKey(
-        productStorageFolder,
-        serialNumber,
-        extension,
-        uniqueSuffix,
-      );
-
-      try {
-        await uploadStorageBuffer(
-          finalObjectKey,
-          sourceBuffer,
-          getContentTypeFromExtension(extension),
-        );
-        await uploadOptimizedImageVariantsFromBuffer(finalObjectKey, sourceBuffer);
-      } catch (error) {
-        await deleteStorageObjectKeysBestEffort(
-          [finalObjectKey],
-          'Failed to clean up partially promoted product image:',
-        );
-        throw error;
-      }
-
-      try {
-        await deleteStorageObjects([objectKey]);
-      } catch (error) {
-        console.error('Failed to delete staged product image:', error);
-      }
-
-      savedImages.push({
-        clientId,
-        storagePath: getPublicStorageUrl(finalObjectKey),
-        altText: fileName.replace(/\.[^.]+$/, '') || null,
-        sortOrder: serialNumber - 1,
-      });
-    }
-
-    return savedImages;
-  } catch (error) {
-    await deleteProductImageFilesBestEffort(
-      savedImages.map((image) => image.storagePath),
-    );
-    throw error;
-  }
-}
-
 function getVariantImagePaths(
   imageSelection: string,
   storagePathByOrderKey: Map<string, string>,
@@ -1218,28 +646,29 @@ export async function createProduct(formData: FormData) {
   const variants = await ensureUniqueSkus(payload.variants);
   const catalogSnapshot = getCatalogSnapshotFromVariants(variants);
   const productId = crypto.randomUUID();
-
-  const images = await saveProductImages(
-    formData,
-    getProductStorageFolder(productId),
-    payload.slug,
-  );
-  const storagePathByOrderKey = new Map<string, string>();
-
-  images.forEach((image) => {
-    storagePathByOrderKey.set(`new:${image.clientId}`, image.storagePath);
-  });
-  ensureProductReadyForSave({
-    categoryCount: payload.categoryIds.length,
-    imageCount: images.length,
-    variantCount: variants.length,
-  });
-  const variantImagePathsByIndex = buildVariantImagePathsByIndex(
-    variants,
-    storagePathByOrderKey,
-  );
+  let images: Awaited<ReturnType<typeof saveProductImages>> = [];
 
   try {
+    images = await saveProductImages(
+      formData,
+      getProductStorageFolder(productId),
+      payload.slug,
+    );
+    const storagePathByOrderKey = new Map<string, string>();
+
+    images.forEach((image) => {
+      storagePathByOrderKey.set(`new:${image.clientId}`, image.storagePath);
+    });
+    ensureProductReadyForSave({
+      categoryCount: payload.categoryIds.length,
+      imageCount: images.length,
+      variantCount: variants.length,
+    });
+    const variantImagePathsByIndex = buildVariantImagePathsByIndex(
+      variants,
+      storagePathByOrderKey,
+    );
+
     await prisma.$transaction(async (tx) => {
       await tx.product.create({
         data: {
@@ -1487,51 +916,54 @@ export async function updateProduct(formData: FormData) {
     .map((item) => item.slice(9))
     .filter((id) => existingImageIdSet.has(id));
 
-  const newImages = shouldSaveProductMedia
-    ? await saveProductImages(
-        formData,
-        getProductStorageFolder(productId),
-        payload.slug,
-        getImageSerialByClientIdFromOrder(normalizedImageOrder),
-      )
-    : [];
-  const storagePathByOrderKey = new Map<string, string>();
-  const existingStoragePathById = new Map(
-    existingImages.map((image) => [image.id, image.storagePath]),
-  );
-
-  for (const orderItem of normalizedImageOrder) {
-    if (!orderItem.startsWith('existing:')) continue;
-    const imageId = orderItem.slice(9);
-    const storagePath = existingStoragePathById.get(imageId);
-    if (storagePath) {
-      storagePathByOrderKey.set(orderItem, storagePath);
-    }
-  }
-
-  newImages.forEach((image) => {
-    storagePathByOrderKey.set(`new:${image.clientId}`, image.storagePath);
-  });
-  const projectedImageCount = shouldSaveProductMedia
-    ? existingImages.length + newImages.length
-    : await prisma.productImage.count({
-        where: { productId },
-      });
-  const projectedCategoryCount = shouldSaveProductMedia
-    ? payload.categoryIds.length
-    : await prisma.productCategory.count({
-        where: { productId },
-      });
-  ensureProductReadyForSave({
-    categoryCount: projectedCategoryCount,
-    imageCount: projectedImageCount,
-    variantCount: persistedVariantCount,
-  });
-  const variantImagePathsByIndex = shouldSaveVariants
-    ? buildVariantImagePathsByIndex(variants, storagePathByOrderKey)
-    : [];
+  let newImages: Awaited<ReturnType<typeof saveProductImages>> = [];
 
   try {
+    newImages = shouldSaveProductMedia
+      ? await saveProductImages(
+          formData,
+          getProductStorageFolder(productId),
+          payload.slug,
+          getImageSerialByClientIdFromOrder(normalizedImageOrder),
+        )
+      : [];
+    const storagePathByOrderKey = new Map<string, string>();
+    const existingStoragePathById = new Map(
+      existingImages.map((image) => [image.id, image.storagePath]),
+    );
+
+    for (const orderItem of normalizedImageOrder) {
+      if (!orderItem.startsWith('existing:')) continue;
+      const imageId = orderItem.slice(9);
+      const storagePath = existingStoragePathById.get(imageId);
+      if (storagePath) {
+        storagePathByOrderKey.set(orderItem, storagePath);
+      }
+    }
+
+    newImages.forEach((image) => {
+      storagePathByOrderKey.set(`new:${image.clientId}`, image.storagePath);
+    });
+    const projectedImageCount = shouldSaveProductMedia
+      ? existingImages.length + newImages.length
+      : await prisma.productImage.count({
+          where: { productId },
+        });
+    assertProductImageCountAllowed(projectedImageCount);
+    const projectedCategoryCount = shouldSaveProductMedia
+      ? payload.categoryIds.length
+      : await prisma.productCategory.count({
+          where: { productId },
+        });
+    ensureProductReadyForSave({
+      categoryCount: projectedCategoryCount,
+      imageCount: projectedImageCount,
+      variantCount: persistedVariantCount,
+    });
+    const variantImagePathsByIndex = shouldSaveVariants
+      ? buildVariantImagePathsByIndex(variants, storagePathByOrderKey)
+      : [];
+
     await prisma.$transaction(async (tx) => {
       if (shouldSaveProductMedia) {
       await tx.product.update({
@@ -1579,10 +1011,16 @@ export async function updateProduct(formData: FormData) {
         };
 
         if (specification.id) {
-          await tx.productSpecification.update({
-            where: { id: specification.id },
+          const updated = await tx.productSpecification.updateMany({
+            where: {
+              id: specification.id,
+              productId,
+            },
             data,
           });
+          if (updated.count === 0) {
+            throw new Error('Invalid product specification reference.');
+          }
         } else {
           await tx.productSpecification.create({
             data: {
@@ -1702,30 +1140,45 @@ export async function updateProduct(formData: FormData) {
       }
     }
 
-    if (shouldSaveVariants) {
-      for (const variantId of variantIdsToRemove) {
-        const orderReferenceCount = await tx.orderProduct.count({
-          where: { variantId },
-        });
+      if (shouldSaveVariants) {
+        for (const variantId of variantIdsToRemove) {
+          const orderReferenceCount = await tx.orderProduct.count({
+            where: {
+              variantId,
+              variant: { productId },
+            },
+          });
 
-        if (orderReferenceCount === 0) {
+          if (orderReferenceCount === 0) {
+            await tx.productBundleOfferVariant.deleteMany({
+              where: {
+                variantId,
+                variant: { productId },
+              },
+            });
+            await tx.productVariant.deleteMany({
+              where: {
+                id: variantId,
+                productId,
+              },
+            });
+            continue;
+          }
+
+          await tx.productVariant.updateMany({
+            where: {
+              id: variantId,
+              productId,
+            },
+            data: { isActive: false },
+          });
           await tx.productBundleOfferVariant.deleteMany({
-            where: { variantId },
+            where: {
+              variantId,
+              variant: { productId },
+            },
           });
-          await tx.productVariant.delete({
-            where: { id: variantId },
-          });
-          continue;
         }
-
-        await tx.productVariant.update({
-          where: { id: variantId },
-          data: { isActive: false },
-        });
-        await tx.productBundleOfferVariant.deleteMany({
-          where: { variantId },
-        });
-      }
 
       const variantIdBySelectionKey = new Map<string, string>();
 
@@ -1749,14 +1202,23 @@ export async function updateProduct(formData: FormData) {
         };
 
         if (variant.id) {
-          await tx.productVariant.update({
-            where: { id: variant.id },
+          const updated = await tx.productVariant.updateMany({
+            where: {
+              id: variant.id,
+              productId,
+            },
             data,
           });
+          if (updated.count === 0) {
+            throw new Error('Invalid product variant reference.');
+          }
           variantIdBySelectionKey.set(`existing:${variant.id}`, variant.id);
           const variantImagePaths = variantImagePathsByIndex[index] ?? [];
           await tx.productVariantImage.deleteMany({
-            where: { variantId: variant.id },
+            where: {
+              variantId: variant.id,
+              variant: { productId },
+            },
           });
           if (variantImagePaths.length > 0) {
             await tx.productVariantImage.createMany({
@@ -1845,13 +1307,7 @@ export async function updateProduct(formData: FormData) {
           };
 
           const bundleOfferId = offer.id
-            ? (
-                await tx.productBundleOffer.update({
-                  where: { id: offer.id },
-                  data,
-                  select: { id: true },
-                })
-              ).id
+            ? offer.id
             : (
                 await tx.productBundleOffer.create({
                   data: {
@@ -1861,9 +1317,24 @@ export async function updateProduct(formData: FormData) {
                   select: { id: true },
                 })
               ).id;
+          if (offer.id) {
+            const updated = await tx.productBundleOffer.updateMany({
+              where: {
+                id: offer.id,
+                productId,
+              },
+              data,
+            });
+            if (updated.count === 0) {
+              throw new Error('Invalid product bundle offer reference.');
+            }
+          }
 
           await tx.productBundleOfferVariant.deleteMany({
-            where: { bundleOfferId },
+            where: {
+              bundleOfferId,
+              bundleOffer: { productId },
+            },
           });
           if (requestedVariantIds.length > 0) {
             await tx.productBundleOfferVariant.createMany({
@@ -1928,13 +1399,7 @@ export async function updateProduct(formData: FormData) {
         };
 
         const bundleOfferId = offer.id
-          ? (
-              await tx.productBundleOffer.update({
-                where: { id: offer.id },
-                data,
-                select: { id: true },
-              })
-            ).id
+          ? offer.id
           : (
               await tx.productBundleOffer.create({
                 data: {
@@ -1944,9 +1409,24 @@ export async function updateProduct(formData: FormData) {
                 select: { id: true },
               })
             ).id;
+        if (offer.id) {
+          const updated = await tx.productBundleOffer.updateMany({
+            where: {
+              id: offer.id,
+              productId,
+            },
+            data,
+          });
+          if (updated.count === 0) {
+            throw new Error('Invalid product bundle offer reference.');
+          }
+        }
 
         await tx.productBundleOfferVariant.deleteMany({
-          where: { bundleOfferId },
+          where: {
+            bundleOfferId,
+            bundleOffer: { productId },
+          },
         });
         if (requestedVariantIds.length > 0) {
           await tx.productBundleOfferVariant.createMany({

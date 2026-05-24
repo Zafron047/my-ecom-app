@@ -6,47 +6,21 @@ import {
   getClientIp,
   rateLimitHeaders,
 } from '@/lib/rate-limit';
+import {
+  ALLOWED_PRODUCT_IMAGE_MIME_TYPE_SET,
+  MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES,
+  STAGED_PRODUCT_IMAGE_FOLDER,
+} from '@/lib/product-media/constants';
+import {
+  getSupabaseStorageBucket,
+  getSupabaseUrl,
+} from '@/lib/product-media/storage-config';
+import { encodeStorageObjectKey } from '@/lib/product-media/storage-keys';
 
-const SUPABASE_STORAGE_BUCKET =
-  process.env.SUPABASE_STORAGE_BUCKET || 'product-images';
-const ALLOWED_PRODUCT_IMAGE_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/avif',
-]);
-const MAX_PRODUCT_IMAGE_FILE_SIZE_BYTES = 4 * 1024 * 1024;
 const SIGN_UPLOAD_RATE_LIMIT = {
   limit: 40,
   windowMs: 60_000,
 };
-
-function getSupabaseProjectUrlFromDatabaseUrl() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) return undefined;
-
-  try {
-    const parsedUrl = new URL(databaseUrl);
-    const usernameProjectRef = decodeURIComponent(parsedUrl.username).match(
-      /^postgres\.([a-z0-9]+)$/i,
-    )?.[1];
-    const hostProjectRef = parsedUrl.hostname.match(
-      /^(?:db|pooler)\.([a-z0-9]+)\.supabase\.co$/i,
-    )?.[1];
-    const projectRef = usernameProjectRef ?? hostProjectRef;
-
-    return projectRef ? `https://${projectRef}.supabase.co` : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function getSupabaseUrl() {
-  return (
-    process.env.SUPABASE_URL?.replace(/\/$/, '') ??
-    getSupabaseProjectUrlFromDatabaseUrl()
-  );
-}
 
 export async function POST(request: Request) {
   const session = await getAdminSession();
@@ -72,6 +46,7 @@ export async function POST(request: Request) {
   }
 
   const supabaseUrl = getSupabaseUrl();
+  const storageBucket = getSupabaseStorageBucket();
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json(
@@ -88,7 +63,7 @@ export async function POST(request: Request) {
   const contentType = body?.contentType || 'application/octet-stream';
   const fileSize = Number(body?.size ?? 0);
 
-  if (!ALLOWED_PRODUCT_IMAGE_TYPES.has(contentType)) {
+  if (!ALLOWED_PRODUCT_IMAGE_MIME_TYPE_SET.has(contentType)) {
     return NextResponse.json(
       { error: 'Unsupported image type. Allowed: JPG, PNG, WEBP, AVIF.' },
       withPrivateNoStoreHeaders({ status: 400 }),
@@ -106,12 +81,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const objectKey = `products/staged/${Date.now()}-${crypto.randomUUID()}${sanitizedExtension}`;
+  const objectKey = `${STAGED_PRODUCT_IMAGE_FOLDER}/${Date.now()}-${crypto.randomUUID()}${sanitizedExtension}`;
 
   const signResponse = await fetch(
-    `${supabaseUrl}/storage/v1/object/upload/sign/${SUPABASE_STORAGE_BUCKET}/${encodeURIComponent(
+    `${supabaseUrl}/storage/v1/object/upload/sign/${storageBucket}/${encodeStorageObjectKey(
       objectKey,
-    ).replace(/%2F/g, '/')}`,
+    )}`,
     {
       method: 'POST',
       headers: {
@@ -139,7 +114,7 @@ export async function POST(request: Request) {
   const token = signPayload.token;
   const uploadPath =
     signedPath ||
-    `/storage/v1/object/upload/sign/${SUPABASE_STORAGE_BUCKET}/${objectKey}?token=${encodeURIComponent(
+    `/storage/v1/object/upload/sign/${storageBucket}/${encodeStorageObjectKey(objectKey)}?token=${encodeURIComponent(
       token || '',
     )}`;
 
@@ -149,7 +124,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json(
     {
-      bucket: SUPABASE_STORAGE_BUCKET,
+      bucket: storageBucket,
       contentType,
       objectKey,
       uploadUrl,
