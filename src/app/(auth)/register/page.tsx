@@ -1,6 +1,7 @@
 'use client';
 
 import { FacebookIcon, GoogleIcon } from '@/components/SocialAuthIcons';
+import { trackMetaCompleteRegistration, trackMetaEvent } from '@/lib/meta-pixel';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -73,13 +74,22 @@ export default function Register() {
         }),
       });
 
-      const data = (await response.json()) as { error?: string; redirectTo?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        metaEventId?: string;
+        redirectTo?: string;
+      };
       if (!response.ok) {
         setSubmitError(data.error ?? 'Registration failed. Please try again.');
         return;
       }
 
       setSubmitSuccess('Account created successfully. You are signed in.');
+      if (data.metaEventId) {
+        trackMetaEvent('CompleteRegistration', { status: true }, data.metaEventId);
+      } else {
+        trackMetaCompleteRegistration();
+      }
       setFormData({
         firstName: '',
         lastName: '',

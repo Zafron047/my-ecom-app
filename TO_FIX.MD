@@ -29,18 +29,19 @@ Support:
 
 ## Implement Admin Password reset feature
 - log in to each role and test RBAC
-- [ ] SupaAdmin
-- [ ] Admin
-- [ ] Manager
-- [ ] Operator
+- [x] SupaAdmin
+- [x] Admin
+- [x] Manager
+- [x] Operator
 
 ### Admin Auth
-- [ ] Reset Password with Resend
+- [x] Reset Password with Resend
 
 ## Pixel
-- [ ] Merge Pixel Branch with dev
+- [x] Merge Pixel Branch with dev
 - [ ] Integrate Pixel with Meta
-- [ ] Ensure Convertion API is on
+- [x] Ensure Convertion API is on
+- [x] Fix Meta Search test: Search product expected Search event, but nothing appeared in Meta Test Events
 
 ### API
 - [ ] Expose Public API for Products

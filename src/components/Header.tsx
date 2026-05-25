@@ -6,6 +6,11 @@ import {
 } from '@/components/CartProvider';
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
 import { getGroupedAreaOptions, getGroupedDistrictOptions } from '@/lib/location-presenter';
+import {
+  META_PURCHASE_EVENT_STORAGE_PREFIX,
+  trackMetaInitiateCheckout,
+  trackMetaSearch,
+} from '@/lib/meta-pixel';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
@@ -166,6 +171,7 @@ export default function Header({
   const desktopSearchRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchRef = useRef<HTMLDivElement | null>(null);
   const lastAutofillPhoneRef = useRef<string>('');
+  const metaInitiateCheckoutEventIdRef = useRef<string | null>(null);
   const [isCustomerLookupLoading, setIsCustomerLookupLoading] = useState(false);
   const firstNameHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -536,6 +542,13 @@ export default function Header({
 
   function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (normalizedQuery) {
+      trackMetaSearch({
+        search_string: searchQuery.trim(),
+        content_ids: searchSuggestions.map((product) => product.id),
+        contents: searchSuggestions.map((product) => ({ id: product.id })),
+      });
+    }
 
     const exactMatch = searchableProducts.find(
       (product) => product.name.toLowerCase() === normalizedQuery,
@@ -555,6 +568,11 @@ export default function Header({
   function handleSuggestionSelect(productId: string, productName: string) {
     setSearchQuery(productName);
     setIsSearchOpen(false);
+    trackMetaSearch({
+      search_string: searchQuery.trim() || productName,
+      content_ids: [productId],
+      contents: [{ id: productId }],
+    });
     router.push(`/products/${productId}`);
   }
 
@@ -592,6 +610,11 @@ export default function Header({
   function handleProceedToCheckout() {
     if (!canCheckoutWithAuthoritativePricing) return;
     setIsCheckoutView(true);
+    metaInitiateCheckoutEventIdRef.current = trackMetaInitiateCheckout(
+      selectedCartItems,
+      subtotal,
+      { sendServer: false },
+    );
   }
 
   function handleCheckoutInputChange(
@@ -706,6 +729,9 @@ export default function Header({
         method: paymentMethod,
       },
       items: selectedCartItems,
+      meta: {
+        initiateCheckoutEventId: metaInitiateCheckoutEventIdRef.current ?? undefined,
+      },
       abandonedCheckoutSessionId:
         localStorage.getItem(ABANDONED_CHECKOUT_SESSION_KEY) ?? undefined,
       totals: {
@@ -741,7 +767,10 @@ export default function Header({
         return;
       }
 
-      const payload = (await response.json()) as { orderId: string };
+      const payload = (await response.json()) as {
+        orderId: string;
+        metaEventId?: string;
+      };
       if (!payload.orderId) {
         setPlaceOrderError('Could not place order. Please try again.');
         return;
@@ -754,6 +783,12 @@ export default function Header({
       };
 
       localStorage.setItem(`order_${payload.orderId}`, JSON.stringify(orderData));
+      if (payload.metaEventId) {
+        localStorage.setItem(
+          `${META_PURCHASE_EVENT_STORAGE_PREFIX}${payload.orderId}`,
+          payload.metaEventId,
+        );
+      }
       localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, payload.orderId);
       handleCloseCart();
       router.push(`/order-confirmation?orderId=${payload.orderId}`);

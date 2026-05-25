@@ -7,6 +7,10 @@ import {
 import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
 import { getGroupedAreaOptions, getGroupedDistrictOptions } from '@/lib/location-presenter';
 import { getShippingCharge } from '@/lib/shipping-charge';
+import {
+  META_PURCHASE_EVENT_STORAGE_PREFIX,
+  trackMetaInitiateCheckout,
+} from '@/lib/meta-pixel';
 import SearchableDropdown from '@/components/SearchableDropdown';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -45,6 +49,8 @@ export default function Checkout() {
   const [locationDistricts, setLocationDistricts] = useState<string[]>([]);
   const [locationAreas, setLocationAreas] = useState<string[]>([]);
   const lastAutofillPhoneRef = useRef('');
+  const hasTrackedInitiateCheckoutRef = useRef(false);
+  const metaInitiateCheckoutEventIdRef = useRef<string | null>(null);
 
   const shippingCharge = useMemo(() => {
     return getShippingCharge({
@@ -61,6 +67,17 @@ export default function Checkout() {
     locationAreas,
   );
   const groupedDistrictOptions = getGroupedDistrictOptions(locationDistricts);
+
+  useEffect(() => {
+    if (hasTrackedInitiateCheckoutRef.current) return;
+    if (selectedCartItems.length === 0) return;
+    hasTrackedInitiateCheckoutRef.current = true;
+    metaInitiateCheckoutEventIdRef.current = trackMetaInitiateCheckout(
+      selectedCartItems,
+      orderTotal,
+      { sendServer: false },
+    );
+  }, [orderTotal, selectedCartItems]);
 
   const handlePlaceOrder = async () => {
     // Basic validation
@@ -102,6 +119,9 @@ export default function Checkout() {
         method: paymentMethod,
       },
       items: selectedCartItems,
+      meta: {
+        initiateCheckoutEventId: metaInitiateCheckoutEventIdRef.current ?? undefined,
+      },
       abandonedCheckoutSessionId:
         localStorage.getItem(ABANDONED_CHECKOUT_SESSION_KEY) ?? undefined,
       totals: {
@@ -135,7 +155,10 @@ export default function Checkout() {
         return;
       }
 
-      const payload = (await response.json()) as { orderId: string };
+      const payload = (await response.json()) as {
+        orderId: string;
+        metaEventId?: string;
+      };
       if (!payload.orderId) {
         setPlaceOrderError('Could not place order. Please try again.');
         return;
@@ -148,6 +171,12 @@ export default function Checkout() {
       };
 
       localStorage.setItem(`order_${payload.orderId}`, JSON.stringify(orderData));
+      if (payload.metaEventId) {
+        localStorage.setItem(
+          `${META_PURCHASE_EVENT_STORAGE_PREFIX}${payload.orderId}`,
+          payload.metaEventId,
+        );
+      }
       localStorage.setItem(CHECKOUT_PENDING_ORDER_KEY, payload.orderId);
       router.push(`/order-confirmation?orderId=${payload.orderId}`);
     } catch {

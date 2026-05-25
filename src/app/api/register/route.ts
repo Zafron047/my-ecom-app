@@ -10,6 +10,11 @@ import {
 import { hashPassword } from '@/lib/password-auth';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+import {
+  createMetaCapiEventId,
+  isMetaCapiConfigured,
+  sendMetaServerEvent,
+} from '@/lib/meta-capi';
 
 type RegisterBody = {
   firstName?: string;
@@ -32,11 +37,15 @@ function getPhoneVariants(phone: string) {
   return { canonical: trimmed, variants: [trimmed] };
 }
 
-async function createAuthenticatedRegistrationResponse(customerId: string) {
+async function createAuthenticatedRegistrationResponse(
+  customerId: string,
+  metaEventId?: string,
+) {
   const response = NextResponse.json({
     redirectTo: '/',
     success: true,
     customerId,
+    ...(metaEventId ? { metaEventId } : {}),
   });
   const sessionToken = createCustomerSessionToken();
   const sessionTokenHash = hashCustomerSessionToken(sessionToken);
@@ -146,7 +155,29 @@ export async function POST(request: Request) {
         },
       });
 
-      return createAuthenticatedRegistrationResponse(existingByPhone.id);
+      const metaEventId = isMetaCapiConfigured()
+        ? createMetaCapiEventId('complete-registration', existingByPhone.id)
+        : undefined;
+      if (metaEventId) {
+        await sendMetaServerEvent({
+          eventId: metaEventId,
+          eventName: 'CompleteRegistration',
+          eventSourceUrl: new URL('/register', request.url).toString(),
+          request,
+          user: {
+            email,
+            externalId: existingByPhone.id,
+            firstName,
+            lastName,
+            phone: normalizedPhone.canonical,
+          },
+          customData: { status: true },
+        }).catch((error) => {
+          console.error('Meta CAPI CompleteRegistration event failed', error);
+        });
+      }
+
+      return createAuthenticatedRegistrationResponse(existingByPhone.id, metaEventId);
     }
 
     const customer = await prisma.customer.create({
@@ -165,7 +196,29 @@ export async function POST(request: Request) {
       },
     });
 
-    return createAuthenticatedRegistrationResponse(customer.id);
+    const metaEventId = isMetaCapiConfigured()
+      ? createMetaCapiEventId('complete-registration', customer.id)
+      : undefined;
+    if (metaEventId) {
+      await sendMetaServerEvent({
+        eventId: metaEventId,
+        eventName: 'CompleteRegistration',
+        eventSourceUrl: new URL('/register', request.url).toString(),
+        request,
+        user: {
+          email,
+          externalId: customer.id,
+          firstName,
+          lastName,
+          phone: normalizedPhone.canonical,
+        },
+        customData: { status: true },
+      }).catch((error) => {
+        console.error('Meta CAPI CompleteRegistration event failed', error);
+      });
+    }
+
+    return createAuthenticatedRegistrationResponse(customer.id, metaEventId);
   } catch (error) {
     console.error('register_api_error', error);
 

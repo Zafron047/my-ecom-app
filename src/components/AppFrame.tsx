@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { CartProvider } from '@/components/CartProvider';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import MetaPixel from '@/components/MetaPixel';
 import type { StorefrontBusinessProfile } from '@/lib/storefront-types';
 
 function isStorefrontPath(pathname: string) {
@@ -32,6 +33,7 @@ export default function AppFrame({
 
   return (
     <CartProvider>
+      <MetaPixel />
       <Header
         businessProfile={businessProfile}
         catalogCategories={catalogCategories}
