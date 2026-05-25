@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'crypto';
 export type MetaServerEventName =
   | 'PageView'
   | 'ViewContent'
+  | 'Search'
   | 'AddToCart'
   | 'InitiateCheckout'
   | 'Purchase'
