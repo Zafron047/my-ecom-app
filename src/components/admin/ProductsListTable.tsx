@@ -54,6 +54,7 @@ type ProductsListTableProps = {
     formData: FormData,
   ) => Promise<ProductsBulkActionState>;
   canDeleteProducts: boolean;
+  canManageProducts: boolean;
   products: ProductListRow[];
 };
 
@@ -114,6 +115,7 @@ function SortIcon({
 export default function ProductsListTable({
   applyProductsBulkActionWithState,
   canDeleteProducts,
+  canManageProducts,
   products,
 }: ProductsListTableProps) {
   const router = useRouter();
@@ -200,54 +202,56 @@ export default function ProductsListTable({
 
   return (
     <div className="overflow-x-auto">
-      <form
-        action={bulkActionFormAction}
-        className="mb-3 flex justify-end"
-        onSubmit={(event) => {
-          const formData = new FormData(event.currentTarget);
-          if (formData.get('bulkAction') !== 'delete') return;
-          if (
-            !window.confirm(
-              'Delete selected products permanently? Products with order history will be skipped and should be archived instead.',
-            )
-          ) {
-            event.preventDefault();
-          }
-        }}
-      >
-        {selectedProductIds.map((id) => (
-          <input key={id} type="hidden" name="productIds" value={id} />
-        ))}
-        <div className="flex items-center gap-2">
-          <select
-            name="bulkAction"
-            defaultValue=""
-            disabled={!hasSelection || isBulkActionPending}
-            className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <option value="" disabled>
-              Actions
-            </option>
-            <option value="set-active">Set status: Active</option>
-            <option value="set-draft">Set status: Draft</option>
-            <option value="set-archived">Set status: Archived</option>
-            <option value="archive">Archive</option>
-            <option value="unarchive">Unarchive (to draft)</option>
-            {canDeleteProducts ? (
-              <option value="delete">Delete permanently</option>
-            ) : null}
-          </select>
-          <button
-            type="submit"
-            disabled={!hasSelection || isBulkActionPending}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isBulkActionPending
-              ? 'Applying...'
-              : `Apply (${selectedProductIds.length})`}
-          </button>
-        </div>
-      </form>
+      {canManageProducts ? (
+        <form
+          action={bulkActionFormAction}
+          className="mb-3 flex justify-end"
+          onSubmit={(event) => {
+            const formData = new FormData(event.currentTarget);
+            if (formData.get('bulkAction') !== 'delete') return;
+            if (
+              !window.confirm(
+                'Delete selected products permanently? Products with order history will be skipped and should be archived instead.',
+              )
+            ) {
+              event.preventDefault();
+            }
+          }}
+        >
+          {selectedProductIds.map((id) => (
+            <input key={id} type="hidden" name="productIds" value={id} />
+          ))}
+          <div className="flex items-center gap-2">
+            <select
+              name="bulkAction"
+              defaultValue=""
+              disabled={!hasSelection || isBulkActionPending}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="" disabled>
+                Actions
+              </option>
+              <option value="set-active">Set status: Active</option>
+              <option value="set-draft">Set status: Draft</option>
+              <option value="set-archived">Set status: Archived</option>
+              <option value="archive">Archive</option>
+              <option value="unarchive">Unarchive (to draft)</option>
+              {canDeleteProducts ? (
+                <option value="delete">Delete permanently</option>
+              ) : null}
+            </select>
+            <button
+              type="submit"
+              disabled={!hasSelection || isBulkActionPending}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isBulkActionPending
+                ? 'Applying...'
+                : `Apply (${selectedProductIds.length})`}
+            </button>
+          </div>
+        </form>
+      ) : null}
       {bulkActionState.error ? (
         <p className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {bulkActionState.error}
@@ -273,17 +277,19 @@ export default function ProductsListTable({
           <tr>
             <th className="px-3 py-2 align-middle">
               <div className="flex items-center justify-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={(event) =>
-                    setSelectedProductIds(
-                      event.target.checked ? products.map((product) => product.id) : [],
-                    )
-                  }
-                  aria-label="Select all products"
-                  className="h-4 w-4 accent-blue-600"
-                />
+                {canManageProducts ? (
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(event) =>
+                      setSelectedProductIds(
+                        event.target.checked ? products.map((product) => product.id) : [],
+                      )
+                    }
+                    aria-label="Select all products"
+                    className="h-4 w-4 accent-blue-600"
+                  />
+                ) : null}
                 <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                   {selectedProductIds.length}/{products.length}
                 </span>
@@ -310,24 +316,32 @@ export default function ProductsListTable({
             sortedProducts.map((product) => (
               <tr
                 key={product.id}
-                className="cursor-pointer align-top hover:bg-slate-50/70"
-                onClick={() => router.push(`/admin/products/${product.id}/edit`)}
+                className={`align-top hover:bg-slate-50/70 ${
+                  canManageProducts ? 'cursor-pointer' : ''
+                }`}
+                onClick={() => {
+                  if (canManageProducts) {
+                    router.push(`/admin/products/${product.id}/edit`);
+                  }
+                }}
               >
                 <td className="px-3 py-3 align-middle" onClick={(event) => event.stopPropagation()}>
                   <div className="flex items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked={selectedSet.has(product.id)}
-                      onChange={(event) =>
-                        setSelectedProductIds((current) =>
-                          event.target.checked
-                            ? [...current, product.id]
-                            : current.filter((id) => id !== product.id),
-                        )
-                      }
-                      aria-label={`Select ${product.name}`}
-                      className="h-4 w-4 accent-blue-600"
-                    />
+                    {canManageProducts ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedSet.has(product.id)}
+                        onChange={(event) =>
+                          setSelectedProductIds((current) =>
+                            event.target.checked
+                              ? [...current, product.id]
+                              : current.filter((id) => id !== product.id),
+                          )
+                        }
+                        aria-label={`Select ${product.name}`}
+                        className="h-4 w-4 accent-blue-600"
+                      />
+                    ) : null}
                   </div>
                 </td>
                 <td className="px-3 py-3">

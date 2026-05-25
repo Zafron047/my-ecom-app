@@ -111,7 +111,7 @@ export async function createBundleOffer(
   _previousState: BundleOfferFormState,
   formData: FormData,
 ): Promise<BundleOfferFormState> {
-  await requireAdminPermission('/admin/products/bundles', 'products.write');
+  await requireAdminPermission('/admin/products/bundles', 'productCatalog.manage');
 
   try {
     const payload = await getBundlePayload(formData);
@@ -160,7 +160,7 @@ export async function updateBundleOffer(
   _previousState: BundleOfferFormState,
   formData: FormData,
 ): Promise<BundleOfferFormState> {
-  await requireAdminPermission('/admin/products/bundles', 'products.write');
+  await requireAdminPermission('/admin/products/bundles', 'productCatalog.manage');
 
   const bundleId = getString(formData, 'bundleId');
   const intent = getString(formData, 'intent') || 'save';

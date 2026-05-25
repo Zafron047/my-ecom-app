@@ -39,12 +39,12 @@ const adminNavGroups: AdminNavGroup[] = [
       {
         href: '/admin/orders/pos',
         label: 'POS',
-        requiredPermission: 'orders.write',
+        requiredPermission: 'pos.manage',
       },
       {
         href: '/admin/orders/drafts',
         label: 'Drafts',
-        requiredPermission: 'orders.write',
+        requiredPermission: 'orderDrafts.manage',
       },
       {
         href: '/admin/orders/abandoned-checkouts',
@@ -54,7 +54,7 @@ const adminNavGroups: AdminNavGroup[] = [
       {
         href: '/admin/orders/delivery-options',
         label: 'Delivery Options',
-        requiredPermission: 'orders.read',
+        requiredPermission: 'deliveryOptions.manage',
       },
     ],
   },
@@ -69,27 +69,27 @@ const adminNavGroups: AdminNavGroup[] = [
       {
         href: '/admin/products/categories',
         label: 'Categories',
-        requiredPermission: 'products.read',
+        requiredPermission: 'productCatalog.read',
       },
       {
         href: '/admin/products/brands',
         label: 'Brands',
-        requiredPermission: 'products.read',
+        requiredPermission: 'productCatalog.read',
       },
       {
         href: '/admin/products/bundles',
         label: 'Bundle Offers',
-        requiredPermission: 'products.read',
+        requiredPermission: 'productCatalog.read',
       },
       {
         href: '/admin/products/stock',
         label: 'Stock',
-        requiredPermission: 'products.read',
+        requiredPermission: 'inventory.read',
       },
       {
         href: '/admin/products/stock-transfer',
         label: 'Stock Transfers',
-        requiredPermission: 'products.read',
+        requiredPermission: 'stockTransfers.manage',
       },
     ],
   },

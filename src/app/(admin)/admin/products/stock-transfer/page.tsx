@@ -1,7 +1,10 @@
 import { requireAdminPermission } from '@/lib/admin-session';
 
 export default async function AdminProductsStockTransferPage() {
-  await requireAdminPermission('/admin/products/stock-transfer', 'products.read');
+  await requireAdminPermission(
+    '/admin/products/stock-transfer',
+    'stockTransfers.manage',
+  );
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

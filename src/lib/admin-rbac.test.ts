@@ -45,9 +45,31 @@ describe('admin RBAC', () => {
     expect(canAccessPermission('support', 'orders.read')).toBe(false);
     expect(canAccessPermission('support', 'orders.write')).toBe(false);
     expect(canAccessPermission('operator', 'orders.write')).toBe(true);
+    expect(canAccessPermission('operator', 'pos.manage')).toBe(true);
+    expect(canAccessPermission('operator', 'orderDrafts.manage')).toBe(true);
+    expect(canAccessPermission('operator', 'deliveryOptions.manage')).toBe(false);
     expect(canAccessPermission('operator', 'products.write')).toBe(true);
+    expect(canAccessPermission('operator', 'productCatalog.read')).toBe(false);
+    expect(canAccessPermission('operator', 'productCatalog.manage')).toBe(false);
+    expect(canAccessPermission('operator', 'inventory.read')).toBe(true);
+    expect(canAccessPermission('operator', 'stockTransfers.manage')).toBe(false);
     expect(canAccessPermission('operator', 'products.delete')).toBe(false);
+    expect(canAccessPermission('operator', 'customers.read')).toBe(false);
     expect(canAccessPermission('operator', 'purchaseOrders.read')).toBe(false);
+
+    expect(canAccessAdminPath('/admin/products', 'operator')).toBe(true);
+    expect(canAccessAdminPath('/admin/products/new', 'operator')).toBe(true);
+    expect(canAccessAdminPath('/admin/products/categories', 'operator')).toBe(false);
+    expect(canAccessAdminPath('/admin/products/brands', 'operator')).toBe(false);
+    expect(canAccessAdminPath('/admin/products/bundles', 'operator')).toBe(false);
+    expect(canAccessAdminPath('/admin/products/stock', 'operator')).toBe(true);
+    expect(canAccessAdminPath('/admin/products/stock-transfer', 'operator')).toBe(false);
+    expect(canAccessAdminPath('/admin/orders', 'operator')).toBe(true);
+    expect(canAccessAdminPath('/admin/orders/abandoned-checkouts', 'operator')).toBe(true);
+    expect(canAccessAdminPath('/admin/orders/pos', 'operator')).toBe(true);
+    expect(canAccessAdminPath('/admin/orders/drafts', 'operator')).toBe(true);
+    expect(canAccessAdminPath('/admin/orders/delivery-options', 'operator')).toBe(false);
+    expect(canAccessAdminPath('/admin/customers', 'operator')).toBe(false);
   });
 
   it('keeps Manager away from sensitive PO actions', () => {
@@ -58,5 +80,16 @@ describe('admin RBAC', () => {
     expect(canAccessPermission('manager', 'purchaseOrders.payment.manage')).toBe(
       false,
     );
+  });
+
+  it('keeps Manager and Admin access to product catalog and operational order tools', () => {
+    expect(canAccessPermission('manager', 'productCatalog.manage')).toBe(true);
+    expect(canAccessPermission('manager', 'inventory.read')).toBe(true);
+    expect(canAccessPermission('manager', 'stockTransfers.manage')).toBe(true);
+    expect(canAccessPermission('manager', 'pos.manage')).toBe(true);
+    expect(canAccessPermission('manager', 'orderDrafts.manage')).toBe(true);
+    expect(canAccessPermission('manager', 'deliveryOptions.manage')).toBe(true);
+    expect(canAccessPermission('admin', 'productCatalog.manage')).toBe(true);
+    expect(canAccessPermission('admin', 'pos.manage')).toBe(true);
   });
 });

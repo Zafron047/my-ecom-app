@@ -13,7 +13,7 @@ type StockPageProps = {
 export default async function AdminProductsStockPage({
   searchParams,
 }: StockPageProps) {
-  await requireAdminPermission('/admin/products/stock', 'products.read');
+  await requireAdminPermission('/admin/products/stock', 'inventory.read');
 
   const params = await searchParams;
   const query = params.q?.trim() ?? '';

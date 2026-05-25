@@ -61,6 +61,7 @@ export default async function AdminProductsPage({
   searchParams,
 }: ProductsPageProps) {
   const session = await requireAdminPermission('/admin/products', 'products.read');
+  const canManageProducts = canAccessPermission(session.role, 'products.write');
   const canDeleteProducts = canAccessPermission(session.role, 'products.delete');
 
   const params = await searchParams;
@@ -162,15 +163,17 @@ export default async function AdminProductsPage({
             glance.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href="/admin/products/new"
-            aria-label="Add product"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-2xl font-semibold leading-none text-blue-700 shadow-sm transition hover:bg-blue-100"
-          >
-            <span className="relative -top-px leading-none">+</span>
-          </Link>
-        </div>
+        {canManageProducts ? (
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/admin/products/new"
+              aria-label="Add product"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-2xl font-semibold leading-none text-blue-700 shadow-sm transition hover:bg-blue-100"
+            >
+              <span className="relative -top-px leading-none">+</span>
+            </Link>
+          </div>
+        ) : null}
       </div>
 
       <ProductsFilters query={query} status={status ?? ''} />
@@ -239,6 +242,7 @@ export default async function AdminProductsPage({
           };
         })}
         applyProductsBulkActionWithState={applyProductsBulkActionWithState}
+        canManageProducts={canManageProducts}
         canDeleteProducts={canDeleteProducts}
       />
     </section>
