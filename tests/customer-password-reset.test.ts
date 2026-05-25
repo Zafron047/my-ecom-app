@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   hashPassword: vi.fn(),
   hashToken: vi.fn(),
   queryRawUnsafe: vi.fn(),
+  sendCustomerPasswordResetEmail: vi.fn(),
   transaction: vi.fn(),
 }));
 
@@ -25,6 +26,10 @@ vi.mock('@/lib/customer-password-reset', () => ({
 
 vi.mock('@/lib/password-auth', () => ({
   hashPassword: mocks.hashPassword,
+}));
+
+vi.mock('@/lib/password-reset-email', () => ({
+  sendCustomerPasswordResetEmail: mocks.sendCustomerPasswordResetEmail,
 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -61,11 +66,14 @@ describe('customer password reset', () => {
     mocks.hashPassword.mockReset();
     mocks.hashToken.mockReset();
     mocks.queryRawUnsafe.mockReset();
+    mocks.sendCustomerPasswordResetEmail.mockReset();
     mocks.transaction.mockReset();
 
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://bdbuyeasy.com');
     mocks.createExpiry.mockReturnValue(new Date('2999-05-18T13:00:00.000Z'));
     mocks.createToken.mockReturnValue('reset-token');
     mocks.customerFindFirst.mockResolvedValue({
+      email: 'customer@example.test',
       id: 'customer-1',
       passwordHash: 'old-hash',
     });
@@ -74,6 +82,7 @@ describe('customer password reset', () => {
     mocks.executeRawUnsafe.mockResolvedValue(1);
     mocks.hashPassword.mockResolvedValue('new-hash');
     mocks.hashToken.mockReturnValue('reset-token-hash');
+    mocks.sendCustomerPasswordResetEmail.mockResolvedValue({ sent: true });
     mocks.queryRawUnsafe.mockResolvedValue([
       {
         customerId: 'customer-1',
@@ -100,12 +109,9 @@ describe('customer password reset', () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
-      resetLink: 'https://example.test/reset-password/reset-token',
-      success: true,
-    });
+    await expect(response.json()).resolves.toEqual({ success: true });
     expect(mocks.customerFindFirst).toHaveBeenCalledWith({
-      select: { id: true, passwordHash: true },
+      select: { email: true, id: true, passwordHash: true },
       where: { email: 'customer@example.test', isBlocked: false },
     });
     expect(mocks.executeRawUnsafe).toHaveBeenCalledWith(
@@ -116,6 +122,11 @@ describe('customer password reset', () => {
       expect.any(Date),
       expect.any(Date),
     );
+    expect(mocks.sendCustomerPasswordResetEmail).toHaveBeenCalledWith({
+      expiresAt: new Date('2999-05-18T13:00:00.000Z'),
+      resetLink: 'https://bdbuyeasy.com/reset-password/reset-token',
+      to: 'customer@example.test',
+    });
   });
 
   it('returns a generic success without creating a token for unknown accounts', async () => {

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 
 export const ADMIN_SESSION_COOKIE = 'admin_session';
 export const ADMIN_ROLE_COOKIE = 'admin_role';
-export const ADMIN_PASSWORD_MIN_LENGTH = 12;
+export const ADMIN_PASSWORD_MIN_LENGTH = 8;
 
 export function createSessionToken(): string {
   return randomBytes(32).toString('hex');

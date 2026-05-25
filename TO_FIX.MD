@@ -1,25 +1,75 @@
-## Admin/ Order details
+## Suggested Permission Policy
 
-### Fix Now:
-- [x] Fix: Upon mobile no entry form is prefilling from db.
-- [x] Customer Details Thana Upozila list is incorrect
-- [x] Do not show Bundle offers on product line in the checkout anymore
-- [x] Admin / Order edit
-- [x] Discount field: Has an existing 0 that changes input amount. Make it a non decimal field like qty
-- [x] Same in Paid field. Make it a non decimal field like qty.
-- [x] Admin / Product Variant choose img selector should be a draw up list not drop down
-- [x] Admin / PO  Goods Receive section: submit btn requires all item lines receive field input. While Already Full Received lines Should be disabled.
-- [x] Fix: img wise variant change
+SupaAdmin:
+- Full access to everything.
+- Invisible supaadmin info doesn't appear in ui.
 
-### Update order management
-- [x] On Order status change Show a small note input field above the btns to add note in the timeline
-- [x] Change: Product Search list increase width, Change z index List is going behind below contents.
-- [x] Fix: Customer Details Pencil Icon. Onclick Page expands to edit. Hide Icon in edit mode.
-- [x] Remove: Division from Order management Customer Details and watch if selecting district auto selects and preseve division or not?
-- [x] Dhaka District Thana Upozilla should show as like as the checkout form Dhaka List
+Admin:
+- Admin can do everything
+except:
+  - View / manage Admin Access, Backup
 
-- [x] Add: Order Return process.
-- [x] Add: Refund process
+Manager:
+- Can do everything
+except:
+  - View settings
+  - Upgrade draft PO to -> PO
+  - View PO item cost line
+  - View / update PO Payment section
 
-### Later
-- [ ] Implement: RBAC
+Operator:
+- Can view: Products/, Orders/SalesOrders, orders/abandoned-checkouts,
+- Can Manage: CRU product, SalesOrder
+
+Support:
+- Can view Products, Stock, Orders, Abandoned Checkouts
+- Can manage Order
+
+## To Do Tomorrow
+
+## Implement Admin Password reset feature
+- log in to each role and test RBAC
+- [ ] SupaAdmin
+- [ ] Admin
+- [ ] Manager
+- [ ] Operator
+
+### Admin Auth
+- [ ] Reset Password with Resend
+
+## Pixel
+- [ ] Merge Pixel Branch with dev
+- [ ] Integrate Pixel with Meta
+- [ ] Ensure Convertion API is on
+
+### API
+- [ ] Expose Public API for Products
+
+### Invoice Template
+- [ ] BDBuyEasy
+- [ ] WoWMall
+- [ ] Ensure resel orders are print with relevant invoice templates with logo on supplier webapp
+
+## WoWMall
+- [ ] Create WoWMall App Repo and domain deploy
+- [ ] Fetch Products from Buy Easy
+- [ ] Ensure no latenency
+- [ ] Ensure Products display as like bdbuyeasy
+- [ ] Sales orders go to bdbuyeasy to fullfill
+- [ ] Implement RedX API
+- [ ] Integrate Pixel and Convesion API with Meta
+
+- Later:
+- [ ] Create Customer service Chatbot
+- [ ] Connect chatbot to meta messenger
+
+### Page
+- [ ] Redesign WoWMall us Page to WoWMallxyz / wowmall.xyz
+
+### Resell Orders
+- [ ] Ensure Resell orders has clear headers WoWMall Order
+- [ ] Ensure forwarded orders to supplier has clear Header FulFiller: BDBuyEasy
+
+## Launch AD
+- [ ] BDBuyEasy
+- [ ] WoWMall

@@ -19,6 +19,17 @@ function getOAuthErrorMessage(error: string | null) {
   return 'Social sign in failed. Please try again or use your password.';
 }
 
+async function readLoginResponse(response: Response) {
+  try {
+    return (await response.json()) as {
+      error?: string;
+      redirectTo?: string;
+    };
+  } catch {
+    return {};
+  }
+}
+
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,6 +41,11 @@ function LoginContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const nextPath = searchParams.get('next') ?? '/';
+  const isAdminLogin = nextPath.startsWith('/admin');
+  const forgotPasswordHref = isAdminLogin
+    ? '/forgot-password?account=admin'
+    : '/forgot-password';
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -50,8 +66,6 @@ function LoginContent() {
     const timeoutId = window.setTimeout(() => controller.abort(), 15000);
 
     try {
-      const nextPath = searchParams.get('next') ?? '/';
-      const isAdminLogin = nextPath.startsWith('/admin');
       const endpoint = isAdminLogin ? '/api/admin/login' : '/api/login';
       const payload = isAdminLogin
         ? {
@@ -76,10 +90,7 @@ function LoginContent() {
         body: JSON.stringify(payload),
       });
 
-      const data = (await response.json()) as {
-        error?: string;
-        redirectTo?: string;
-      };
+      const data = await readLoginResponse(response);
 
       if (!response.ok) {
         setError(data.error ?? 'Login failed. Please try again.');
@@ -94,7 +105,7 @@ function LoginContent() {
         return;
       }
 
-      setError('Login failed. Please check your connection and try again.');
+      setError('Login failed. Please try again.');
     } finally {
       window.clearTimeout(timeoutId);
       setIsSubmitting(false);
@@ -150,7 +161,7 @@ function LoginContent() {
               >
                 Password
               </label>
-              <Link href="/forgot-password" className="text-xs text-blue-600 hover:text-blue-700">
+              <Link href={forgotPasswordHref} className="text-xs text-blue-600 hover:text-blue-700">
                 Forgot?
               </Link>
             </div>

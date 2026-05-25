@@ -1,14 +1,16 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
 export default function CustomerForgotPasswordForm() {
+  const searchParams = useSearchParams();
+  const isAdminReset = searchParams.get('account') === 'admin';
   const [identifier, setIdentifier] = useState('');
   const [feedback, setFeedback] = useState<{
     kind: 'error' | 'success';
     message: string;
-    resetLink?: string;
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -18,14 +20,20 @@ export default function CustomerForgotPasswordForm() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/password-reset/request', {
-        body: JSON.stringify({ identifier }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
-      });
+      const response = await fetch(
+        isAdminReset
+          ? '/api/admin/password-reset/request'
+          : '/api/password-reset/request',
+        {
+          body: JSON.stringify(
+            isAdminReset ? { email: identifier } : { identifier },
+          ),
+          headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+        },
+      );
       const payload = (await response.json()) as {
         error?: string;
-        resetLink?: string;
         success?: boolean;
       };
 
@@ -40,8 +48,9 @@ export default function CustomerForgotPasswordForm() {
       setFeedback({
         kind: 'success',
         message:
-          'If an account matches that phone or email, a password reset link will be available shortly.',
-        resetLink: payload.resetLink,
+          isAdminReset
+            ? 'If an active admin account matches that email, a password reset link will be emailed shortly.'
+            : 'If an account matches that phone or email, a password reset link will be emailed shortly.',
       });
     } catch {
       setFeedback({
@@ -58,7 +67,9 @@ export default function CustomerForgotPasswordForm() {
       <div className="mb-6 text-center">
         <h1 className="text-2xl font-bold text-gray-900">Reset Password</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Enter your phone or email to get a reset link.
+          {isAdminReset
+            ? 'Enter your admin email to get a reset link.'
+            : 'Enter your phone or email to get a reset link.'}
         </p>
       </div>
 
@@ -71,24 +82,16 @@ export default function CustomerForgotPasswordForm() {
           }`}
         >
           <p>{feedback.message}</p>
-          {feedback.resetLink ? (
-            <Link
-              href={feedback.resetLink}
-              className="mt-2 inline-flex font-semibold underline"
-            >
-              Open reset link
-            </Link>
-          ) : null}
         </div>
       ) : null}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <label className="block">
           <span className="mb-2 block text-sm font-medium text-gray-900">
-            Phone or email
+            {isAdminReset ? 'Admin email' : 'Phone or email'}
           </span>
           <input
-            type="text"
+            type={isAdminReset ? 'email' : 'text'}
             value={identifier}
             onChange={(event) => setIdentifier(event.target.value)}
             autoComplete="username"

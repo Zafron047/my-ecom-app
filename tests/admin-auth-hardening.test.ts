@@ -24,6 +24,7 @@ describe('admin auth hardening helpers', () => {
 
   it('enforces the admin password floor', () => {
     expect(validateAdminPassword('short1')).toMatch(/at least/);
+    expect(validateAdminPassword('pass1234')).toBeNull();
     expect(validateAdminPassword('longbutwithoutnumber')).toMatch(/letter and one number/);
     expect(validateAdminPassword('strong-password-123')).toBeNull();
   });

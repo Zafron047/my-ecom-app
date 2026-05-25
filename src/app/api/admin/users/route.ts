@@ -8,6 +8,8 @@ import {
 import { normalizeAdminEmail, normalizeAdminPhone } from '@/lib/admin-auth';
 import { requireAdminApiPermission } from '@/lib/admin-api-auth';
 import { logAdminAudit } from '@/lib/admin-audit';
+import { getPublicAppOrigin } from '@/lib/app-url';
+import { sendAdminPasswordResetEmail } from '@/lib/password-reset-email';
 import {
   type AdminRole,
   adminRoleLabels,
@@ -138,6 +140,16 @@ export async function POST(request: Request) {
       request,
     });
 
+    const resetLink = createAdminPasswordResetUrl(
+      getPublicAppOrigin(request.url),
+      resetToken,
+    );
+    const mailResult = await sendAdminPasswordResetEmail({
+      expiresAt: resetExpiresAt,
+      resetLink,
+      to: created.email,
+    });
+
     await logAdminAudit({
       action: 'update',
       actorAdminId: actor.id,
@@ -145,6 +157,7 @@ export async function POST(request: Request) {
       entityType: 'admin_user_password_reset',
       message: `Password setup link created for ${created.email}.`,
       metadata: {
+        emailSent: mailResult.sent,
         expiresAt: resetExpiresAt.toISOString(),
         reason: 'new_admin_user',
         targetEmail: created.email,
@@ -156,7 +169,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         resetExpiresAt: resetExpiresAt.toISOString(),
-        resetLink: createAdminPasswordResetUrl(request.url, resetToken),
+        emailSent: mailResult.sent,
         user: {
           createdAt: created.createdAt.toISOString(),
           email: created.email,

@@ -46,12 +46,6 @@ type RowBusyState = {
   isUpdatingRole: boolean;
 };
 
-type ResetLinkState = {
-  email: string;
-  resetExpiresAt: string;
-  resetLink: string;
-};
-
 function formatDate(value: string | null): string {
   if (!value) return 'Never';
   return new Date(value).toLocaleString();
@@ -72,7 +66,6 @@ export default function ManageRolesPanel({
     kind: 'error' | 'success';
     message: string;
   } | null>(null);
-  const [resetLink, setResetLink] = useState<ResetLinkState | null>(null);
   const [createForm, setCreateForm] = useState({
     email: '',
     name: '',
@@ -140,7 +133,6 @@ export default function ManageRolesPanel({
   async function handleCreateUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFeedback(null);
-    setResetLink(null);
     setIsCreating(true);
 
     try {
@@ -153,13 +145,13 @@ export default function ManageRolesPanel({
       });
 
       const data = (await response.json()) as {
+        emailSent?: boolean;
         error?: string;
         resetExpiresAt?: string;
-        resetLink?: string;
         user?: ManageRolesUser;
       };
 
-      if (!response.ok || !data.user || !data.resetLink || !data.resetExpiresAt) {
+      if (!response.ok || !data.user || !data.resetExpiresAt) {
         throw new Error(data.error ?? 'Failed to create admin user.');
       }
 
@@ -170,14 +162,11 @@ export default function ManageRolesPanel({
         [createdUser.id]: createdUser.role,
       }));
       setCreateForm({ email: '', name: '', phone: '', role: 'support' });
-      setResetLink({
-        email: createdUser.email,
-        resetExpiresAt: data.resetExpiresAt,
-        resetLink: data.resetLink,
-      });
       setFeedback({
         kind: 'success',
-        message: `Created ${createdUser.email}.`,
+        message: data.emailSent
+          ? `Created ${createdUser.email} and emailed the setup link.`
+          : `Created ${createdUser.email}.`,
       });
     } catch (error) {
       setFeedback({
@@ -192,7 +181,6 @@ export default function ManageRolesPanel({
 
   async function handleRoleUpdate(userId: string) {
     setFeedback(null);
-    setResetLink(null);
     const role = pendingRole[userId];
     if (!role) return;
 
@@ -215,7 +203,6 @@ export default function ManageRolesPanel({
 
   async function handleToggleActive(userId: string, isActive: boolean) {
     setFeedback(null);
-    setResetLink(null);
 
     setRowBusy(userId, { isTogglingActive: true });
     try {
@@ -236,7 +223,6 @@ export default function ManageRolesPanel({
 
   async function handlePasswordReset(user: ManageRolesUser) {
     setFeedback(null);
-    setResetLink(null);
     setRowBusy(user.id, { isResettingPassword: true });
 
     try {
@@ -244,12 +230,12 @@ export default function ManageRolesPanel({
         method: 'POST',
       });
       const data = (await response.json()) as {
+        emailSent?: boolean;
         error?: string;
         resetExpiresAt?: string;
-        resetLink?: string;
       };
 
-      if (!response.ok || !data.resetLink || !data.resetExpiresAt) {
+      if (!response.ok || !data.resetExpiresAt) {
         throw new Error(data.error ?? 'Failed to create reset link.');
       }
 
@@ -258,14 +244,11 @@ export default function ManageRolesPanel({
           row.id === user.id ? { ...row, mustResetPassword: true } : row,
         ),
       );
-      setResetLink({
-        email: user.email,
-        resetExpiresAt: data.resetExpiresAt,
-        resetLink: data.resetLink,
-      });
       setFeedback({
         kind: 'success',
-        message: `Created password reset link for ${user.email}.`,
+        message: data.emailSent
+          ? `Sent password reset email to ${user.email}.`
+          : `Created password reset link for ${user.email}.`,
       });
     } catch (error) {
       setFeedback({
@@ -279,7 +262,6 @@ export default function ManageRolesPanel({
 
   async function handleRevokeSessions(user: ManageRolesUser) {
     setFeedback(null);
-    setResetLink(null);
     setRowBusy(user.id, { isRevokingSessions: true });
 
     try {
@@ -310,23 +292,6 @@ export default function ManageRolesPanel({
     }
   }
 
-  async function handleCopyResetLink() {
-    if (!resetLink) return;
-
-    try {
-      await navigator.clipboard.writeText(resetLink.resetLink);
-      setFeedback({
-        kind: 'success',
-        message: `Copied reset link for ${resetLink.email}.`,
-      });
-    } catch {
-      setFeedback({
-        kind: 'error',
-        message: 'Could not copy the reset link from this browser.',
-      });
-    }
-  }
-
   return (
     <section className="space-y-4">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -346,31 +311,6 @@ export default function ManageRolesPanel({
             }`}
           >
             {feedback.message}
-          </div>
-        )}
-
-        {resetLink && (
-          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <p className="text-sm font-semibold text-amber-900">
-              One-time reset link for {resetLink.email}
-            </p>
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-              <input
-                readOnly
-                value={resetLink.resetLink}
-                className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs text-slate-700"
-              />
-              <button
-                type="button"
-                onClick={handleCopyResetLink}
-                className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
-              >
-                Copy
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-amber-800">
-              Expires {formatDate(resetLink.resetExpiresAt)}.
-            </p>
           </div>
         )}
 
