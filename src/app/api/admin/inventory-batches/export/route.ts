@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireAdminApiRole } from '@/lib/admin-api-auth';
+import { requireAdminApiPermission } from '@/lib/admin-api-auth';
 import { prisma } from '@/lib/prisma';
 
 function escapeCsvValue(value: string) {
@@ -19,7 +19,7 @@ function toCsvLine(values: Array<string | number | null>) {
 }
 
 export async function GET() {
-  const auth = await requireAdminApiRole(['admin']);
+  const auth = await requireAdminApiPermission('products.export');
   if (auth.response) return auth.response;
 
   const batches = await prisma.inventoryBatch.findMany({

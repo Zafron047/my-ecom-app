@@ -16,12 +16,12 @@ type PurchaseRecordLine = {
   batchNumber: string;
   id: string;
   imagePath: string | null;
-  lineTotal: number;
+  lineTotal: number | null;
   orderedQuantity: number;
   productName: string;
   receivedQuantity: number;
   sku: string;
-  unitCost: number;
+  unitCost: number | null;
   variantLabel: string;
 };
 
@@ -38,12 +38,14 @@ type PurchaseRecord = {
   referenceNo: string;
   status: string;
   supplierName: string;
-  totalCost: number;
+  totalCost: number | null;
   totalQuantity: number;
   timeline: PurchaseRecordTimelineEntry[];
 };
 
 type PurchaseRecordFormProps = {
+  canManagePayment: boolean;
+  canViewCost: boolean;
   cancelAction: (formData: FormData) => Promise<PurchaseRecordActionState>;
   deleteNoteAction: (formData: FormData) => Promise<PurchaseRecordActionState>;
   editNoteAction: (formData: FormData) => Promise<PurchaseRecordActionState>;
@@ -263,6 +265,8 @@ function getPreviewPaidAmountForStatus(input: {
 }
 
 export default function PurchaseRecordForm({
+  canManagePayment,
+  canViewCost,
   cancelAction,
   deleteNoteAction,
   editNoteAction,
@@ -323,13 +327,14 @@ export default function PurchaseRecordForm({
     new Map(record.lines.map((line) => [line.id, ''])),
   );
 
+  const recordTotalCost = record.totalCost ?? 0;
   const displayPayment = isEditingPayment
     ? {
         paidAmount: getPreviewPaidAmountForStatus({
           paymentAmount,
           paymentStatus,
           savedPayment,
-          totalCost: record.totalCost,
+          totalCost: recordTotalCost,
         }),
         paymentStatus,
       }
@@ -337,19 +342,19 @@ export default function PurchaseRecordForm({
         paidAmount: getSavedPaidAmountForStatus({
           paymentStatus: savedPayment.paymentStatus,
           savedPaidAmount: savedPayment.paidAmount,
-          totalCost: record.totalCost,
+          totalCost: recordTotalCost,
         }),
         paymentStatus: savedPayment.paymentStatus,
       };
   const savedPaidAmount = getSavedPaidAmountForStatus({
     paymentStatus: savedPayment.paymentStatus,
     savedPaidAmount: savedPayment.paidAmount,
-    totalCost: record.totalCost,
+    totalCost: recordTotalCost,
   });
-  const payableAmount = Math.max(0, record.totalCost - displayPayment.paidAmount);
+  const payableAmount = Math.max(0, recordTotalCost - displayPayment.paidAmount);
   const paymentCompletionAmount = getPaymentCompletionAmount({
     savedPayment,
-    totalCost: record.totalCost,
+    totalCost: recordTotalCost,
   });
   const trimmedPaymentAmount = paymentAmount.trim();
   const numericPaymentAmount = Number(paymentAmount);
@@ -372,13 +377,13 @@ export default function PurchaseRecordForm({
     (!Number.isFinite(numericPaymentAmount) ||
       numericPaymentAmount < 0 ||
       numericPaymentAmount >
-        (isSettingPartialPaidAmount ? record.totalCost : paymentCompletionAmount));
+        (isSettingPartialPaidAmount ? recordTotalCost : paymentCompletionAmount));
   const isPartialPaymentAmountIncomplete =
     isPartialPaymentSelected &&
     (!hasPartialPaymentAmount ||
       !Number.isFinite(numericPaymentAmount) ||
       numericPaymentAmount <= 0 ||
-      nextPartialPaidAmount >= record.totalCost);
+      nextPartialPaidAmount >= recordTotalCost);
   const isPaymentAmountInvalid =
     isEditingPayment && hasPaymentAmountInputError;
   const isPaymentMethodDisabled =
@@ -424,7 +429,8 @@ export default function PurchaseRecordForm({
     !isCancellingPo &&
     !isEditingPayment &&
     !isEditingReceive &&
-    !isRecordLocked;
+    !isRecordLocked &&
+    canManagePayment;
   const canTogglePaymentEdit =
     !isSavingDetails &&
     !isSavingPayment &&
@@ -725,7 +731,7 @@ export default function PurchaseRecordForm({
 
     const numericPaymentAmount =
       paymentStatus === PURCHASE_PAYMENT_STATUS.PAID
-        ? record.totalCost
+        ? recordTotalCost
         : paymentStatus === PURCHASE_PAYMENT_STATUS.PARTIAL_PAID
           ? Number(paymentAmount)
           : 0;
@@ -908,7 +914,8 @@ export default function PurchaseRecordForm({
           <div>
             <h3 className="text-sm font-semibold text-slate-900">Product List</h3>
             <p className="mt-1 text-xs font-medium text-slate-500">
-              {record.totalQuantity} units / {formatMoney(record.totalCost)}
+              {record.totalQuantity} units
+              {canViewCost ? ` / ${formatMoney(recordTotalCost)}` : ''}
             </p>
           </div>
           <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500">
@@ -954,18 +961,28 @@ export default function PurchaseRecordForm({
                       </p>
                     </div>
                     <div>
-                      <p className="text-[11px] font-semibold text-slate-500">
-                        Unit Cost
-                      </p>
-                      <p className="text-sm font-semibold text-slate-900">
-                        {formatMoney(line.unitCost)}
-                      </p>
+                      {canViewCost ? (
+                        <>
+                          <p className="text-[11px] font-semibold text-slate-500">
+                            Unit Cost
+                          </p>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {formatMoney(line.unitCost ?? 0)}
+                          </p>
+                        </>
+                      ) : null}
                     </div>
                     <div className="md:text-right">
-                      <p className="text-[11px] font-semibold text-slate-500">Total</p>
-                      <p className="text-sm font-semibold text-slate-900">
-                        {formatMoney(line.lineTotal)}
-                      </p>
+                      {canViewCost ? (
+                        <>
+                          <p className="text-[11px] font-semibold text-slate-500">
+                            Total
+                          </p>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {formatMoney(line.lineTotal ?? 0)}
+                          </p>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -975,6 +992,7 @@ export default function PurchaseRecordForm({
         ) : null}
       </section>
 
+      {canManagePayment ? (
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-stretch">
           <button
@@ -1101,7 +1119,7 @@ export default function PurchaseRecordForm({
                     paymentStatus === PURCHASE_PAYMENT_STATUS.PAID
                       ? getPaymentCompletionAmount({
                           savedPayment,
-                          totalCost: record.totalCost,
+                          totalCost: recordTotalCost,
                         })
                       : isEditingPayment
                         ? paymentAmount
@@ -1132,6 +1150,7 @@ export default function PurchaseRecordForm({
           </div>
         ) : null}
       </section>
+      ) : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">

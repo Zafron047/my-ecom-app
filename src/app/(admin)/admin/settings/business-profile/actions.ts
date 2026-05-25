@@ -3,7 +3,7 @@
 import { revalidatePath, revalidateTag } from 'next/cache';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import type { BusinessProfileActionState } from '@/components/admin/BusinessProfileFormShell';
 
@@ -296,7 +296,7 @@ async function upsertBusinessProfileWithRawSql(data: BusinessProfileData) {
 }
 
 export async function saveBusinessProfile(formData: FormData) {
-  await requireAdminRole('/admin/settings/business-profile', ['admin']);
+  await requireAdminPermission('/admin/settings/business-profile', 'settings.manage');
 
   const businessName = getString(formData, 'businessName');
   if (!businessName) {
@@ -370,7 +370,7 @@ export async function saveBusinessProfileWithState(
 }
 
 export async function saveBusinessProfileImage(formData: FormData) {
-  await requireAdminRole('/admin/settings/business-profile', ['admin']);
+  await requireAdminPermission('/admin/settings/business-profile', 'settings.manage');
 
   const imageSlot = getString(formData, 'businessImageSlot');
   if (!['banner', 'logo', 'metadata'].includes(imageSlot)) {
@@ -517,7 +517,7 @@ async function deleteBusinessImageById(imageId: string) {
 }
 
 export async function deleteBusinessImage(imageId: string, formData: FormData) {
-  await requireAdminRole('/admin/settings/business-profile', ['admin']);
+  await requireAdminPermission('/admin/settings/business-profile', 'settings.manage');
   void formData;
 
   await deleteBusinessImageById(imageId);

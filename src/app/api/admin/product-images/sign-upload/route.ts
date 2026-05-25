@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAdminSession } from '@/lib/admin-session';
+import { requireAdminApiPermission } from '@/lib/admin-api-auth';
 import { withPrivateNoStoreHeaders } from '@/lib/http-cache';
 import {
   checkDistributedRateLimit,
@@ -23,16 +23,12 @@ const SIGN_UPLOAD_RATE_LIMIT = {
 };
 
 export async function POST(request: Request) {
-  const session = await getAdminSession();
-  if (!session) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      withPrivateNoStoreHeaders({ status: 401 }),
-    );
-  }
+  const auth = await requireAdminApiPermission('productImages.upload');
+  if (auth.response) return auth.response;
+  const { actor } = auth;
 
   const rateLimit = await checkDistributedRateLimit({
-    key: `admin:product-image-sign-upload:${session.id}:${getClientIp(request)}`,
+    key: `admin:product-image-sign-upload:${actor.id}:${getClientIp(request)}`,
     ...SIGN_UPLOAD_RATE_LIMIT,
   });
   if (!rateLimit.allowed) {

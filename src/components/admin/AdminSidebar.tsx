@@ -5,13 +5,13 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useAdminNavigationGuard } from '@/components/admin/AdminNavigationGuard';
-import { type AdminRole } from '@/lib/admin-rbac';
+import { type AdminPermission, type AdminRole, canAccessPermission } from '@/lib/admin-rbac';
 
 type AdminNavItem = {
   exactMatch?: boolean;
   href: string;
   label: string;
-  allowedRoles: AdminRole[];
+  requiredPermission: AdminPermission;
 };
 
 type AdminNavGroup = {
@@ -25,7 +25,7 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin',
       label: 'Dashboard',
-      allowedRoles: ['support', 'manager', 'admin'],
+      requiredPermission: 'dashboard.read',
     },
   },
   {
@@ -33,28 +33,28 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/orders',
       label: 'Orders',
-      allowedRoles: ['support', 'manager', 'admin'],
+      requiredPermission: 'orders.read',
     },
     children: [
       {
         href: '/admin/orders/pos',
         label: 'POS',
-        allowedRoles: ['support', 'manager', 'admin'],
+        requiredPermission: 'orders.write',
       },
       {
         href: '/admin/orders/drafts',
         label: 'Drafts',
-        allowedRoles: ['support', 'manager', 'admin'],
+        requiredPermission: 'orders.write',
       },
       {
         href: '/admin/orders/abandoned-checkouts',
         label: 'Abandoned Checkouts',
-        allowedRoles: ['support', 'manager', 'admin'],
+        requiredPermission: 'orders.read',
       },
       {
         href: '/admin/orders/delivery-options',
         label: 'Delivery Options',
-        allowedRoles: ['support', 'manager', 'admin'],
+        requiredPermission: 'orders.read',
       },
     ],
   },
@@ -63,33 +63,33 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/products',
       label: 'Products',
-      allowedRoles: ['manager', 'admin'],
+      requiredPermission: 'products.read',
     },
     children: [
       {
         href: '/admin/products/categories',
         label: 'Categories',
-        allowedRoles: ['manager', 'admin'],
+        requiredPermission: 'products.read',
       },
       {
         href: '/admin/products/brands',
         label: 'Brands',
-        allowedRoles: ['manager', 'admin'],
+        requiredPermission: 'products.read',
       },
       {
         href: '/admin/products/bundles',
         label: 'Bundle Offers',
-        allowedRoles: ['manager', 'admin'],
+        requiredPermission: 'products.read',
       },
       {
         href: '/admin/products/stock',
         label: 'Stock',
-        allowedRoles: ['manager', 'admin'],
+        requiredPermission: 'products.read',
       },
       {
         href: '/admin/products/stock-transfer',
         label: 'Stock Transfers',
-        allowedRoles: ['manager', 'admin'],
+        requiredPermission: 'products.read',
       },
     ],
   },
@@ -98,18 +98,18 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: false,
       href: '/admin/purchase-order',
       label: 'Purchase Orders',
-      allowedRoles: ['manager', 'admin'],
+      requiredPermission: 'purchaseOrders.read',
     },
     children: [
       {
         href: '/admin/purchase-order/draft',
         label: 'PO Draft',
-        allowedRoles: ['manager', 'admin'],
+        requiredPermission: 'purchaseOrders.write',
       },
       {
         href: '/admin/purchase-order/closed',
         label: 'Closed',
-        allowedRoles: ['manager', 'admin'],
+        requiredPermission: 'purchaseOrders.read',
       },
     ],
   },
@@ -118,7 +118,7 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/customers',
       label: 'Customers',
-      allowedRoles: ['support', 'manager', 'admin'],
+      requiredPermission: 'customers.read',
     },
   },
   {
@@ -126,18 +126,18 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/accounting',
       label: 'Accounting',
-      allowedRoles: ['manager', 'admin'],
+      requiredPermission: 'accounting.read',
     },
     children: [
       {
         href: '/admin/accounting/expenses',
         label: 'Expenses',
-        allowedRoles: ['manager', 'admin'],
+        requiredPermission: 'accounting.read',
       },
       {
         href: '/admin/accounting/pl',
         label: 'Profit / Loss',
-        allowedRoles: ['manager', 'admin'],
+        requiredPermission: 'accounting.read',
       },
     ],
   },
@@ -146,33 +146,33 @@ const adminNavGroups: AdminNavGroup[] = [
       exactMatch: true,
       href: '/admin/settings',
       label: 'Settings',
-      allowedRoles: ['admin'],
+      requiredPermission: 'settings.manage',
     },
     children: [
       {
         href: '/admin/settings/manage-roles',
         label: 'Admin Access',
-        allowedRoles: ['admin'],
+        requiredPermission: 'adminUsers.manage',
       },
       {
         href: '/admin/settings/business-profile',
         label: 'Business Profile',
-        allowedRoles: ['admin'],
+        requiredPermission: 'settings.manage',
       },
       {
         href: '/admin/settings/ui',
         label: 'UI Management',
-        allowedRoles: ['admin'],
+        requiredPermission: 'settings.manage',
       },
       {
         href: '/admin/settings/homepage-sections',
         label: 'Homepage Sections',
-        allowedRoles: ['admin'],
+        requiredPermission: 'settings.manage',
       },
       {
         href: '/admin/settings/backup',
         label: 'Backup',
-        allowedRoles: ['admin'],
+        requiredPermission: 'backups.manage',
       },
     ],
   },
@@ -215,7 +215,7 @@ export default function AdminSidebar({ isOpen, onClose, role }: AdminSidebarProp
   const sidebarNavigation = (
     <nav className="flex flex-col gap-1">
       {adminNavGroups
-        .filter((group) => group.parent.allowedRoles.includes(role))
+        .filter((group) => canAccessPermission(role, group.parent.requiredPermission))
         .map((group) => {
           const childActive = Boolean(
             group.children?.some(
@@ -277,7 +277,7 @@ export default function AdminSidebar({ isOpen, onClose, role }: AdminSidebarProp
                   >
                     <div className="space-y-0.5 pt-0.5">
                       {group.children?.map((item) => {
-                        if (!item.allowedRoles.includes(role)) return null;
+                        if (!canAccessPermission(role, item.requiredPermission)) return null;
 
                         const isActive =
                           pathname === item.href ||

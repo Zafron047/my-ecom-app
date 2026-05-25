@@ -26,6 +26,8 @@ type PurchaseVariantOption = {
 };
 
 type PurchaseOrderFormProps = {
+  canSubmitRecord: boolean;
+  canViewCost: boolean;
   initialDraft: PurchaseOrderDraft | null;
   recordAction: (
     previousState: { error?: string; message?: string },
@@ -232,6 +234,8 @@ function getDraftSaveBlockReason(input: {
 }
 
 export default function PurchaseOrderForm({
+  canSubmitRecord: canSubmitRecordPermission,
+  canViewCost,
   initialDraft,
   recordAction,
   saveDraftAction,
@@ -361,7 +365,7 @@ export default function PurchaseOrderForm({
   const draftSaveBlockReason = getDraftSaveBlockReason({
     lines,
   });
-  const canSubmitRecord = !recordSubmitBlockReason;
+  const canSubmitRecord = canSubmitRecordPermission && !recordSubmitBlockReason;
   const isSubmitPrimary = primaryAction === 'submit';
   const hasDraftContent =
     lines.length > 0 ||
@@ -818,7 +822,13 @@ export default function PurchaseOrderForm({
                             key={line.id}
                             className="rounded-xl border border-slate-200 bg-slate-50 p-3"
                           >
-                            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_110px_150px_150px_44px] md:items-start">
+                            <div
+                              className={`grid gap-3 md:items-start ${
+                                canViewCost
+                                  ? 'md:grid-cols-[minmax(0,1fr)_110px_150px_150px_44px]'
+                                  : 'md:grid-cols-[minmax(0,1fr)_110px_150px_44px]'
+                              }`}
+                            >
                               <div
                                 data-variant-picker-root
                                 className="relative space-y-1.5 text-xs font-semibold text-slate-600"
@@ -933,19 +943,21 @@ export default function PurchaseOrderForm({
                                   className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-blue-300"
                                 />
                               </label>
-                              <label className="mb-0 space-y-1.5 text-xs font-semibold text-slate-600">
-                                <span>Unit Cost</span>
-                                <input
-                                  name="unitCost"
-                                  inputMode="decimal"
-                                  required
-                                  value={line.unitCost}
-                                  onChange={(event) =>
-                                    updateLine(line.id, { unitCost: event.target.value })
-                                  }
-                                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-blue-300"
-                                />
-                              </label>
+                              {canViewCost ? (
+                                <label className="mb-0 space-y-1.5 text-xs font-semibold text-slate-600">
+                                  <span>Unit Cost</span>
+                                  <input
+                                    name="unitCost"
+                                    inputMode="decimal"
+                                    required
+                                    value={line.unitCost}
+                                    onChange={(event) =>
+                                      updateLine(line.id, { unitCost: event.target.value })
+                                    }
+                                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-blue-300"
+                                  />
+                                </label>
+                              ) : null}
                               <button
                                 type="button"
                                 aria-label={`Remove ${group.product.name} variant ${index + 1}`}
@@ -955,7 +967,7 @@ export default function PurchaseOrderForm({
                                 <TrashIcon />
                               </button>
                             </div>
-                            {selectedVariant ? (
+                            {selectedVariant && canViewCost ? (
                               <div className="mt-1.5 text-[11px] font-medium text-slate-500">
                                 {selectedVariant.currentFifoCost
                                   ? `FIFO cost ${selectedVariant.currentFifoCost}`
@@ -1023,10 +1035,16 @@ export default function PurchaseOrderForm({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3">
         <div className="text-sm text-slate-600">
           <span className="font-semibold text-slate-900">{totalQuantity}</span> units /
-          <span className="ml-1 font-semibold text-slate-900">
-            {totalCost.toFixed(2)}
-          </span>{' '}
-          total cost
+          {canViewCost ? (
+            <>
+              <span className="ml-1 font-semibold text-slate-900">
+                {totalCost.toFixed(2)}
+              </span>{' '}
+              total cost
+            </>
+          ) : (
+            <span className="ml-1 font-semibold text-slate-900">cost hidden</span>
+          )}
           {draftMessage ? (
             <span className="ml-2 text-xs font-semibold text-emerald-700">
               {draftMessage}
@@ -1090,33 +1108,35 @@ export default function PurchaseOrderForm({
               className="absolute bottom-[calc(100%+8px)] left-0 z-20 rounded-xl shadow-sm"
               style={{ width: primaryActionButtonRef.current?.offsetWidth }}
             >
-              <button
-                type="button"
-                role="menuitem"
-                disabled={
-                  isSubmitPrimary
-                    ? !canSaveDraft || isPending || isDraftPending
-                    : !canSubmitRecord || isPending || isDraftPending
-                }
-                title={
-                  isSubmitPrimary
-                    ? draftSaveBlockReason || undefined
-                    : recordSubmitBlockReason || undefined
-                }
-                onClick={() => {
-                  setPrimaryAction(isSubmitPrimary ? 'save' : 'submit');
-                  setIsActionMenuOpen(false);
-                }}
-                className="flex min-h-10 w-full items-center justify-center whitespace-nowrap rounded-l-xl bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                {isSubmitPrimary ? 'Save PO Draft' : 'Submit to PO'}
-              </button>
+              {isSubmitPrimary || canSubmitRecordPermission ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={
+                    isSubmitPrimary
+                      ? !canSaveDraft || isPending || isDraftPending
+                      : !canSubmitRecord || isPending || isDraftPending
+                  }
+                  title={
+                    isSubmitPrimary
+                      ? draftSaveBlockReason || undefined
+                      : recordSubmitBlockReason || undefined
+                  }
+                  onClick={() => {
+                    setPrimaryAction(isSubmitPrimary ? 'save' : 'submit');
+                    setIsActionMenuOpen(false);
+                  }}
+                  className="flex min-h-10 w-full items-center justify-center whitespace-nowrap rounded-l-xl bg-blue-700 px-4 text-sm font-semibold text-white transition hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {isSubmitPrimary ? 'Save PO Draft' : 'Submit to PO'}
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
       </div>
 
-      {recordSubmitBlockReason ? (
+      {canSubmitRecordPermission && recordSubmitBlockReason ? (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
           {recordSubmitBlockReason}
         </p>

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ProductStatus } from '@prisma/client';
 import { requireAdminPermission } from '@/lib/admin-session';
+import { canAccessPermission } from '@/lib/admin-rbac';
 import { prisma } from '@/lib/prisma';
 import ProductsFilters from '@/components/admin/ProductsFilters';
 import ProductsListTable from '@/components/admin/ProductsListTable';
@@ -59,7 +60,8 @@ type ProductListRow = {
 export default async function AdminProductsPage({
   searchParams,
 }: ProductsPageProps) {
-  await requireAdminPermission('/admin/products', 'products.read');
+  const session = await requireAdminPermission('/admin/products', 'products.read');
+  const canDeleteProducts = canAccessPermission(session.role, 'products.delete');
 
   const params = await searchParams;
   const query = params.q?.trim() ?? '';
@@ -237,6 +239,7 @@ export default async function AdminProductsPage({
           };
         })}
         applyProductsBulkActionWithState={applyProductsBulkActionWithState}
+        canDeleteProducts={canDeleteProducts}
       />
     </section>
   );

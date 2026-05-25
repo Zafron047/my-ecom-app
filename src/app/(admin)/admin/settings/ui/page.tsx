@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import { defaultHeroSlides } from '@/lib/storefront-data';
 import { createHeroSlide, updateHeroSlide } from './actions';
@@ -18,7 +18,7 @@ type HeroSlideRow = {
 };
 
 export default async function UiSettingsPage() {
-  await requireAdminRole('/admin/settings/ui', ['admin']);
+  await requireAdminPermission('/admin/settings/ui', 'settings.manage');
 
   const heroSlideDelegate = (prisma as { heroSlide?: unknown }).heroSlide as
     | {

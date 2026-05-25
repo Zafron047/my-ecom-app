@@ -3,7 +3,7 @@
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { Prisma, ProductStatus } from '@prisma/client';
-import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import {
   assertProductImageCountAllowed,
   deleteProductImageFiles,
@@ -641,7 +641,6 @@ async function ensureUniqueSkus<
 
 export async function createProduct(formData: FormData) {
   await requireAdminPermission('/admin/products', 'products.write');
-  await requireAdminRole('/admin/products', ['admin']);
   const payload = getProductPayload(formData);
   const variants = await ensureUniqueSkus(payload.variants);
   const catalogSnapshot = getCatalogSnapshotFromVariants(variants);
@@ -810,7 +809,6 @@ export async function createProduct(formData: FormData) {
 export async function updateProduct(formData: FormData) {
   const productId = getString(formData, 'productId');
   await requireAdminPermission(`/admin/products/${productId}/edit`, 'products.write');
-  await requireAdminRole(`/admin/products/${productId}/edit`, ['admin']);
   if (!productId) {
     throw new Error('Product id is required.');
   }
@@ -1495,7 +1493,6 @@ export async function applyProductsBulkActionWithState(
   formData: FormData,
 ): Promise<ProductsBulkActionState> {
   await requireAdminPermission('/admin/products', 'products.write');
-  await requireAdminRole('/admin/products', ['admin']);
 
   const productIds = formData
     .getAll('productIds')
@@ -1626,6 +1623,8 @@ export async function applyProductsBulkActionWithState(
   }
 
   if (bulkAction === 'delete') {
+    await requireAdminPermission('/admin/products', 'products.delete');
+
     const selected = await prisma.product.findMany({
       where: { id: { in: productIds } },
       select: {

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import BusinessLogoPicker from '@/components/admin/BusinessLogoPicker';
 import BusinessProfileFormShell from '@/components/admin/BusinessProfileFormShell';
-import { requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import {
   saveBusinessProfileImage,
@@ -159,7 +159,7 @@ async function loadBusinessProfileSettings() {
 }
 
 export default async function BusinessProfileSettingsPage() {
-  await requireAdminRole('/admin/settings/business-profile', ['admin']);
+  await requireAdminPermission('/admin/settings/business-profile', 'settings.manage');
 
   const { businessImages, loadError, profile } =
     await loadBusinessProfileSettings();

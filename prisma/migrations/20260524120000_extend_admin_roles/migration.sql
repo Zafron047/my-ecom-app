@@ -1,0 +1,2 @@
+ALTER TYPE "AdminRole" ADD VALUE IF NOT EXISTS 'supaAdmin';
+ALTER TYPE "AdminRole" ADD VALUE IF NOT EXISTS 'operator';

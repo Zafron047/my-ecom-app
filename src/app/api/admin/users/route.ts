@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { type AdminRole } from '@prisma/client';
 import {
   createAdminPasswordResetUrl,
   createPasswordResetExpiry,
@@ -7,8 +6,14 @@ import {
   hashPasswordResetToken,
 } from '@/lib/admin-password-reset';
 import { normalizeAdminEmail, normalizeAdminPhone } from '@/lib/admin-auth';
-import { requireAdminApiRole } from '@/lib/admin-api-auth';
+import { requireAdminApiPermission } from '@/lib/admin-api-auth';
 import { logAdminAudit } from '@/lib/admin-audit';
+import {
+  type AdminRole,
+  adminRoleLabels,
+  canAssignAdminRole,
+  parseAdminRole,
+} from '@/lib/admin-rbac';
 import { hashPassword } from '@/lib/password-auth';
 import { prisma } from '@/lib/prisma';
 
@@ -19,10 +24,8 @@ type CreateAdminUserBody = {
   role?: AdminRole;
 };
 
-const allowedRoles: AdminRole[] = ['admin', 'manager', 'support'];
-
 function isAllowedRole(role: unknown): role is AdminRole {
-  return typeof role === 'string' && allowedRoles.includes(role as AdminRole);
+  return typeof role === 'string' && parseAdminRole(role) === role;
 }
 
 function isPrismaUniqueConstraintError(error: unknown) {
@@ -35,7 +38,7 @@ function isPrismaUniqueConstraintError(error: unknown) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAdminApiRole(['admin']);
+  const auth = await requireAdminApiPermission('adminUsers.manage');
   if (auth.response) return auth.response;
   const { actor } = auth;
 
@@ -69,6 +72,13 @@ export async function POST(request: Request) {
 
   if (!isAllowedRole(role)) {
     return NextResponse.json({ error: 'Invalid role value.' }, { status: 400 });
+  }
+
+  if (!canAssignAdminRole(actor.role, role)) {
+    return NextResponse.json(
+      { error: `You cannot assign the ${adminRoleLabels[role]} role.` },
+      { status: 403 },
+    );
   }
 
   const now = new Date();

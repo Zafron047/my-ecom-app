@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath, revalidateTag } from 'next/cache';
-import { requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 
 function getString(formData: FormData, key: string) {
@@ -45,7 +45,7 @@ function revalidateUiPaths() {
 }
 
 export async function createHeroSlide(formData: FormData) {
-  await requireAdminRole('/admin/settings/ui', ['admin']);
+  await requireAdminPermission('/admin/settings/ui', 'settings.manage');
 
   const title = getString(formData, 'title');
   const imageUrl = getString(formData, 'imageUrl');
@@ -71,7 +71,7 @@ export async function createHeroSlide(formData: FormData) {
 }
 
 export async function updateHeroSlide(formData: FormData) {
-  await requireAdminRole('/admin/settings/ui', ['admin']);
+  await requireAdminPermission('/admin/settings/ui', 'settings.manage');
 
   const slideId = getString(formData, 'slideId');
   const intent = getString(formData, 'intent') || 'save';

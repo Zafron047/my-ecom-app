@@ -1,11 +1,19 @@
 import { prisma } from '@/lib/prisma';
-import { requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import ManageRolesPanel from '@/components/admin/ManageRolesPanel';
 
 export default async function ManageRolesPage() {
-  const session = await requireAdminRole('/admin/settings/manage-roles', ['admin']);
+  const session = await requireAdminPermission('/admin/settings/manage-roles', 'adminUsers.manage');
 
   const users = await prisma.adminUser.findMany({
+    where:
+      session.role === 'supaAdmin'
+        ? undefined
+        : {
+            role: {
+              not: 'supaAdmin',
+            },
+          },
     select: {
       id: true,
       name: true,
@@ -73,6 +81,7 @@ export default async function ManageRolesPage() {
         message: entry.message,
       }))}
       currentAdminId={session.id}
+      currentAdminRole={session.role}
       users={users.map((user) => ({
         id: user.id,
         name: user.name,

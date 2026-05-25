@@ -49,11 +49,12 @@ type ProductSortKey =
 type ProductSortDirection = 'asc' | 'desc';
 
 type ProductsListTableProps = {
-  products: ProductListRow[];
   applyProductsBulkActionWithState: (
     state: ProductsBulkActionState,
     formData: FormData,
   ) => Promise<ProductsBulkActionState>;
+  canDeleteProducts: boolean;
+  products: ProductListRow[];
 };
 
 function getDefaultSortDirection(sort: ProductSortKey): ProductSortDirection {
@@ -111,8 +112,9 @@ function SortIcon({
 }
 
 export default function ProductsListTable({
-  products,
   applyProductsBulkActionWithState,
+  canDeleteProducts,
+  products,
 }: ProductsListTableProps) {
   const router = useRouter();
   const [sort, setSort] = useState<ProductSortKey>('updated');
@@ -231,7 +233,9 @@ export default function ProductsListTable({
             <option value="set-archived">Set status: Archived</option>
             <option value="archive">Archive</option>
             <option value="unarchive">Unarchive (to draft)</option>
-            <option value="delete">Delete permanently</option>
+            {canDeleteProducts ? (
+              <option value="delete">Delete permanently</option>
+            ) : null}
           </select>
           <button
             type="submit"

@@ -41,7 +41,8 @@ async function main() {
   const phone = phoneInput ? normalizePhone(phoneInput) : null;
   const password = process.env.ADMIN_SEED_PASSWORD ?? '';
   const name = (process.env.ADMIN_SEED_NAME ?? 'Admin User').trim();
-  const role = (process.env.ADMIN_SEED_ROLE ?? 'admin').trim().toLowerCase();
+  const rawRole = (process.env.ADMIN_SEED_ROLE ?? 'supaAdmin').trim();
+  const role = rawRole.toLowerCase() === 'supaadmin' ? 'supaAdmin' : rawRole;
 
   if (!email || !password) {
     throw new Error(
@@ -53,7 +54,7 @@ async function main() {
     throw new Error('Invalid ADMIN_SEED_PHONE. Use a Bangladesh mobile number.');
   }
 
-  const allowedRoles = ['admin', 'manager', 'support'];
+  const allowedRoles = ['supaAdmin', 'admin', 'manager', 'operator', 'support'];
   if (!allowedRoles.includes(role)) {
     throw new Error(
       `Invalid ADMIN_SEED_ROLE="${role}". Use one of: ${allowedRoles.join(', ')}`,

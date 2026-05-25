@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server';
-import { type AdminRole } from '@prisma/client';
-import { requireAdminApiRole } from '@/lib/admin-api-auth';
+import { requireAdminApiPermission } from '@/lib/admin-api-auth';
 import { logAdminAudit } from '@/lib/admin-audit';
+import {
+  type AdminRole,
+  adminRoleLabels,
+  canAssignAdminRole,
+  canManageAdminUser,
+  isPrivilegedAdminRole,
+  parseAdminRole,
+} from '@/lib/admin-rbac';
 import { prisma } from '@/lib/prisma';
 
 type UpdateAdminUserBody = {
@@ -9,17 +16,15 @@ type UpdateAdminUserBody = {
   role?: AdminRole;
 };
 
-const allowedRoles: AdminRole[] = ['admin', 'manager', 'support'];
-
 function isAllowedRole(role: unknown): role is AdminRole {
-  return typeof role === 'string' && allowedRoles.includes(role as AdminRole);
+  return typeof role === 'string' && parseAdminRole(role) === role;
 }
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminApiRole(['admin']);
+  const auth = await requireAdminApiPermission('adminUsers.manage');
   if (auth.response) return auth.response;
   const { actor } = auth;
 
@@ -83,32 +88,52 @@ export async function PATCH(
 
   const finalRole = nextRole ?? target.role;
   const finalIsActive = typeof nextIsActive === 'boolean' ? nextIsActive : target.isActive;
-  const demotesAdminRole = target.role === 'admin' && finalRole !== 'admin';
-  const deactivatesAdmin = target.role === 'admin' && !finalIsActive;
-  const changesOwnAdminAccess =
-    actor.id === target.id && (finalRole !== target.role || !finalIsActive);
+  const demotesLastSupaAdmin =
+    target.role === 'supaAdmin' && finalRole !== 'supaAdmin';
+  const deactivatesSupaAdmin = target.role === 'supaAdmin' && !finalIsActive;
+  const changesOwnPrivilegedAccess =
+    actor.id === target.id &&
+    (finalRole !== target.role || !finalIsActive) &&
+    isPrivilegedAdminRole(target.role);
 
-  if (changesOwnAdminAccess) {
+  if (!canManageAdminUser(actor.role, target.role)) {
     return NextResponse.json(
-      { error: 'Ask another admin to change your role or deactivate your account.' },
+      { error: `You cannot modify a ${adminRoleLabels[target.role]} user.` },
+      { status: 403 },
+    );
+  }
+
+  if (finalRole !== target.role && !canAssignAdminRole(actor.role, finalRole)) {
+    return NextResponse.json(
+      { error: `You cannot assign the ${adminRoleLabels[finalRole]} role.` },
+      { status: 403 },
+    );
+  }
+
+  if (changesOwnPrivilegedAccess) {
+    return NextResponse.json(
+      {
+        error:
+          'Ask another privileged admin to change your role or deactivate your account.',
+      },
       { status: 400 },
     );
   }
 
-  if (demotesAdminRole || deactivatesAdmin) {
-    const otherActiveAdmins = await prisma.adminUser.count({
+  if (demotesLastSupaAdmin || deactivatesSupaAdmin) {
+    const otherActiveSupaAdmins = await prisma.adminUser.count({
       where: {
         id: { not: target.id },
-        role: 'admin',
+        role: 'supaAdmin',
         isActive: true,
       },
     });
 
-    if (otherActiveAdmins === 0) {
+    if (otherActiveSupaAdmins === 0) {
       return NextResponse.json(
         {
           error:
-            'Cannot remove or deactivate the last active admin. Promote another admin first.',
+            'Cannot remove or deactivate the last active SupaAdmin. Promote another SupaAdmin first.',
         },
         { status: 400 },
       );

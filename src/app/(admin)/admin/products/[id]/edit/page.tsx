@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import ProductForm from '@/components/admin/ProductForm';
-import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import { updateProduct } from '../../actions';
 
@@ -48,7 +48,6 @@ async function safeUpdateProduct(formData: FormData) {
 export default async function EditProductPage({ params }: EditProductPageProps) {
   const { id } = await params;
   await requireAdminPermission(`/admin/products/${id}/edit`, 'products.write');
-  await requireAdminRole(`/admin/products/${id}/edit`, ['admin']);
 
   const [product, categories, brands, productNavigationRows] = await Promise.all([
     prisma.product.findUnique({

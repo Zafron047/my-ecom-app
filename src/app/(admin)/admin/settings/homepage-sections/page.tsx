@@ -2,7 +2,7 @@ import Link from 'next/link';
 import HomepageSectionsReorderManager from '@/components/admin/HomepageSectionsReorderManager';
 import HomepageSectionItem from '@/components/admin/HomepageSectionItem';
 import ProductMultiSelectDropdown from '@/components/admin/ProductMultiSelectDropdown';
-import { requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import {
   createHomepageSection,
@@ -12,7 +12,7 @@ import {
 } from './actions';
 
 export default async function HomepageSectionsSettingsPage() {
-  await requireAdminRole('/admin/settings/homepage-sections', ['admin']);
+  await requireAdminPermission('/admin/settings/homepage-sections', 'settings.manage');
 
   const homepageSectionDelegate = (prisma as { homepageSection?: unknown })
     .homepageSection as

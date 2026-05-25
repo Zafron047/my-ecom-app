@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath, revalidateTag } from 'next/cache';
-import { requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 
 const HOMEPAGE_SECTION_SOURCE_TYPES = [
@@ -78,7 +78,7 @@ function slugify(value: string) {
 }
 
 export async function createHomepageSection(formData: FormData) {
-  await requireAdminRole('/admin/settings/homepage-sections', ['admin']);
+  await requireAdminPermission('/admin/settings/homepage-sections', 'settings.manage');
 
   const title = getString(formData, 'title');
   if (!title) {
@@ -123,7 +123,7 @@ export async function createHomepageSection(formData: FormData) {
 }
 
 export async function updateHomepageSection(formData: FormData) {
-  await requireAdminRole('/admin/settings/homepage-sections', ['admin']);
+  await requireAdminPermission('/admin/settings/homepage-sections', 'settings.manage');
 
   const sectionId = getString(formData, 'sectionId');
   if (!sectionId) {
@@ -183,7 +183,7 @@ export async function updateHomepageSection(formData: FormData) {
 }
 
 export async function reorderHomepageSections(formData: FormData) {
-  await requireAdminRole('/admin/settings/homepage-sections', ['admin']);
+  await requireAdminPermission('/admin/settings/homepage-sections', 'settings.manage');
   const orderedIds = Array.from(new Set(getStringList(formData, 'orderedSectionIds')));
   if (orderedIds.length === 0) return;
 
@@ -200,7 +200,7 @@ export async function reorderHomepageSections(formData: FormData) {
 }
 
 export async function deleteHomepageSection(formData: FormData) {
-  await requireAdminRole('/admin/settings/homepage-sections', ['admin']);
+  await requireAdminPermission('/admin/settings/homepage-sections', 'settings.manage');
 
   const sectionId = getString(formData, 'sectionId');
   if (!sectionId) {

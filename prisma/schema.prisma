@@ -9,8 +9,10 @@ datasource db {
 }
 
 enum AdminRole {
+  supaAdmin
   admin
   manager
+  operator
   support
 }
 

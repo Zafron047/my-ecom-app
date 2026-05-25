@@ -1,7 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { AdminRole } from '@/lib/admin-rbac';
+import {
+  type AdminRole,
+  canAssignAdminRole,
+  canManageAdminUser,
+  formatAdminRole,
+  getAssignableAdminRoles,
+} from '@/lib/admin-rbac';
 
 type ManageRolesUser = {
   createdAt: string;
@@ -29,6 +35,7 @@ type ManageRolesAuditLog = {
 type ManageRolesPanelProps = {
   auditLogs: ManageRolesAuditLog[];
   currentAdminId: string;
+  currentAdminRole: AdminRole;
   users: ManageRolesUser[];
 };
 
@@ -45,12 +52,6 @@ type ResetLinkState = {
   resetLink: string;
 };
 
-const roleOptions: AdminRole[] = ['admin', 'manager', 'support'];
-
-function formatRole(role: AdminRole): string {
-  return role.charAt(0).toUpperCase() + role.slice(1);
-}
-
 function formatDate(value: string | null): string {
   if (!value) return 'Never';
   return new Date(value).toLocaleString();
@@ -59,6 +60,7 @@ function formatDate(value: string | null): string {
 export default function ManageRolesPanel({
   auditLogs,
   currentAdminId,
+  currentAdminRole,
   users,
 }: ManageRolesPanelProps) {
   const [rows, setRows] = useState(users);
@@ -78,10 +80,16 @@ export default function ManageRolesPanel({
     role: 'support' as AdminRole,
   });
   const [isCreating, setIsCreating] = useState(false);
+  const roleOptions = useMemo(
+    () => getAssignableAdminRoles(currentAdminRole),
+    [currentAdminRole],
+  );
 
   const sortedRows = useMemo(
     () =>
       [...rows].sort((a, b) => {
+        if (a.role === 'supaAdmin' && b.role !== 'supaAdmin') return -1;
+        if (a.role !== 'supaAdmin' && b.role === 'supaAdmin') return 1;
         if (a.role === 'admin' && b.role !== 'admin') return -1;
         if (a.role !== 'admin' && b.role === 'admin') return 1;
         return a.email.localeCompare(b.email);
@@ -193,7 +201,7 @@ export default function ManageRolesPanel({
       const updated = await patchAdminUser(userId, { role });
       setFeedback({
         kind: 'success',
-        message: `Updated ${updated.email} to ${formatRole(updated.role)}.`,
+        message: `Updated ${updated.email} to ${formatAdminRole(updated.role)}.`,
       });
     } catch (error) {
       setFeedback({
@@ -446,7 +454,7 @@ export default function ManageRolesPanel({
             >
               {roleOptions.map((role) => (
                 <option key={role} value={role}>
-                  {formatRole(role)}
+                  {formatAdminRole(role)}
                 </option>
               ))}
             </select>
@@ -481,6 +489,15 @@ export default function ManageRolesPanel({
             {sortedRows.map((user) => {
               const busy = busyByRow[user.id];
               const isSelf = user.id === currentAdminId;
+              const canManageUser = canManageAdminUser(currentAdminRole, user.role);
+              const selectableRoles = roleOptions.includes(user.role)
+                ? roleOptions
+                : [user.role, ...roleOptions];
+              const selectedRole = pendingRole[user.id] ?? user.role;
+              const canSaveRole =
+                canManageUser &&
+                selectedRole !== user.role &&
+                canAssignAdminRole(currentAdminRole, selectedRole);
               return (
                 <tr key={user.id} className="align-top">
                   <td className="px-3 py-3">
@@ -501,26 +518,26 @@ export default function ManageRolesPanel({
                   <td className="px-3 py-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <select
-                        value={pendingRole[user.id] ?? user.role}
+                        value={selectedRole}
                         onChange={(event) =>
                           setPendingRole((prev) => ({
                             ...prev,
                             [user.id]: event.target.value as AdminRole,
                           }))
                         }
-                        disabled={busy?.isUpdatingRole}
+                        disabled={busy?.isUpdatingRole || !canManageUser}
                         className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-300"
                       >
-                        {roleOptions.map((role) => (
+                        {selectableRoles.map((role) => (
                           <option key={role} value={role}>
-                            {formatRole(role)}
+                            {formatAdminRole(role)}
                           </option>
                         ))}
                       </select>
                       <button
                         type="button"
                         disabled={
-                          busy?.isUpdatingRole || pendingRole[user.id] === user.role
+                          busy?.isUpdatingRole || !canSaveRole
                         }
                         onClick={() => handleRoleUpdate(user.id)}
                         className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -534,7 +551,7 @@ export default function ManageRolesPanel({
                     <button
                       type="button"
                       onClick={() => handleToggleActive(user.id, user.isActive)}
-                      disabled={busy?.isTogglingActive}
+                      disabled={busy?.isTogglingActive || !canManageUser}
                       className={`rounded-md border px-2 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                         user.isActive
                           ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
@@ -566,7 +583,9 @@ export default function ManageRolesPanel({
                       <button
                         type="button"
                         onClick={() => handlePasswordReset(user)}
-                        disabled={busy?.isResettingPassword || !user.isActive}
+                        disabled={
+                          busy?.isResettingPassword || !user.isActive || !canManageUser
+                        }
                         className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {busy?.isResettingPassword ? 'Creating...' : 'Reset'}
@@ -578,7 +597,7 @@ export default function ManageRolesPanel({
                     <button
                       type="button"
                       onClick={() => handleRevokeSessions(user)}
-                      disabled={busy?.isRevokingSessions}
+                      disabled={busy?.isRevokingSessions || !canManageUser}
                       className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {busy?.isRevokingSessions ? 'Revoking...' : 'Logout all'}
