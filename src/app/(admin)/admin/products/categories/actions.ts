@@ -194,7 +194,10 @@ export async function createCategory(
   _previousState: CategoryFormState,
   formData: FormData,
 ): Promise<CategoryFormState> {
-  await requireAdminPermission('/admin/products/categories/new', 'products.write');
+  await requireAdminPermission(
+    '/admin/products/categories/new',
+    'productCatalog.manage',
+  );
 
   const name = getString(formData, 'name');
   if (!name) {
@@ -251,7 +254,10 @@ export async function updateCategory(
   _previousState: CategoryFormState,
   formData: FormData,
 ): Promise<CategoryFormState> {
-  await requireAdminPermission('/admin/products/categories', 'products.write');
+  await requireAdminPermission(
+    '/admin/products/categories',
+    'productCatalog.manage',
+  );
 
   const categoryId = getString(formData, 'categoryId');
   const intent = getString(formData, 'intent') || 'save';
