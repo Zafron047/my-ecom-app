@@ -8,8 +8,8 @@ import { CHECKOUT_PENDING_ORDER_KEY } from '@/lib/checkoutPendingOrder.mjs';
 import { getGroupedAreaOptions, getGroupedDistrictOptions } from '@/lib/location-presenter';
 import {
   META_PURCHASE_EVENT_STORAGE_PREFIX,
-  trackMetaEvent,
   trackMetaInitiateCheckout,
+  trackMetaSearch,
 } from '@/lib/meta-pixel';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -171,6 +171,7 @@ export default function Header({
   const desktopSearchRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchRef = useRef<HTMLDivElement | null>(null);
   const lastAutofillPhoneRef = useRef<string>('');
+  const metaInitiateCheckoutEventIdRef = useRef<string | null>(null);
   const [isCustomerLookupLoading, setIsCustomerLookupLoading] = useState(false);
   const firstNameHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -542,7 +543,7 @@ export default function Header({
   function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (normalizedQuery) {
-      trackMetaEvent('Search', {
+      trackMetaSearch({
         search_string: searchQuery.trim(),
         content_ids: searchSuggestions.map((product) => product.id),
         contents: searchSuggestions.map((product) => ({ id: product.id })),
@@ -567,7 +568,7 @@ export default function Header({
   function handleSuggestionSelect(productId: string, productName: string) {
     setSearchQuery(productName);
     setIsSearchOpen(false);
-    trackMetaEvent('Search', {
+    trackMetaSearch({
       search_string: searchQuery.trim() || productName,
       content_ids: [productId],
       contents: [{ id: productId }],
@@ -609,7 +610,11 @@ export default function Header({
   function handleProceedToCheckout() {
     if (!canCheckoutWithAuthoritativePricing) return;
     setIsCheckoutView(true);
-    trackMetaInitiateCheckout(selectedCartItems, subtotal);
+    metaInitiateCheckoutEventIdRef.current = trackMetaInitiateCheckout(
+      selectedCartItems,
+      subtotal,
+      { sendServer: false },
+    );
   }
 
   function handleCheckoutInputChange(
@@ -724,6 +729,9 @@ export default function Header({
         method: paymentMethod,
       },
       items: selectedCartItems,
+      meta: {
+        initiateCheckoutEventId: metaInitiateCheckoutEventIdRef.current ?? undefined,
+      },
       abandonedCheckoutSessionId:
         localStorage.getItem(ABANDONED_CHECKOUT_SESSION_KEY) ?? undefined,
       totals: {

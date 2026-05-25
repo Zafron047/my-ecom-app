@@ -115,4 +115,39 @@ describe('/api/meta/events', () => {
       success: false,
     });
   });
+
+  it('allows Search events from the storefront', async () => {
+    const { POST } = await import('@/app/api/meta/events/route');
+
+    const response = await POST(
+      new Request('https://shop.test/api/meta/events', {
+        method: 'POST',
+        body: JSON.stringify({
+          eventId: 'search.1',
+          eventName: 'Search',
+          eventSourceUrl: 'https://shop.test/products',
+          parameters: {
+            search_string: 'rack',
+            content_ids: ['product-1'],
+          },
+        }),
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      eventId: 'search.1',
+      success: true,
+    });
+    expect(mocks.sendMetaServerEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customData: expect.objectContaining({
+          search_string: 'rack',
+        }),
+        eventId: 'search.1',
+        eventName: 'Search',
+      }),
+    );
+  });
 });

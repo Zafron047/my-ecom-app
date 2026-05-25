@@ -14,6 +14,7 @@ import {
 const ALLOWED_META_EVENTS = new Set<MetaServerEventName>([
   'PageView',
   'ViewContent',
+  'Search',
   'AddToCart',
   'InitiateCheckout',
   'CompleteRegistration',

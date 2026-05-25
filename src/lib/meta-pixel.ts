@@ -177,19 +177,49 @@ export function buildMetaCartPayload(items: CartItem[], value: number): MetaEven
   };
 }
 
-export function trackMetaAddToCart(item: CartItem, quantity: number) {
-  return trackMetaEvent('AddToCart', {
-    content_ids: [item.variantId ?? item.detailId ?? item.id],
-    content_name: item.name,
-    content_type: 'product',
-    contents: buildMetaContents([{ ...item, quantity }]),
-    currency: 'BDT',
-    value: (item.salePrice ?? item.price) * quantity,
+export function trackMetaViewContent(parameters: MetaEventPayload) {
+  return trackMetaBrowserAndServerEvent({
+    eventName: 'ViewContent',
+    parameters,
+    sendServer: true,
   });
 }
 
-export function trackMetaInitiateCheckout(items: CartItem[], value: number) {
-  return trackMetaEvent('InitiateCheckout', buildMetaCartPayload(items, value));
+export function trackMetaSearch(parameters: MetaEventPayload) {
+  return trackMetaBrowserAndServerEvent({
+    eventName: 'Search',
+    parameters,
+    sendServer: true,
+  });
+}
+
+export function trackMetaAddToCart(item: CartItem, quantity: number) {
+  return trackMetaBrowserAndServerEvent({
+    eventName: 'AddToCart',
+    sendServer: true,
+    parameters: {
+      content_ids: [item.variantId ?? item.detailId ?? item.id],
+      content_name: item.name,
+      content_type: 'product',
+      contents: buildMetaContents([{ ...item, quantity }]),
+      currency: 'BDT',
+      num_items: quantity,
+      value: (item.salePrice ?? item.price) * quantity,
+    },
+  });
+}
+
+export function trackMetaInitiateCheckout(
+  items: CartItem[],
+  value: number,
+  options: { eventId?: string; sendServer?: boolean } = {},
+) {
+  return trackMetaBrowserAndServerEvent({
+    eventId: options.eventId,
+    eventName: 'InitiateCheckout',
+    parameters: buildMetaCartPayload(items, value),
+    sendServer: options.sendServer ?? true,
+  });
 }
 
 export function trackMetaPurchase(args: {

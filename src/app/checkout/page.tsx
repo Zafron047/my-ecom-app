@@ -50,6 +50,7 @@ export default function Checkout() {
   const [locationAreas, setLocationAreas] = useState<string[]>([]);
   const lastAutofillPhoneRef = useRef('');
   const hasTrackedInitiateCheckoutRef = useRef(false);
+  const metaInitiateCheckoutEventIdRef = useRef<string | null>(null);
 
   const shippingCharge = useMemo(() => {
     return getShippingCharge({
@@ -71,7 +72,11 @@ export default function Checkout() {
     if (hasTrackedInitiateCheckoutRef.current) return;
     if (selectedCartItems.length === 0) return;
     hasTrackedInitiateCheckoutRef.current = true;
-    trackMetaInitiateCheckout(selectedCartItems, orderTotal);
+    metaInitiateCheckoutEventIdRef.current = trackMetaInitiateCheckout(
+      selectedCartItems,
+      orderTotal,
+      { sendServer: false },
+    );
   }, [orderTotal, selectedCartItems]);
 
   const handlePlaceOrder = async () => {
@@ -114,6 +119,9 @@ export default function Checkout() {
         method: paymentMethod,
       },
       items: selectedCartItems,
+      meta: {
+        initiateCheckoutEventId: metaInitiateCheckoutEventIdRef.current ?? undefined,
+      },
       abandonedCheckoutSessionId:
         localStorage.getItem(ABANDONED_CHECKOUT_SESSION_KEY) ?? undefined,
       totals: {

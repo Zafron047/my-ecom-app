@@ -1,6 +1,6 @@
 'use client';
 
-import { trackMetaEvent } from '@/lib/meta-pixel';
+import { trackMetaBrowserAndServerEvent } from '@/lib/meta-pixel';
 import { isPublicStorefrontMarketingPath } from '@/lib/meta-routes';
 import { usePathname, useSearchParams } from 'next/navigation';
 import Script from 'next/script';
@@ -21,7 +21,10 @@ function MetaPageViewTracker() {
     if (lastTrackedUrlRef.current === currentUrl) return;
     lastTrackedUrlRef.current = currentUrl;
 
-    trackMetaEvent('PageView');
+    trackMetaBrowserAndServerEvent({
+      eventName: 'PageView',
+      sendServer: true,
+    });
   }, [pathname, searchParams]);
 
   return null;

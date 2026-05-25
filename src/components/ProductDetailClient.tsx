@@ -2,7 +2,7 @@
 
 import { useCart } from '@/components/CartProvider';
 import { toVariantImageUrl } from '@/lib/image-variants';
-import { trackMetaEvent } from '@/lib/meta-pixel';
+import { trackMetaViewContent } from '@/lib/meta-pixel';
 import type {
   StorefrontCatalogProduct,
   StorefrontProductDetail,
@@ -26,11 +26,11 @@ export default function ProductDetailClient({
   product,
   relatedProducts,
 }: ProductDetailClientProps) {
-  const { addToCart, cartItems } = useCart();
+  const { addToCart, cartItems, updateQuantity } = useCart();
   const relatedCarouselRef = useRef<HTMLDivElement>(null);
+  const trackedViewContentKeysRef = useRef<Set<string>>(new Set());
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
-  const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [areBundleOffersExpanded, setAreBundleOffersExpanded] = useState(false);
   const [isZooming, setIsZooming] = useState(false);
@@ -117,13 +117,12 @@ export default function ProductDetailClient({
       : product?.salePrice;
   const activeStockQuantity = activeVariant?.stockQuantity ?? 0;
   const isActiveVariantInStock = activeStockQuantity > 0;
-  const availableToAdd = Math.max(activeStockQuantity - activeVariantQuantity, 0);
-  const effectiveSelectedQuantity =
-    availableToAdd > 0 ? Math.min(selectedQuantity, availableToAdd) : 1;
-  const canIncreaseSelectedQuantity =
-    Boolean(activeVariant) && effectiveSelectedQuantity < availableToAdd;
+  const canIncreaseActiveVariantQuantity =
+    Boolean(activeVariant) &&
+    isActiveVariantInStock &&
+    activeVariantQuantity < activeStockQuantity;
   const canAddActiveVariant =
-    Boolean(activeVariant) && isActiveVariantInStock && availableToAdd > 0;
+    Boolean(activeVariant) && isActiveVariantInStock && activeVariantQuantity < activeStockQuantity;
   const discount = useMemo(() => {
     if (!activeSalePrice || activePrice <= activeSalePrice) return 0;
     return Math.round(((activePrice - activeSalePrice) / activePrice) * 100);
@@ -178,7 +177,6 @@ export default function ProductDetailClient({
     const variant = product.variants[index];
     if (!variant) return;
     setSelectedVariantIndex(index);
-    setSelectedQuantity(1);
     const variantImage = variant.image;
     const imageIndex = product.images.findIndex(
       (img) =>
@@ -209,7 +207,19 @@ export default function ProductDetailClient({
   };
   const addSelectedVariantToCart = () => {
     if (!canAddActiveVariant) return;
-    addToCart(cartProduct, effectiveSelectedQuantity);
+    addToCart(cartProduct, 1);
+  };
+  const decreaseActiveVariantQuantity = () => {
+    if (!activeVariantCartItem) return;
+    updateQuantity(activeVariantCartItem.id, activeVariantQuantity - 1);
+  };
+  const increaseActiveVariantQuantity = () => {
+    if (!canIncreaseActiveVariantQuantity) return;
+    if (activeVariantCartItem) {
+      updateQuantity(activeVariantCartItem.id, activeVariantQuantity + 1);
+      return;
+    }
+    addToCart(cartProduct, 1);
   };
   const scrollRelatedProducts = (direction: -1 | 1) => {
     const carousel = relatedCarouselRef.current;
@@ -221,18 +231,32 @@ export default function ProductDetailClient({
   };
 
   useEffect(() => {
-    trackMetaEvent('ViewContent', {
-      content_ids: [activeVariant?.id ?? product.id],
+    const contentId = activeVariant?.id ?? product.id;
+    const trackingKey = `viewcontent:${contentId}`;
+    if (trackedViewContentKeysRef.current.has(trackingKey)) return;
+
+    if (typeof window !== 'undefined') {
+      const sessionKey = `meta_${trackingKey}`;
+      const lastTrackedAt = Number(window.sessionStorage.getItem(sessionKey) ?? 0);
+      const now = Date.now();
+      if (now - lastTrackedAt < 2000) return;
+      window.sessionStorage.setItem(sessionKey, String(now));
+    }
+
+    trackedViewContentKeysRef.current.add(trackingKey);
+    trackMetaViewContent({
+      content_ids: [contentId],
       content_name: product.name,
       content_type: 'product',
       contents: [
         {
-          id: activeVariant?.id ?? product.id,
+          id: contentId,
           item_price: activeSalePrice ?? activePrice,
           quantity: 1,
         },
       ],
       currency: 'BDT',
+      num_items: 1,
       value: activeSalePrice ?? activePrice,
     });
   }, [activePrice, activeSalePrice, activeVariant?.id, product.id, product.name]);
@@ -506,10 +530,8 @@ export default function ProductDetailClient({
                 <div className="inline-flex h-12 items-center rounded-full border border-slate-200 bg-white shadow-sm">
                   <motion.button
                     type="button"
-                    onClick={() => {
-                      setSelectedQuantity(Math.max(1, effectiveSelectedQuantity - 1));
-                    }}
-                    disabled={effectiveSelectedQuantity <= 1}
+                    onClick={decreaseActiveVariantQuantity}
+                    disabled={activeVariantQuantity <= 0}
                     whileTap={{ scale: 0.9 }}
                     className="px-4 text-lg leading-none text-slate-700 transition hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-35"
                     aria-label="Decrease quantity"
@@ -517,15 +539,12 @@ export default function ProductDetailClient({
                     -
                   </motion.button>
                   <span className="min-w-10 text-center text-sm font-semibold text-slate-950">
-                    {effectiveSelectedQuantity}
+                    {activeVariantQuantity}
                   </span>
                   <motion.button
                     type="button"
-                    onClick={() => {
-                      if (!canIncreaseSelectedQuantity) return;
-                      setSelectedQuantity((current) => current + 1);
-                    }}
-                    disabled={!canIncreaseSelectedQuantity}
+                    onClick={increaseActiveVariantQuantity}
+                    disabled={!canIncreaseActiveVariantQuantity}
                     whileTap={{ scale: 0.9 }}
                     className="px-4 text-lg leading-none text-slate-700 transition hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-35"
                     aria-label="Increase quantity"
@@ -556,7 +575,7 @@ export default function ProductDetailClient({
             >
               {activeStockQuantity <= 0
                 ? 'Out of Stock'
-                : availableToAdd <= 0
+                : activeVariantQuantity >= activeStockQuantity
                   ? 'Max Quantity In Cart'
                   : 'Add to Cart'}
             </motion.button>

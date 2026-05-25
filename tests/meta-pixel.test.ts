@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   markMetaPurchaseEventTracked,
   shouldTrackMetaPurchaseEvent,
+  trackMetaAddToCart,
+  trackMetaInitiateCheckout,
+  trackMetaSearch,
+  trackMetaViewContent,
 } from '@/lib/meta-pixel';
 import { isPublicStorefrontMarketingPath } from '@/lib/meta-routes';
+import type { CartItem } from '@/store/cartSlice';
 
 function createStorage() {
   const values = new Map<string, string>();
@@ -16,6 +21,10 @@ function createStorage() {
 }
 
 describe('Meta Pixel routing and duplicate prevention', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('allows marketing pixels only on public storefront paths', () => {
     expect(isPublicStorefrontMarketingPath('/')).toBe(true);
     expect(isPublicStorefrontMarketingPath('/products/abc')).toBe(true);
@@ -44,5 +53,48 @@ describe('Meta Pixel routing and duplicate prevention', () => {
 
     expect(shouldTrackMetaPurchaseEvent(storage, 'ORD-1', 'purchase.1')).toBe(false);
     expect(shouldTrackMetaPurchaseEvent(storage, 'ORD-1', 'purchase.2')).toBe(true);
+  });
+
+  it('sends upper-funnel browser events to the server for CAPI deduplication', () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const item = {
+      detailId: 'product-1',
+      id: 'line-1',
+      name: 'Kitchen Rack',
+      price: 1200,
+      quantity: 2,
+      salePrice: 999,
+      selected: true,
+      variantId: 'variant-1',
+    } as CartItem;
+
+    trackMetaViewContent({
+      content_ids: ['variant-1'],
+      content_name: 'Kitchen Rack',
+      content_type: 'product',
+      currency: 'BDT',
+      value: 999,
+    });
+    trackMetaSearch({
+      search_string: 'rack',
+      content_ids: ['product-1'],
+      contents: [{ id: 'product-1' }],
+    });
+    trackMetaAddToCart(item, 1);
+    trackMetaInitiateCheckout([item], 1998);
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const eventNames = fetchMock.mock.calls.map(([, init]) => {
+      const body = JSON.parse(String(init?.body));
+      return body.eventName;
+    });
+
+    expect(eventNames).toEqual([
+      'ViewContent',
+      'Search',
+      'AddToCart',
+      'InitiateCheckout',
+    ]);
   });
 });

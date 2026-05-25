@@ -13,6 +13,7 @@ import { allocateInventoryForOrderProduct } from '@/lib/inventory-allocation';
 import {
   createMetaCapiEventId,
   sendMetaPurchaseEvent,
+  sendMetaServerEvent,
 } from '@/lib/meta-capi';
 import {
   checkDistributedRateLimit,
@@ -38,6 +39,9 @@ type PlaceOrderPayload = {
     method: 'bkash' | 'cod';
   };
   items: CheckoutItemInput[];
+  meta?: {
+    initiateCheckoutEventId?: string;
+  };
   abandonedCheckoutSessionId?: string;
   totals: {
     subtotal: number;
@@ -58,6 +62,28 @@ function normalizePhone(phone: string) {
     return `0${trimmed.slice(4)}`;
   }
   return trimmed;
+}
+
+function getValidMetaEventId(value: unknown) {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 160) return undefined;
+  return trimmed;
+}
+
+function buildMetaCheckoutCustomData(payload: PlaceOrderPayload) {
+  return {
+    content_ids: payload.items.map((item) => item.variantId ?? item.detailId ?? item.id),
+    content_type: 'product',
+    contents: payload.items.map((item) => ({
+      id: item.variantId ?? item.detailId ?? item.id,
+      item_price: item.salePrice ?? item.price,
+      quantity: item.quantity,
+    })),
+    currency: 'BDT',
+    num_items: payload.items.reduce((sum, item) => sum + item.quantity, 0),
+    value: payload.totals.total,
+  };
 }
 
 function getCookieValue(request: Request, name: string) {
@@ -324,6 +350,43 @@ export async function POST(request: Request) {
           identifierTag: 'NEW',
         },
       }));
+
+    const initiateCheckoutEventId = getValidMetaEventId(
+      payload.meta?.initiateCheckoutEventId,
+    );
+    if (initiateCheckoutEventId) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+      const eventSourceUrl = appUrl
+        ? `${appUrl.replace(/\/$/, '')}/checkout`
+        : request.headers.get('referer') ?? undefined;
+      await sendMetaServerEvent({
+        eventId: initiateCheckoutEventId,
+        eventName: 'InitiateCheckout',
+        eventSourceUrl,
+        request,
+        user: {
+          city: payload.shipping.district,
+          email: payload.customer.email,
+          externalId: customer.id,
+          firstName: payload.customer.firstName,
+          lastName: payload.customer.lastName,
+          phone: normalizedPhone,
+        },
+        customData: {
+          ...buildMetaCheckoutCustomData(payload),
+          content_ids: pricingResult.lines.map((line) => line.variantId || line.productId),
+          contents: pricingResult.lines.map((line) => ({
+            id: line.variantId || line.productId,
+            item_price: line.unitPrice,
+            quantity: line.quantity,
+          })),
+          num_items: pricingResult.lines.reduce((sum, line) => sum + line.quantity, 0),
+          value: totalAmount,
+        },
+      }).catch((error) => {
+        console.error('Meta CAPI InitiateCheckout event failed', error);
+      });
+    }
 
     if (existingCustomerByPhone || sessionCustomer) {
       await prisma.customer.update({
