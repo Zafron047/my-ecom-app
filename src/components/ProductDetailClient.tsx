@@ -7,12 +7,15 @@ import type {
   StorefrontCatalogProduct,
   StorefrontProductDetail,
 } from '@/lib/storefront-types';
+import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 function isValidColorHex(value: string | undefined) {
   return Boolean(value && /^#[0-9a-f]{6}$/i.test(value));
 }
+
+const easeOutExpo = [0.16, 1, 0.3, 1] as const;
 
 interface ProductDetailClientProps {
   product: StorefrontProductDetail;
@@ -23,9 +26,11 @@ export default function ProductDetailClient({
   product,
   relatedProducts,
 }: ProductDetailClientProps) {
-  const { addToCart, cartItems, updateQuantity } = useCart();
+  const { addToCart, cartItems } = useCart();
+  const relatedCarouselRef = useRef<HTMLDivElement>(null);
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
+  const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [areBundleOffersExpanded, setAreBundleOffersExpanded] = useState(false);
   const [isZooming, setIsZooming] = useState(false);
@@ -112,8 +117,13 @@ export default function ProductDetailClient({
       : product?.salePrice;
   const activeStockQuantity = activeVariant?.stockQuantity ?? 0;
   const isActiveVariantInStock = activeStockQuantity > 0;
-  const canIncreaseActiveVariant =
-    Boolean(activeVariant) && activeVariantQuantity < activeStockQuantity;
+  const availableToAdd = Math.max(activeStockQuantity - activeVariantQuantity, 0);
+  const effectiveSelectedQuantity =
+    availableToAdd > 0 ? Math.min(selectedQuantity, availableToAdd) : 1;
+  const canIncreaseSelectedQuantity =
+    Boolean(activeVariant) && effectiveSelectedQuantity < availableToAdd;
+  const canAddActiveVariant =
+    Boolean(activeVariant) && isActiveVariantInStock && availableToAdd > 0;
   const discount = useMemo(() => {
     if (!activeSalePrice || activePrice <= activeSalePrice) return 0;
     return Math.round(((activePrice - activeSalePrice) / activePrice) * 100);
@@ -168,6 +178,7 @@ export default function ProductDetailClient({
     const variant = product.variants[index];
     if (!variant) return;
     setSelectedVariantIndex(index);
+    setSelectedQuantity(1);
     const variantImage = variant.image;
     const imageIndex = product.images.findIndex(
       (img) =>
@@ -176,6 +187,37 @@ export default function ProductDetailClient({
         img === toOriginalFromVariantUrl(variantImage),
     );
     setSelectedImage(imageIndex >= 0 ? imageIndex : 0);
+  };
+  const cartProduct = {
+    id: product.id,
+    detailId: product.id,
+    name: product.name,
+    price: activePrice,
+    salePrice: activeSalePrice,
+    stockQuantity: activeStockQuantity,
+    image: activeVariant?.image || product.image,
+    variantId: activeVariant?.id,
+    variantLabel: activeVariant
+      ? formatVariantLabel(activeVariant.color, activeVariant.size) ||
+        undefined
+      : undefined,
+    bundleOffers: product.bundleOffers,
+    hasActiveBundleOffer: Boolean(bestActiveBundleOffer),
+    bundleMinTotalQty: bestActiveBundleOffer?.minTotalQty,
+    bundleDiscountPercent: bestActiveBundleOffer?.discountPercent,
+    bundleDisplayText: bestActiveBundleOffer?.title?.trim() || undefined,
+  };
+  const addSelectedVariantToCart = () => {
+    if (!canAddActiveVariant) return;
+    addToCart(cartProduct, effectiveSelectedQuantity);
+  };
+  const scrollRelatedProducts = (direction: -1 | 1) => {
+    const carousel = relatedCarouselRef.current;
+    if (!carousel) return;
+    carousel.scrollBy({
+      left: direction * carousel.clientWidth * 0.82,
+      behavior: 'smooth',
+    });
   };
 
   useEffect(() => {
@@ -196,25 +238,30 @@ export default function ProductDetailClient({
   }, [activePrice, activeSalePrice, activeVariant?.id, product.id, product.name]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      <nav className="mb-8 flex items-center space-x-2 text-sm">
-        <Link href="/" className="text-blue-600 hover:text-blue-700">
+    <div className="mx-auto max-w-7xl px-3 py-5 text-slate-950 sm:px-6 sm:py-10 lg:px-8">
+      <nav className="mb-5 flex items-center space-x-1.5 text-[11px] sm:mb-8 sm:space-x-2 sm:text-sm">
+        <Link href="/" className="font-medium text-slate-500 transition hover:text-blue-700">
           Home
         </Link>
-        <span className="text-gray-400">/</span>
-        <Link href="/products" className="text-blue-600 hover:text-blue-700">
+        <span className="text-slate-300">/</span>
+        <Link href="/products" className="font-medium text-slate-500 transition hover:text-blue-700">
           Products
         </Link>
-        <span className="text-gray-400">/</span>
-        <span className="text-gray-600">{product.name}</span>
+        <span className="text-slate-300">/</span>
+        <span className="max-w-[42rem] truncate text-slate-700">{product.name}</span>
       </nav>
 
-      <div className="mb-16 grid grid-cols-1 gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="self-start lg:sticky lg:top-28">
-          <div className="relative z-20 mb-4">
+      <div className="mb-12 grid grid-cols-1 gap-8 sm:mb-20 sm:gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(460px,0.88fr)]">
+        <motion.div
+          className="self-start lg:sticky lg:top-28"
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, ease: easeOutExpo }}
+        >
+          <div className="relative z-20 mb-3 rounded-[1.25rem] border border-[#e5ded1] bg-white p-2.5 shadow-[0_22px_55px_rgba(64,48,29,0.1)] sm:mb-4 sm:rounded-[1.75rem] sm:p-4 sm:shadow-[0_32px_90px_rgba(64,48,29,0.11)]">
+            <div className="absolute inset-2.5 rounded-2xl bg-[#f7f3eb] sm:inset-4 sm:rounded-[1.25rem]" aria-hidden="true" />
             <div
-              className="relative z-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
-              style={{ width: DETAIL_BOX_SIZE, height: DETAIL_BOX_SIZE }}
+              className="relative z-20 aspect-square w-full max-w-[584px] shrink-0 overflow-hidden rounded-2xl border border-white bg-[#f8f5ef] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.86)] sm:rounded-[1.25rem]"
               onMouseEnter={() => setIsZooming(true)}
               onMouseLeave={() => setIsZooming(false)}
               onMouseMove={(event) => {
@@ -232,18 +279,27 @@ export default function ProductDetailClient({
               }}
             >
               {safeSelectedImage ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={resolvedSelectedImage}
-                  alt={product.name}
-                  className={`h-full w-full object-cover transition-opacity duration-150 ${isZooming ? 'opacity-0' : 'opacity-100'}`}
-                  onError={() =>
-                    setFallbackImageSet((current) => ({
-                      ...current,
-                      [selectedImage]: true,
-                    }))
-                  }
-                />
+                <AnimatePresence mode="wait">
+                  <motion.img
+                    key={`${resolvedSelectedImage}-${selectedImage}`}
+                    src={resolvedSelectedImage}
+                    alt={product.name}
+                    className="h-full w-full object-cover"
+                    initial={{ opacity: 0, scale: 1.025 }}
+                    animate={{
+                      opacity: isZooming ? 0 : 1,
+                      scale: isZooming ? 1.04 : 1,
+                    }}
+                    exit={{ opacity: 0, scale: 0.99 }}
+                    transition={{ duration: 0.32, ease: easeOutExpo }}
+                    onError={() =>
+                      setFallbackImageSet((current) => ({
+                        ...current,
+                        [selectedImage]: true,
+                      }))
+                    }
+                  />
+                </AnimatePresence>
               ) : (
                 <div className="w-full h-full grid place-items-center text-slate-500">
                   No image
@@ -261,7 +317,7 @@ export default function ProductDetailClient({
               )}
               {isZooming && safeSelectedImage && (
                 <div
-                  className="pointer-events-none absolute rounded-md border border-blue-500/90 bg-blue-200/15 shadow-[0_0_0_1px_rgba(255,255,255,0.7)] backdrop-blur-[1px]"
+                  className="pointer-events-none absolute rounded-lg border border-[#d2b36e]/80 bg-white/10 shadow-[0_0_0_1px_rgba(255,255,255,0.74),0_12px_30px_rgba(64,48,29,0.15)] backdrop-blur-[1px]"
                   style={{
                     width: LENS_SIZE,
                     height: LENS_SIZE,
@@ -270,41 +326,58 @@ export default function ProductDetailClient({
                 />
               )}
               {safeSelectedImage && (
-                <div className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-slate-900/75 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white">
+                <motion.div
+                  className="pointer-events-none absolute bottom-4 right-4 rounded-full border border-white/45 bg-[#3a3329]/82 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-lg"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2, duration: 0.3 }}
+                >
                   Zoom
-                </div>
+                </motion.div>
               )}
             </div>
           </div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {normalizedImages.map((image, index) => (
-              <button
-                key={`${image}-${index}`}
-                onClick={() => setSelectedImage(index)}
-                className={`h-20 w-20 overflow-hidden rounded-md border-2 transition ${
-                  selectedImage === index
-                    ? 'border-blue-600'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={
-                    fallbackImageSet[index]
-                      ? appendImageVersion(image)
-                      : appendImageVersion(toVariantImageUrl(image, 'thumb'))
-                  }
-                  alt={`View ${index + 1}`}
-                  className="w-full h-full object-cover"
-                  onError={() =>
-                    setFallbackImageSet((current) => ({
-                      ...current,
-                      [index]: true,
-                    }))
-                  }
-                />
-              </button>
-            ))}
+          <div className="mt-3 rounded-2xl border border-[#e5ded1] bg-white/92 p-2.5 shadow-[0_14px_36px_rgba(64,48,29,0.07)] backdrop-blur sm:mt-5 sm:p-3 sm:shadow-[0_18px_50px_rgba(64,48,29,0.08)]">
+            <div className="flex snap-x gap-2.5 overflow-x-auto pb-0.5 [scrollbar-width:none] sm:flex-wrap sm:gap-3 sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden">
+              {normalizedImages.map((image, index) => (
+                <motion.button
+                  key={`${image}-${index}`}
+                  onClick={() => setSelectedImage(index)}
+                  whileHover={{ y: -3 }}
+                  whileTap={{ scale: 0.96 }}
+                  transition={{ duration: 0.18 }}
+                  className={`relative h-16 w-16 shrink-0 snap-start overflow-hidden rounded-xl border bg-white transition sm:h-20 sm:w-20 ${
+                    selectedImage === index
+                      ? 'border-[#c6a15b] shadow-[0_10px_24px_rgba(120,88,39,0.18)] ring-2 ring-[#ead8ad]'
+                      : 'border-[#e7e0d5] opacity-82 hover:border-[#d8c39a] hover:opacity-100'
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={
+                      fallbackImageSet[index]
+                        ? appendImageVersion(image)
+                        : appendImageVersion(toVariantImageUrl(image, 'thumb'))
+                    }
+                    alt={`View ${index + 1}`}
+                    className="w-full h-full object-cover"
+                    onError={() =>
+                      setFallbackImageSet((current) => ({
+                        ...current,
+                        [index]: true,
+                      }))
+                    }
+                  />
+                  {selectedImage === index ? (
+                    <motion.span
+                      layoutId="active-product-thumbnail"
+                      className="absolute inset-x-3 bottom-2 h-0.5 rounded-full bg-gradient-to-r from-[#b58a3b] via-[#e4c77e] to-[#9a7434]"
+                      transition={{ duration: 0.25, ease: easeOutExpo }}
+                    />
+                  ) : null}
+                </motion.button>
+              ))}
+            </div>
           </div>
           {/* Load zoom only after the customer starts zooming. */}
           {safeSelectedImage && isZooming ? (
@@ -322,66 +395,69 @@ export default function ProductDetailClient({
               }
             />
           ) : null}
-        </div>
+        </motion.div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-5 flex items-start justify-between gap-4">
+        <motion.div
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_48px_rgba(15,23,42,0.06)] sm:rounded-lg sm:p-7 sm:shadow-[0_22px_70px_rgba(15,23,42,0.07)]"
+          initial={{ opacity: 0, y: 22 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.08, ease: easeOutExpo }}
+        >
+          <div className="mb-5 flex items-start justify-between gap-4 sm:mb-6">
             <div>
-              <h1 className="mb-2 text-3xl font-bold text-gray-900">{product.name}</h1>
-              <p className="mb-1 bg-gradient-to-r from-violet-600 via-blue-600 to-cyan-500 bg-clip-text text-xs font-semibold uppercase tracking-[0.08em] text-transparent">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 sm:mb-3 sm:text-xs">
                 {product.category}
               </p>
+              <h1 className="text-2xl font-semibold leading-tight text-slate-950 sm:text-4xl">{product.name}</h1>
             </div>
             {discount > 0 && (
-              <div className="bg-red-500 text-white px-3 py-1 rounded font-semibold">
+              <div className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm">
                 -{discount}%
               </div>
             )}
           </div>
 
-          <div className="mb-6">
-            <div className="flex items-baseline gap-3 mb-2">
+          <div className="mb-5 border-y border-slate-100 py-4 sm:mb-7 sm:py-5">
+            <div className="mb-2 flex items-baseline gap-3 sm:mb-3">
               {activeSalePrice ? (
                 <>
-                  <span className="text-3xl font-bold text-gray-900">
-                    <span className="bg-gradient-to-r from-emerald-600 to-lime-500 bg-clip-text text-transparent">
-                      BDT {activeSalePrice.toFixed(2)}
-                    </span>
+                  <span className="text-2xl font-semibold text-slate-950 sm:text-4xl">
+                    BDT {activeSalePrice.toFixed(2)}
                   </span>
-                  <span className="text-lg text-gray-500 line-through">
-                    <span className="bg-gradient-to-r from-rose-600 to-orange-500 bg-clip-text text-transparent">
-                      BDT {activePrice.toFixed(2)}
-                    </span>
+                  <span className="text-lg text-slate-400 line-through">
+                    BDT {activePrice.toFixed(2)}
                   </span>
                 </>
               ) : (
-                <span className="text-3xl font-bold text-gray-900">
-                  <span className="bg-gradient-to-r from-emerald-600 to-lime-500 bg-clip-text text-transparent">
-                    BDT {activePrice.toFixed(2)}
-                  </span>
+                <span className="text-2xl font-semibold text-slate-950 sm:text-4xl">
+                  BDT {activePrice.toFixed(2)}
                 </span>
               )}
             </div>
-            <p className={isActiveVariantInStock ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
-              {isActiveVariantInStock ? 'In Stock' : 'Out of Stock'}
+            <p className={isActiveVariantInStock ? 'text-sm font-semibold text-emerald-700' : 'text-sm font-semibold text-red-600'}>
+              {isActiveVariantInStock
+                ? `${activeStockQuantity} in stock${activeVariantQuantity > 0 ? `, ${activeVariantQuantity} in cart` : ''}`
+                : 'Out of Stock'}
             </p>
           </div>
 
           {product.variants.length > 0 && (
-            <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
-              <p className="mb-3 text-sm font-semibold text-slate-900">
+            <div className="mb-5 sm:mb-6">
+              <p className="mb-3 text-sm font-semibold text-slate-950">
                 Color
               </p>
               <div className="flex flex-wrap gap-2">
-                {variantGroups.map((group) => (
-                  <button
-                    key={group.color}
+                {variantGroups.map((group, groupIndex) => (
+                  <motion.button
+                    key={`${group.color}-${groupIndex}`}
                     type="button"
                     onClick={() => selectVariantAtIndex(group.indexes[0] ?? 0)}
-                    className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition ${
+                    whileHover={{ y: -1 }}
+                    whileTap={{ scale: 0.96 }}
+                    className={`inline-flex h-10 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition ${
                       group === activeVariantGroup
-                        ? 'border-blue-600 bg-blue-600 text-white'
-                        : 'border-slate-300 bg-white text-slate-700 hover:border-blue-300'
+                        ? 'border-slate-950 bg-slate-950 text-white shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-500'
                     }`}
                   >
                     <span
@@ -392,144 +468,128 @@ export default function ProductDetailClient({
                       aria-hidden="true"
                     />
                     {group.color}
-                  </button>
+                  </motion.button>
                 ))}
               </div>
               {activeVariantGroup ? (
-                <div className="mt-4">
-                  <p className="mb-3 text-sm font-semibold text-slate-900">
+                <div className="mt-5">
+                  <p className="mb-3 text-sm font-semibold text-slate-950">
                     Size
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {activeVariantGroup.indexes.map((index) => {
+                    {activeVariantGroup.indexes.map((index, sizeIndex) => {
                       const variant = product.variants[index];
                       if (!variant) return null;
 
                       return (
-                        <button
-                          key={variant.id}
+                        <motion.button
+                          key={`${variant.id}-${sizeIndex}`}
                           type="button"
                           onClick={() => selectVariantAtIndex(index)}
-                          className={`min-w-12 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          whileHover={{ y: -1 }}
+                          whileTap={{ scale: 0.96 }}
+                          className={`min-w-12 rounded-full border px-3 py-2 text-xs font-semibold transition ${
                             index === selectedVariantIndex
-                              ? 'border-blue-600 bg-white text-blue-700 ring-2 ring-blue-100'
-                              : 'border-slate-300 bg-white text-slate-700 hover:border-blue-300'
+                              ? 'border-slate-950 bg-white text-slate-950 ring-2 ring-slate-950/10'
+                              : 'border-slate-200 bg-white text-slate-700 hover:border-slate-500'
                           }`}
                         >
                           {variant.size?.trim() || 'Default'}
-                        </button>
+                        </motion.button>
                       );
                     })}
                   </div>
                 </div>
               ) : null}
 
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white">
-                  <button
+              <div className="mt-5 flex items-center gap-3 sm:mt-6">
+                <div className="inline-flex h-12 items-center rounded-full border border-slate-200 bg-white shadow-sm">
+                  <motion.button
                     type="button"
                     onClick={() => {
-                      if (!activeVariantCartItem) return;
-                      updateQuantity(activeVariantCartItem.id, activeVariantCartItem.quantity - 1);
+                      setSelectedQuantity(Math.max(1, effectiveSelectedQuantity - 1));
                     }}
-                    className="px-4 py-2 text-lg leading-none text-slate-700 transition hover:bg-slate-100"
+                    disabled={effectiveSelectedQuantity <= 1}
+                    whileTap={{ scale: 0.9 }}
+                    className="px-4 text-lg leading-none text-slate-700 transition hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-35"
                     aria-label="Decrease quantity"
                   >
                     -
-                  </button>
-                  <span className="min-w-10 text-center text-sm font-semibold text-slate-900">
-                    {activeVariantQuantity}
+                  </motion.button>
+                  <span className="min-w-10 text-center text-sm font-semibold text-slate-950">
+                    {effectiveSelectedQuantity}
                   </span>
-                  <button
+                  <motion.button
                     type="button"
                     onClick={() => {
-                      if (!canIncreaseActiveVariant) return;
-                      if (!activeVariantCartItem) {
-                        addToCart(
-                          {
-                            id: product.id,
-                            detailId: product.id,
-                            name: product.name,
-                            price: activePrice,
-                            salePrice: activeSalePrice,
-                            stockQuantity: activeStockQuantity,
-                            image: activeVariant?.image || product.image,
-                            variantId: activeVariant?.id,
-                            variantLabel: activeVariant
-                              ? formatVariantLabel(activeVariant.color, activeVariant.size) ||
-                                undefined
-                              : undefined,
-                            bundleOffers: product.bundleOffers,
-                            hasActiveBundleOffer: Boolean(bestActiveBundleOffer),
-                            bundleMinTotalQty: bestActiveBundleOffer?.minTotalQty,
-                            bundleDiscountPercent: bestActiveBundleOffer?.discountPercent,
-                            bundleDisplayText: bestActiveBundleOffer?.title?.trim() || undefined,
-                          },
-                          1,
-                        );
-                        return;
-                      }
-                      updateQuantity(activeVariantCartItem.id, activeVariantCartItem.quantity + 1);
+                      if (!canIncreaseSelectedQuantity) return;
+                      setSelectedQuantity((current) => current + 1);
                     }}
-                    disabled={!canIncreaseActiveVariant}
-                    className="px-4 py-2 text-lg leading-none text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={!canIncreaseSelectedQuantity}
+                    whileTap={{ scale: 0.9 }}
+                    className="px-4 text-lg leading-none text-slate-700 transition hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-35"
                     aria-label="Increase quantity"
                   >
                     +
-                  </button>
+                  </motion.button>
                 </div>
 
-                <button className="rounded-lg border-2 border-blue-600 px-4 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50">
+                <motion.button
+                  className="h-12 flex-1 rounded-full border border-slate-300 px-5 text-sm font-semibold text-slate-800 transition hover:border-slate-950 hover:bg-slate-50 sm:flex-none"
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.97 }}
+                >
                   Wishlist
-                </button>
+                </motion.button>
               </div>
             </div>
           )}
 
-          <div className="mb-6">
-            <button
+          <div className="mb-5 sm:mb-6">
+            <motion.button
               type="button"
-              onClick={() => {
-                if (!canIncreaseActiveVariant) return;
-                addToCart(
-                  {
-                    id: product.id,
-                    detailId: product.id,
-                    name: product.name,
-                    price: activePrice,
-                    salePrice: activeSalePrice,
-                    stockQuantity: activeStockQuantity,
-                    image: activeVariant?.image || product.image,
-                    variantId: activeVariant?.id,
-                    variantLabel: activeVariant
-                      ? formatVariantLabel(activeVariant.color, activeVariant.size) ||
-                        undefined
-                      : undefined,
-                    bundleOffers: product.bundleOffers,
-                    hasActiveBundleOffer: Boolean(bestActiveBundleOffer),
-                    bundleMinTotalQty: bestActiveBundleOffer?.minTotalQty,
-                    bundleDiscountPercent: bestActiveBundleOffer?.discountPercent,
-                    bundleDisplayText: bestActiveBundleOffer?.title?.trim() || undefined,
-                  },
-                  1,
-                );
-              }}
-              disabled={!canIncreaseActiveVariant}
-              className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              onClick={addSelectedVariantToCart}
+              disabled={!canAddActiveVariant}
+              whileHover={canAddActiveVariant ? { y: -2 } : undefined}
+              whileTap={canAddActiveVariant ? { scale: 0.985 } : undefined}
+              className="w-full rounded-full bg-slate-950 py-4 font-semibold text-white shadow-[0_16px_32px_rgba(15,23,42,0.2)] transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
             >
-              {activeStockQuantity <= 0 ? 'Out of Stock' : 'Add to Cart'}
-            </button>
+              {activeStockQuantity <= 0
+                ? 'Out of Stock'
+                : availableToAdd <= 0
+                  ? 'Max Quantity In Cart'
+                  : 'Add to Cart'}
+            </motion.button>
+          </div>
+
+          <div className="mb-5 grid grid-cols-3 gap-2 border-b border-slate-100 pb-5 text-center sm:mb-6 sm:gap-3 sm:pb-6">
+            {['Fast delivery', 'Easy returns', 'Quality checked'].map((label, index) => (
+              <motion.div
+                key={label}
+                className="rounded-md bg-slate-50 px-1.5 py-2.5 text-[10px] font-semibold text-slate-700 sm:px-2 sm:py-3 sm:text-xs"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.28, delay: 0.18 + index * 0.05 }}
+              >
+                {label}
+              </motion.div>
+            ))}
           </div>
 
           {product.bundleOffers.length > 0 && (
-            <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
-              <h3 className="mb-4 text-lg font-semibold text-amber-900">Bundle Offers</h3>
+            <div className="mb-5 rounded-xl border border-amber-200 bg-[#fffaf0] p-3 sm:mb-6 sm:rounded-lg sm:p-4">
+              <h3 className="mb-4 text-lg font-semibold text-slate-950">Bundle Offers</h3>
               <div className="space-y-3">
-                {visibleBundleOffers.map((offer) => (
-                  <div
-                    key={offer.id}
-                    className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2"
-                  >
+                <AnimatePresence initial={false}>
+                  {visibleBundleOffers.map((offer, offerIndex) => (
+                    <motion.div
+                      key={`${offer.id}-${offerIndex}`}
+                      className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-md border border-amber-200 bg-white px-3 py-2 shadow-sm"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.25, ease: easeOutExpo }}
+                    >
                     <div className="h-16 w-16 overflow-hidden rounded-md border border-amber-100 bg-amber-50">
                       {offer.image ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -544,15 +604,16 @@ export default function ProductDetailClient({
                         </div>
                       )}
                     </div>
-                    <div>
+                    <div className="self-center">
                       <p className="text-sm font-semibold text-slate-900">{offer.title}</p>
                       <p className="text-xs text-slate-700">
                         Buy at least {offer.minTotalQty} eligible pcs and get{' '}
                         {offer.discountPercent}% off
                       </p>
                     </div>
-                  </div>
-                ))}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
               {product.bundleOffers.length > 1 ? (
                 <button
@@ -560,7 +621,7 @@ export default function ProductDetailClient({
                   onClick={() =>
                     setAreBundleOffersExpanded((current) => !current)
                   }
-                  className="mt-3 text-sm font-semibold text-amber-800 transition hover:text-amber-900"
+                  className="mt-3 text-sm font-semibold text-slate-900 transition hover:text-amber-800"
                 >
                   {areBundleOffersExpanded
                     ? 'See fewer offers'
@@ -570,13 +631,13 @@ export default function ProductDetailClient({
             </div>
           )}
 
-          <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-4 text-lg font-semibold text-gray-900">Specifications</h3>
+          <div className="mb-5 rounded-xl border border-slate-200 bg-white p-3 sm:mb-6 sm:rounded-lg sm:p-4">
+            <h3 className="mb-4 text-lg font-semibold text-slate-950">Specifications</h3>
             <div className="space-y-2">
               {product.specs.map((spec, index) => (
                 <div
                   key={`${spec.name}-${index}`}
-                  className="grid grid-cols-[minmax(120px,0.9fr)_minmax(0,1.1fr)] gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+                  className="grid grid-cols-[minmax(120px,0.9fr)_minmax(0,1.1fr)] gap-3 border-b border-slate-100 px-1 py-2 last:border-b-0"
                 >
                   <p className="text-sm font-semibold text-slate-700">{spec.name}</p>
                   <p className="text-sm text-slate-900">{spec.value}</p>
@@ -586,8 +647,8 @@ export default function ProductDetailClient({
           </div>
 
           {descriptionText ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <h3 className="mb-3 text-lg font-semibold text-gray-900">
+            <div className="rounded-xl border border-slate-200 bg-white p-3 sm:rounded-lg sm:p-4">
+              <h3 className="mb-3 text-lg font-semibold text-slate-950">
                 Description
               </h3>
               <div
@@ -610,7 +671,7 @@ export default function ProductDetailClient({
                   onClick={() =>
                     setIsDescriptionExpanded((current) => !current)
                   }
-                  className="mt-3 text-sm font-semibold text-blue-600 transition hover:text-blue-700"
+                  className="mt-3 text-sm font-semibold text-slate-950 transition hover:text-blue-700"
                 >
                   {isDescriptionExpanded ? 'See less' : 'See more...'}
                 </button>
@@ -618,36 +679,91 @@ export default function ProductDetailClient({
             </div>
           ) : null}
 
-        </div>
+        </motion.div>
       </div>
 
-      <section className="mt-16">
-        <h2 className="text-2xl font-bold text-gray-900 mb-8">Related Products</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {relatedProducts.map((relatedProduct) => (
-            <Link key={relatedProduct.id} href={`/products/${relatedProduct.id}`} className="group cursor-pointer">
-              <div className="relative overflow-hidden bg-gray-100 aspect-square rounded-lg mb-3">
-                {relatedProduct.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={relatedProduct.image}
-                    alt={relatedProduct.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                  />
-                ) : (
-                  <div className="grid h-full w-full place-items-center text-xs font-semibold text-slate-500">
-                    No image
+      <section className="mt-10 overflow-hidden rounded-2xl border border-[#e5ded1] bg-[#fbfaf7] px-3 py-4 shadow-[0_18px_48px_rgba(64,48,29,0.07)] sm:mt-16 sm:rounded-[1.75rem] sm:px-7 sm:py-6 sm:shadow-[0_24px_70px_rgba(64,48,29,0.08)]">
+        <div className="mb-5 flex items-end justify-between gap-3 sm:mb-7 sm:gap-4">
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8c7450] sm:mb-2 sm:text-xs">
+              Curated for you
+            </p>
+            <h2 className="text-2xl font-semibold leading-tight text-slate-950 sm:text-3xl">Related Products</h2>
+          </div>
+          <Link href="/products" className="text-sm font-semibold text-slate-700 transition hover:text-slate-950">
+            View all
+          </Link>
+        </div>
+        <div className="relative">
+          <motion.button
+            type="button"
+            onClick={() => scrollRelatedProducts(-1)}
+            className="absolute left-1 top-1/2 z-20 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-[#dccba9] bg-white/95 text-base font-semibold text-[#5d4b32] shadow-[0_10px_24px_rgba(64,48,29,0.18)] backdrop-blur transition hover:border-[#c6a15b] hover:text-slate-950 sm:left-2 sm:h-11 sm:w-11 sm:text-lg"
+            aria-label="Previous related products"
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            &lt;
+          </motion.button>
+          <div
+            ref={relatedCarouselRef}
+            className="-mx-3 flex snap-x gap-3 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:-mx-7 sm:gap-5 sm:px-7 sm:pb-2 [&::-webkit-scrollbar]:hidden"
+          >
+            {relatedProducts.map((relatedProduct, relatedProductIndex) => (
+              <Link
+                key={`${relatedProduct.id}-${relatedProductIndex}`}
+                href={`/products/${relatedProduct.id}`}
+                className="group block min-w-[72%] snap-start cursor-pointer sm:min-w-[42%] lg:min-w-[24%]"
+              >
+                <motion.div
+                  className="h-full rounded-xl border border-[#e7ddca] bg-white p-2.5 shadow-[0_12px_34px_rgba(64,48,29,0.07)] transition-colors group-hover:border-[#d4bd8a] sm:rounded-2xl sm:p-3 sm:shadow-[0_16px_45px_rgba(64,48,29,0.08)]"
+                  whileHover={{ y: -6 }}
+                  transition={{ duration: 0.24, ease: easeOutExpo }}
+                >
+                  <div className="relative mb-3 aspect-[4/5] overflow-hidden rounded-lg bg-[#f4efe6] sm:mb-4 sm:rounded-xl">
+                    {relatedProduct.image ? (
+                      <motion.img
+                        src={relatedProduct.image}
+                        alt={relatedProduct.name}
+                        className="h-full w-full object-cover"
+                        whileHover={{ scale: 1.055 }}
+                        transition={{ duration: 0.45, ease: easeOutExpo }}
+                      />
+                    ) : (
+                      <div className="grid h-full w-full place-items-center text-xs font-semibold text-slate-500">
+                        No image
+                      </div>
+                    )}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/35 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                   </div>
-                )}
-              </div>
-              <h3 className="text-sm font-medium text-gray-900 line-clamp-2 mb-2">
-                {relatedProduct.name}
-              </h3>
-              <span className="text-gray-900 font-semibold">
-                BDT {(relatedProduct.salePrice ?? relatedProduct.price).toFixed(2)}
-              </span>
-            </Link>
-          ))}
+                  <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-[#9b8054] sm:mb-2 sm:text-[11px]">
+                    Recommended
+                  </p>
+                  <h3 className="mb-2 line-clamp-2 min-h-11 text-base font-semibold leading-snug text-slate-950 sm:mb-3 sm:min-h-14 sm:text-lg">
+                    {relatedProduct.name}
+                  </h3>
+                  <div className="flex items-center justify-between gap-2 border-t border-[#eee6d8] pt-2.5 sm:gap-3 sm:pt-3">
+                    <span className="text-sm font-semibold text-slate-800 sm:text-base">
+                      BDT {(relatedProduct.salePrice ?? relatedProduct.price).toFixed(2)}
+                    </span>
+                    <span className="text-xs font-semibold text-[#7c6239] transition group-hover:text-slate-950 sm:text-sm">
+                      View
+                    </span>
+                  </div>
+                </motion.div>
+              </Link>
+            ))}
+          </div>
+          <motion.button
+            type="button"
+            onClick={() => scrollRelatedProducts(1)}
+            className="absolute right-1 top-1/2 z-20 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-[#dccba9] bg-white/95 text-base font-semibold text-[#5d4b32] shadow-[0_10px_24px_rgba(64,48,29,0.18)] backdrop-blur transition hover:border-[#c6a15b] hover:text-slate-950 sm:right-2 sm:h-11 sm:w-11 sm:text-lg"
+            aria-label="Next related products"
+            whileHover={{ y: -2 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            &gt;
+          </motion.button>
         </div>
       </section>
     </div>

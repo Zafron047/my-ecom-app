@@ -27,7 +27,7 @@ function formatDate(value: Date) {
 export default async function AdminProductsBrandsPage({
   searchParams,
 }: AdminProductsBrandsPageProps) {
-  await requireAdminPermission('/admin/products/brands', 'products.read');
+  await requireAdminPermission('/admin/products/brands', 'productCatalog.read');
 
   const params = await searchParams;
   const query = params.q?.trim() ?? '';

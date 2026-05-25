@@ -2,6 +2,7 @@ import PurchaseOrderForm from '@/components/admin/PurchaseOrderForm';
 import PurchaseOrderDraftDeleteButton from '@/components/admin/PurchaseOrderDraftDeleteButton';
 import AdminTimelinePanel from '@/components/admin/AdminTimelinePanel';
 import { requireAdminPermission } from '@/lib/admin-session';
+import { canAccessPermission } from '@/lib/admin-rbac';
 import { prisma } from '@/lib/prisma';
 import { PURCHASE_ORDER_STATUS } from '@/lib/purchase-order-status';
 import PurchaseOrderListPage from '../_components/PurchaseOrderListPage';
@@ -61,9 +62,14 @@ export default async function AdminPurchaseOrderDraftPage({
     );
   }
 
-  await requireAdminPermission(
+  const session = await requireAdminPermission(
     '/admin/purchase-order/draft',
-    'products.read',
+    'purchaseOrders.read',
+  );
+  const canViewCost = canAccessPermission(session.role, 'purchaseOrders.cost.read');
+  const canSubmitRecord = canAccessPermission(
+    session.role,
+    'purchaseOrders.submit',
   );
 
   const [variants, initialDraft] = await Promise.all([
@@ -175,6 +181,8 @@ export default async function AdminPurchaseOrderDraftPage({
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <PurchaseOrderForm
           key={initialDraft?.id ?? 'new-purchase-order-draft'}
+          canSubmitRecord={canSubmitRecord}
+          canViewCost={canViewCost}
           initialDraft={
             initialDraft
               ? {
@@ -183,7 +191,7 @@ export default async function AdminPurchaseOrderDraftPage({
                     id: line.id,
                     productId: line.productId,
                     quantity: line.quantity,
-                    unitCost: formatDecimalInput(line.unitCost),
+                    unitCost: canViewCost ? formatDecimalInput(line.unitCost) : null,
                     variantId: line.variantId,
                   })),
                   purchaseDate: formatDateInput(initialDraft.purchaseDate),
@@ -196,7 +204,9 @@ export default async function AdminPurchaseOrderDraftPage({
           saveDraftAction={savePurchaseOrderDraft}
           variants={variants.map((variant) => ({
             color: variant.color,
-            currentFifoCost: formatMoney(variant.inventoryBatches[0]?.unitCost),
+            currentFifoCost: canViewCost
+              ? formatMoney(variant.inventoryBatches[0]?.unitCost)
+              : null,
             id: variant.id,
             imagePath: variant.imagePath ?? variant.product.images[0]?.storagePath ?? null,
             productId: variant.product.id,

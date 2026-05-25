@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { validateAdminPassword } from '@/lib/admin-auth';
-import { requireAdminApiRole } from '@/lib/admin-api-auth';
+import { requireAdminApiPermission } from '@/lib/admin-api-auth';
 import { logAdminAudit } from '@/lib/admin-audit';
 import { hashPassword, verifyPassword } from '@/lib/password-auth';
 import { prisma } from '@/lib/prisma';
@@ -11,7 +11,7 @@ type ChangePasswordBody = {
 };
 
 export async function POST(request: Request) {
-  const auth = await requireAdminApiRole(['admin', 'manager', 'support'], {
+  const auth = await requireAdminApiPermission('password.change', {
     allowPasswordResetRequired: true,
   });
   if (auth.response) return auth.response;

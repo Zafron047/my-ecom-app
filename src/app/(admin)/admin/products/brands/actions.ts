@@ -50,7 +50,7 @@ export async function createBrand(
   _previousState: BrandFormState,
   formData: FormData,
 ): Promise<BrandFormState> {
-  await requireAdminPermission('/admin/products/brands', 'products.write');
+  await requireAdminPermission('/admin/products/brands', 'productCatalog.manage');
 
   const name = getString(formData, 'name');
   if (!name) {
@@ -100,7 +100,7 @@ export async function updateBrand(
   _previousState: BrandFormState,
   formData: FormData,
 ): Promise<BrandFormState> {
-  await requireAdminPermission('/admin/products/brands', 'products.write');
+  await requireAdminPermission('/admin/products/brands', 'productCatalog.manage');
 
   const brandId = getString(formData, 'brandId');
   const intent = getString(formData, 'intent') || 'save';

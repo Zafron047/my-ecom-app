@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
-import { requireAdminApiRole } from '@/lib/admin-api-auth';
+import { requireAdminApiPermission } from '@/lib/admin-api-auth';
 import { logAdminAudit } from '@/lib/admin-audit';
+import { adminRoleLabels, canManageAdminUser } from '@/lib/admin-rbac';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminApiRole(['admin']);
+  const auth = await requireAdminApiPermission('adminUsers.manage');
   if (auth.response) return auth.response;
   const { actor } = auth;
 
@@ -21,11 +22,19 @@ export async function POST(
     select: {
       email: true,
       id: true,
+      role: true,
     },
   });
 
   if (!target) {
     return NextResponse.json({ error: 'Admin user not found.' }, { status: 404 });
+  }
+
+  if (!canManageAdminUser(actor.role, target.role)) {
+    return NextResponse.json(
+      { error: `You cannot modify a ${adminRoleLabels[target.role]} user.` },
+      { status: 403 },
+    );
   }
 
   const now = new Date();

@@ -13,14 +13,75 @@ import {
 } from '@/lib/meta-pixel';
 import { getShippingCharge } from '@/lib/shipping-charge';
 import { AnimatePresence, motion } from 'framer-motion';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SearchableDropdown from '@/components/SearchableDropdown';
-import { FacebookIcon, GoogleIcon } from '@/components/SocialAuthIcons';
+import { slugifyCategory } from '@/lib/category-slug';
+import type { StorefrontBusinessProfile } from '@/lib/storefront-types';
 
 const MOBILE_PATTERN = /^01[3-9]\d{8}$/;
+const curatedCategoryFallbacks = [
+  'Kitchen & Cooking',
+  'Home Organization',
+  'Decor & Accessories',
+  'Smart Gadgets',
+  'Bathroom Essentials',
+  'Daily Essentials',
+  'Cleaning Tools',
+  'Storage Solutions',
+];
+const categoryDisplayLabels: Record<string, string> = {
+  kitchen: 'Kitchen & Cooking',
+  'kitchen & dining': 'Kitchen & Cooking',
+  cooking: 'Kitchen & Cooking',
+  organization: 'Home Organization',
+  organiser: 'Home Organization',
+  organizer: 'Home Organization',
+  storage: 'Home Organization',
+  decor: 'Decor & Accessories',
+  decoration: 'Decor & Accessories',
+  accessories: 'Decor & Accessories',
+  gadget: 'Smart Gadgets',
+  gadgets: 'Smart Gadgets',
+  smart: 'Smart Gadgets',
+  bathroom: 'Bathroom Essentials',
+  bath: 'Bathroom Essentials',
+  cleaning: 'Cleaning Tools',
+};
+const categoryPriority = [
+  'Kitchen & Cooking',
+  'Home Organization',
+  'Decor & Accessories',
+  'Smart Gadgets',
+  'Bathroom Essentials',
+  'Daily Essentials',
+  'Cleaning Tools',
+  'Storage Solutions',
+];
+
+function isPlaceholderCategory(value: string) {
+  return /\b(test|demo|sample|placeholder|temp|temporary|dummy|uncategorized)\b/i.test(
+    value,
+  );
+}
+
+function polishCategoryLabel(value: string, index: number) {
+  const normalized = value.trim().toLowerCase();
+
+  if (!normalized || isPlaceholderCategory(value)) {
+    return curatedCategoryFallbacks[index % curatedCategoryFallbacks.length];
+  }
+
+  const directLabel = categoryDisplayLabels[normalized];
+  if (directLabel) return directLabel;
+
+  const matchingLabel = Object.entries(categoryDisplayLabels).find(([keyword]) =>
+    normalized.includes(keyword),
+  )?.[1];
+
+  return matchingLabel ?? value.trim();
+}
 
 function normalizeMobileInput(value: string) {
   const digits = value.replace(/\D/g, '');
@@ -30,7 +91,13 @@ function normalizeMobileInput(value: string) {
   return digits;
 }
 
-export default function Header() {
+export default function Header({
+  businessProfile,
+  catalogCategories,
+}: {
+  businessProfile: StorefrontBusinessProfile;
+  catalogCategories: string[];
+}) {
   type CheckoutField =
     | 'firstName'
     | 'lastName'
@@ -44,12 +111,16 @@ export default function Header() {
 
   const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
+  const [isAllCategoryMenuOpen, setIsAllCategoryMenuOpen] = useState(false);
   const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchableProducts, setSearchableProducts] = useState<
     { id: string; name: string; image: string; variantCount: number }[]
   >([]);
+  const [hasRequestedSearchProducts, setHasRequestedSearchProducts] =
+    useState(false);
   const {
     cartItems,
     isCartOpen,
@@ -68,7 +139,7 @@ export default function Header() {
     removeFromCart,
   } = useCart();
   const [isCheckoutView, setIsCheckoutView] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'bkash' | 'cod' | ''>('');
+  const [paymentMethod, setPaymentMethod] = useState<'bkash' | 'cod' | ''>('cod');
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [placeOrderError, setPlaceOrderError] = useState('');
   const [showFirstNameSplitHint, setShowFirstNameSplitHint] = useState(false);
@@ -119,9 +190,17 @@ export default function Header() {
 
   const checkoutTotal = subtotal + shippingCharge;
   const completedFieldGlow =
-    'border-emerald-400 shadow-[0_0_0_2px_rgba(16,185,129,0.18)]';
+    'border-emerald-400 bg-emerald-50/25 shadow-[0_0_0_3px_rgba(16,185,129,0.13)]';
   const invalidFieldGlow =
-    'border-rose-400 shadow-[0_0_0_2px_rgba(244,63,94,0.16)] bg-rose-50/35';
+    'border-rose-400 shadow-[0_0_0_3px_rgba(244,63,94,0.14)] bg-rose-50/35';
+  const checkoutFieldClass =
+    'min-h-12 w-full rounded-2xl border bg-white px-4 py-3 text-sm font-medium text-zinc-800 outline-none transition duration-200 placeholder:text-zinc-400 focus:border-zinc-950 focus:shadow-[0_0_0_4px_rgba(24,24,27,0.08)]';
+  const checkoutDropdownClass =
+    'min-h-12 w-full rounded-2xl border bg-white px-4 py-3 pr-10 text-sm font-medium text-zinc-800 outline-none transition duration-200 focus:border-zinc-950 focus:shadow-[0_0_0_4px_rgba(24,24,27,0.08)] disabled:bg-zinc-50 disabled:text-zinc-400 disabled:cursor-not-allowed';
+  const primaryCtaClass =
+    'flex min-h-[3.25rem] w-full items-center justify-center rounded-2xl px-5 py-3.5 text-sm font-bold uppercase tracking-[0.12em] !text-white shadow-[0_14px_30px_rgba(24,24,27,0.18)] transition duration-200 focus:outline-none focus:ring-4 focus:ring-zinc-950/15 active:translate-y-px';
+  const checkoutSteps = ['Cart', 'Checkout'];
+  const activeCheckoutStep = isCheckoutView ? 1 : 0;
   const fieldSpringTransition = {
     type: 'spring',
     stiffness: 320,
@@ -185,19 +264,44 @@ export default function Header() {
   );
   const groupedDistrictOptions = getGroupedDistrictOptions(locationDistricts);
 
-  const navLinks = [
-    { href: '/', label: 'Home' },
-    { href: '/products', label: 'Products' },
-    { href: '#', label: 'Categories' },
-    { href: '/checkout', label: 'Cart' },
+  const exploreLinks = [
+    { href: '/', label: 'Home', description: 'Return to the storefront' },
+    { href: '/products', label: 'Products', description: 'Browse every useful find' },
+  ];
+  const supportLinks = [
+    { href: '/checkout', label: 'Cart', description: `${itemCount} item${itemCount === 1 ? '' : 's'}` },
     ...(isCustomerLoggedIn
       ? [
-          { href: '/account', label: 'Account' },
-          { href: '#', label: 'Logout' },
+          { href: '/account', label: 'Account', description: 'Orders and profile' },
+          { href: '#', label: 'Logout', description: 'Sign out safely' },
         ]
-      : [{ href: '/login', label: 'Login' }]),
-    { href: '#', label: 'Support' },
+      : [{ href: '/login', label: 'Login', description: 'Sign in or create account' }]),
+    { href: '#', label: 'Support', description: 'Help with your order' },
   ];
+  const menuCategories = catalogCategories
+    .filter((category) => category !== 'All')
+    .map((category, index) => ({
+      href: `/collections/${slugifyCategory(category)}`,
+      label: polishCategoryLabel(category, index),
+      rawName: category,
+    }))
+    .sort((first, second) => {
+      const firstPriority = categoryPriority.indexOf(first.label);
+      const secondPriority = categoryPriority.indexOf(second.label);
+
+      if (firstPriority !== -1 || secondPriority !== -1) {
+        return (
+          (firstPriority === -1 ? Number.MAX_SAFE_INTEGER : firstPriority) -
+          (secondPriority === -1 ? Number.MAX_SAFE_INTEGER : secondPriority)
+        );
+      }
+
+      return first.label.localeCompare(second.label);
+    });
+  const featuredMenuCategories = menuCategories.slice(0, 4);
+  const hiddenMenuCategories = menuCategories.slice(4);
+  const searchPlaceholder =
+    businessProfile.tagline || 'Search kitchen, decor and daily essentials';
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const searchSuggestions = normalizedQuery
@@ -207,6 +311,27 @@ export default function Header() {
         )
         .slice(0, 5)
     : [];
+
+  const loadSearchProducts = useCallback(async () => {
+    if (hasRequestedSearchProducts) return;
+    setHasRequestedSearchProducts(true);
+
+    try {
+      const response = await fetch('/api/storefront/search');
+      if (!response.ok) return;
+      const payload = (await response.json()) as {
+        products?: {
+          id: string;
+          name: string;
+          image: string;
+          variantCount: number;
+        }[];
+      };
+      setSearchableProducts(payload.products ?? []);
+    } catch {
+      // Keep search suggestions empty when loading fails.
+    }
+  }, [hasRequestedSearchProducts]);
 
   const groupedCartItems = useMemo(() => {
     const groups = new Map<
@@ -311,35 +436,6 @@ export default function Header() {
       clearTimeout(timer);
     };
   }, [checkoutForm.customerMobile]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadSearchProducts() {
-      try {
-        const response = await fetch('/api/storefront/search');
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          products?: {
-            id: string;
-            name: string;
-            image: string;
-            variantCount: number;
-          }[];
-        };
-        if (!isMounted) return;
-        setSearchableProducts(payload.products ?? []);
-      } catch {
-        // Keep search suggestions empty when loading fails.
-      }
-    }
-
-    void loadSearchProducts();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -482,6 +578,8 @@ export default function Header() {
   function handleMenuToggle() {
     if (!isMenuOpen) {
       handleCloseCart();
+    } else {
+      setIsAllCategoryMenuOpen(false);
     }
 
     setIsMenuOpen((open) => !open);
@@ -490,6 +588,7 @@ export default function Header() {
   function handleCartToggle() {
     if (!isCartOpen) {
       setIsMenuOpen(false);
+      setIsAllCategoryMenuOpen(false);
     } else {
       resetCheckoutView();
     }
@@ -500,6 +599,11 @@ export default function Header() {
   function handleCloseCart() {
     resetCheckoutView();
     closeCart();
+  }
+
+  function handleCloseMenu() {
+    setIsMenuOpen(false);
+    setIsAllCategoryMenuOpen(false);
   }
 
   function handleProceedToCheckout() {
@@ -573,7 +677,7 @@ export default function Header() {
 
   function resetCheckoutView() {
     setIsCheckoutView(false);
-    setPaymentMethod('');
+    setPaymentMethod('cod');
     setShowFirstNameSplitHint(false);
     setShowLastNameOnlyHint(false);
     setTouchedFields({
@@ -704,27 +808,27 @@ export default function Header() {
 
   return (
     <>
-      <header className="border-b border-gray-200 bg-white sticky top-0 z-40">
-        <div className="border-b border-black bg-black">
-          <div className="mx-auto flex h-6 max-w-7xl items-center justify-center px-4 sm:px-6 lg:px-8">
-            <p
-              className="text-center text-[7.5px] font-normal leading-none tracking-[0.06rem] sm:text-[8.5px]"
-              style={{ color: 'aliceblue' }}
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-zinc-200/65 bg-white/88 shadow-[0_10px_34px_rgba(24,24,27,0.055)] backdrop-blur-xl">
+        <div className="border-b border-white/10 bg-zinc-950">
+          <div className="mx-auto flex h-7 max-w-7xl items-center justify-center px-4 sm:h-8 sm:px-6 lg:px-8">
+            <span
+              className="truncate text-center text-[7.5px] font-semibold uppercase leading-none tracking-[0.08rem] sm:text-[9px] sm:tracking-[0.14rem]"
+              style={{ color: '#ffffff' }}
             >
-              Hotline: +880 17XX-XXXXXX | +880 1400-XXXXXX
-            </p>
+              COD Available • Fast Delivery • Useful Home & Kitchen Finds
+            </span>
           </div>
         </div>
 
-        <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="relative flex items-center gap-2 sm:gap-4">
-            <div className="flex items-center gap-1 sm:gap-3 lg:flex-1">
+        <nav className="mx-auto max-w-7xl px-3 py-3 sm:px-6 lg:px-8 lg:py-4">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-4">
+            <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-3 lg:min-w-[11.75rem]">
               <button
                 type="button"
                 aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
                 aria-expanded={isMenuOpen}
                 onClick={handleMenuToggle}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 text-gray-700 transition hover:bg-gray-50"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-200/90 bg-white/95 text-zinc-700 shadow-[0_8px_22px_rgba(24,24,27,0.045)] ring-1 ring-zinc-950/[0.025] transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
               >
                 <svg
                   className="h-5 w-5"
@@ -746,14 +850,13 @@ export default function Header() {
               </button>
 
               {/* Logo */}
-              <Link href="/" className="flex items-center">
-                <div className="relative h-[2.1rem] w-[3rem] overflow-hidden rounded-md border border-blue-200 bg-[#2d5db3] shadow-sm sm:h-11 sm:w-16 sm:rounded-lg">
-                  <Image
-                    src="/shop-easy-logo.svg"
-                    alt="Shop Easy logo"
-                    fill
-                    sizes="(max-width: 639px) 51px, 64px"
-                    className="object-contain p-0.5"
+              <Link href="/" className="flex shrink-0 items-center gap-2">
+                <div className="relative h-9 shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-zinc-900/10 shadow-[0_8px_24px_rgba(24,24,27,0.06)] sm:h-10">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={businessProfile.logoUrl}
+                    alt={businessProfile.logoAlt}
+                    className="h-full w-auto object-contain"
                     loading="eager"
                     fetchPriority="high"
                   />
@@ -761,15 +864,15 @@ export default function Header() {
               </Link>
             </div>
 
-            <div className="min-w-0 flex-1 justify-center lg:flex-[2]">
-              <div ref={desktopSearchRef} className="relative w-full max-w-2xl">
+            <div className="min-w-0">
+              <div ref={desktopSearchRef} className="relative mx-auto w-full max-w-2xl">
                 <form
                   role="search"
                   onSubmit={handleSearchSubmit}
-                  className="flex w-full items-center gap-2 rounded-2xl bg-white px-4 py-1.5 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.22)] transition focus-within:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45),0_0_0_3px_rgba(59,130,246,0.12)]"
+                  className="flex h-10 w-full items-center gap-1.5 rounded-full border border-zinc-200/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(250,250,250,0.88))] px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-1px_0_rgba(24,24,27,0.025),0_8px_22px_rgba(24,24,27,0.035)] transition duration-300 focus-within:border-zinc-300 focus-within:bg-white focus-within:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_0_0_4px_rgba(24,24,27,0.055)] sm:h-11 sm:gap-2.5 sm:px-4"
                 >
                   <svg
-                    className="h-3.5 w-3.5 shrink-0 text-gray-400"
+                    className="h-3.5 w-3.5 shrink-0 text-zinc-400 sm:h-4 sm:w-4"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -789,17 +892,21 @@ export default function Header() {
                     onChange={(e) => {
                       setSearchQuery(e.target.value);
                       setIsSearchOpen(true);
+                      void loadSearchProducts();
                     }}
-                    onFocus={() => setIsSearchOpen(true)}
-                    placeholder="Global Finds at Deshi Price"
+                    onFocus={() => {
+                      setIsSearchOpen(true);
+                      void loadSearchProducts();
+                    }}
+                    placeholder={searchPlaceholder}
                     aria-label="Search products"
                     autoComplete="off"
-                    className="w-full appearance-none !rounded-none !border-0 !bg-transparent !p-0 !text-xs !text-gray-700 !shadow-none outline-none placeholder:!text-gray-400 focus:!border-0 focus:!shadow-none"
+                    className="w-full appearance-none !rounded-none !border-0 !bg-transparent !p-0 !text-[0.68rem] !font-medium !leading-none !text-zinc-800 !shadow-none outline-none placeholder:!font-medium placeholder:!tracking-[0.01em] placeholder:!text-zinc-400 focus:!border-0 focus:!shadow-none sm:!text-sm"
                   />
                 </form>
 
                 {isSearchOpen && searchSuggestions.length > 0 && (
-                  <div className="absolute left-0 right-0 top-[calc(100%+0.45rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+                  <div className="absolute left-0 right-0 top-[calc(100%+0.6rem)] overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-[0_26px_70px_rgba(24,24,27,0.14)]">
                     {searchSuggestions.map((product) => (
                       <button
                         key={product.id}
@@ -807,10 +914,10 @@ export default function Header() {
                         onClick={() =>
                           handleSuggestionSelect(product.id, product.name)
                         }
-                        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition duration-200 hover:bg-zinc-50"
                       >
                         <div className="flex min-w-0 items-center gap-3">
-                          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-slate-100">
+                          <div className="h-11 w-11 shrink-0 overflow-hidden rounded-2xl bg-zinc-100">
                             {product.image ? (
                               <img
                                 src={product.image}
@@ -818,20 +925,20 @@ export default function Header() {
                                 className="h-full w-full object-cover"
                               />
                             ) : (
-                              <div className="h-full w-full bg-slate-100" />
+                              <div className="h-full w-full bg-zinc-100" />
                             )}
                           </div>
                           <div className="min-w-0">
-                            <span className="line-clamp-2 text-xs font-medium text-slate-700">
+                            <span className="line-clamp-2 text-xs font-semibold leading-5 text-zinc-800">
                               {product.name}
                             </span>
-                            <p className="mt-0.5 text-[0.62rem] font-medium text-slate-400">
+                            <p className="mt-0.5 text-[0.62rem] font-medium text-zinc-400">
                               {product.variantCount}{' '}
                               {product.variantCount === 1 ? 'variant' : 'variants'}
                             </p>
                           </div>
                         </div>
-                        <span className="shrink-0 text-[0.65rem] uppercase tracking-[0.14em] text-slate-400">
+                        <span className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-zinc-400">
                           View
                         </span>
                       </button>
@@ -842,7 +949,7 @@ export default function Header() {
             </div>
 
             {/* Right Actions */}
-            <div className="flex items-center justify-end space-x-4 lg:flex-1">
+            <div className="flex shrink-0 items-center justify-end lg:min-w-[11.75rem]">
               <div className="relative">
                 {cartNotices.length > 0 ? (
                   <div className="pointer-events-none absolute right-0 top-[calc(100%+0.6rem)] z-20 flex w-56 flex-col gap-2">
@@ -875,7 +982,7 @@ export default function Header() {
                           times: [0, 0.58, 0.66, 0.74, 0.82, 0.9, 0.96, 1],
                           ease: 'linear',
                         }}
-                        className="rounded-2xl border border-blue-100 bg-white/95 px-2.5 py-2 shadow-[0_16px_35px_rgba(15,23,42,0.14)] backdrop-blur-sm"
+                        className="rounded-2xl border border-zinc-200 bg-white/95 px-2.5 py-2 shadow-[0_16px_35px_rgba(24,24,27,0.14)] backdrop-blur-sm"
                         aria-live="polite"
                       >
                         <div className="flex items-center gap-2.5">
@@ -908,10 +1015,10 @@ export default function Header() {
                   onClick={handleCartToggle}
                   aria-label={isCartOpen ? 'Close cart' : 'Open cart'}
                   aria-expanded={isCartOpen}
-                  className="flex items-center space-x-2 text-gray-700 transition hover:text-gray-900"
-                >
+                  className="group relative flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200/90 bg-white/95 text-zinc-700 shadow-[0_8px_22px_rgba(24,24,27,0.045)] ring-1 ring-zinc-950/[0.025] transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white sm:w-auto sm:gap-2 sm:px-3 sm:py-2"
+              >
                   <svg
-                    className="w-6 h-6"
+                    className="h-5 w-5"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -923,7 +1030,7 @@ export default function Header() {
                       d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
                     />
                   </svg>
-                  <span className="min-w-6 rounded bg-blue-600 px-2 py-1 text-center text-xs text-white">
+                  <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-zinc-950 px-1.5 py-0.5 text-center text-[0.65rem] font-semibold leading-none text-white ring-2 ring-white transition group-hover:bg-white group-hover:text-zinc-950 group-hover:ring-zinc-950 sm:static sm:min-w-6 sm:px-2 sm:py-1 sm:text-xs sm:ring-0">
                     {itemCount}
                   </span>
                 </button>
@@ -945,86 +1052,304 @@ export default function Header() {
           type="button"
           aria-label="Close overlay"
           onClick={() => {
-            setIsMenuOpen(false);
+            handleCloseMenu();
             handleCloseCart();
           }}
-          className={`absolute inset-0 bg-slate-900/35 transition-opacity duration-300 ${
+          className={`absolute inset-0 bg-zinc-950/40 backdrop-blur-[3px] transition-opacity duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             isMenuOpen || isCartOpen ? 'opacity-100' : 'opacity-0'
           }`}
         />
 
         <aside
-          className={`absolute left-0 top-0 flex h-full w-80 max-w-[86vw] flex-col bg-white px-6 py-6 shadow-2xl transition-transform duration-300 ease-out ${
+          className={`absolute left-0 top-0 flex h-full w-[23.5rem] max-w-[92vw] flex-col overflow-y-auto bg-[#fbfaf8] px-6 py-6 shadow-[0_24px_80px_rgba(24,24,27,0.18)] ring-1 ring-zinc-950/10 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] sm:w-[25.5rem] sm:px-8 ${
             isMenuOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="mb-2" />
-
-          <div className="mb-6 rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50 px-4 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">
-              Promise
-            </p>
-            <p className="mt-2 text-[10px] font-medium leading-5 text-gray-700">
-              Global Finds at Deshi Price
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2 pb-12">
-            {navLinks.map((link, index) => (
-              <Link
-                key={link.label}
-                href={link.href}
-                onClick={(event) => {
-                  if (link.label === 'Cart') {
-                    event.preventDefault();
-                    handleCartToggle();
-                    return;
-                  }
-                  if (link.label === 'Logout') {
-                    event.preventDefault();
-                    void handleCustomerLogout();
-                    return;
-                  }
-
-                  setIsMenuOpen(false);
-                }}
-                className="rounded-2xl border border-transparent px-4 py-3 text-base font-medium text-gray-700 transition hover:border-gray-200 hover:bg-gray-50 hover:text-gray-900"
-                style={{
-                  transitionDelay: isMenuOpen ? `${index * 45}ms` : '0ms',
-                }}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[0.68rem] font-bold uppercase tracking-[0.24em] text-zinc-400">
+                BDBuyEasy
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.01em] text-zinc-950">
+                Buy Easy
+              </h2>
+              <p className="mt-1 text-sm font-medium leading-6 text-zinc-500">
+                Easy deals everyday
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleCloseMenu}
+              aria-label="Close menu"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-500 shadow-sm transition hover:border-zinc-300 hover:text-zinc-950"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
               >
-                {link.label}
-              </Link>
-            ))}
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
           </div>
+
+          <div
+            className={`mt-7 rounded-[1.75rem] border border-zinc-200/80 bg-white p-4 shadow-[0_18px_50px_rgba(24,24,27,0.06)] transition-all delay-75 duration-500 ${
+              isMenuOpen ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
+            }`}
+          >
+            <div className="overflow-hidden rounded-[1.35rem] bg-[linear-gradient(135deg,#f4f0e8,#e9ece6_58%,#f8f7f3)] px-4 py-5">
+              <p className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-zinc-500">
+                Smart Home Essentials
+              </p>
+              <p className="mt-2 max-w-[14rem] text-lg font-semibold leading-6 text-zinc-950">
+                Curated useful finds for daily living.
+              </p>
+            </div>
+          </div>
+
+          <nav
+            className={`mt-8 flex flex-col gap-8 pb-12 transition-all delay-150 duration-500 ${
+              isMenuOpen ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
+            }`}
+            aria-label="Primary menu"
+          >
+            <section>
+              <p className="px-1 text-[0.68rem] font-bold uppercase tracking-[0.24em] text-zinc-400">
+                Explore
+              </p>
+              <div className="mt-3 space-y-1">
+                {exploreLinks.map((link) => (
+                  <Link
+                    key={link.label}
+                    href={link.href}
+                    onClick={handleCloseMenu}
+                    className="group flex items-center justify-between rounded-2xl px-3 py-3 transition hover:bg-white hover:shadow-sm"
+                  >
+                    <span>
+                      <span className="block text-base font-semibold leading-5 text-zinc-950">
+                        {link.label}
+                      </span>
+                      <span className="mt-1 block text-xs font-medium leading-5 text-zinc-500">
+                        {link.description}
+                      </span>
+                    </span>
+                    <span className="text-zinc-300 transition group-hover:translate-x-0.5 group-hover:text-zinc-950">
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+
+            <section>
+              <button
+                type="button"
+                onClick={() => setIsCategoryMenuOpen((open) => !open)}
+                aria-expanded={isCategoryMenuOpen}
+                className="flex w-full items-center justify-between gap-4 rounded-2xl px-1 py-1 text-left"
+              >
+                <span>
+                  <span className="block text-[0.68rem] font-bold uppercase tracking-[0.24em] text-zinc-400">
+                    Shop by Need
+                  </span>
+                  <span className="mt-2 block text-xl font-semibold leading-6 text-zinc-950">
+                    Practical home upgrades
+                  </span>
+                </span>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-500 shadow-sm">
+                  <svg
+                    className={`h-4 w-4 transition-transform duration-300 ${
+                      isCategoryMenuOpen ? 'rotate-180' : ''
+                    }`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </span>
+              </button>
+
+              <div
+                className={`grid transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                  isCategoryMenuOpen
+                    ? 'grid-rows-[1fr] opacity-100'
+                    : 'grid-rows-[0fr] opacity-0'
+                }`}
+              >
+                <div className="overflow-hidden">
+                  <div className="mt-4 rounded-[1.65rem] border border-zinc-200/80 bg-white p-2.5 shadow-sm">
+                    {featuredMenuCategories.length > 0 ? (
+                      <>
+                        <div className="space-y-1.5">
+                          {featuredMenuCategories.map((category) => (
+                            <Link
+                              key={category.rawName}
+                              href={category.href}
+                              onClick={handleCloseMenu}
+                              className="block rounded-2xl px-3.5 py-3 text-[0.92rem] font-semibold leading-6 text-zinc-800 transition duration-300 hover:bg-zinc-50 hover:text-zinc-950"
+                            >
+                              {category.label}
+                            </Link>
+                          ))}
+                        </div>
+
+                        {hiddenMenuCategories.length > 0 && (
+                          <div className="mt-2 border-t border-zinc-100 pt-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setIsAllCategoryMenuOpen((open) => !open)
+                              }
+                              aria-expanded={isAllCategoryMenuOpen}
+                              className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-sm font-bold text-zinc-500 transition hover:bg-zinc-50 hover:text-zinc-950"
+                            >
+                              <span>
+                                {isAllCategoryMenuOpen
+                                  ? 'Show fewer categories'
+                                  : `View all categories (${menuCategories.length})`}
+                              </span>
+                              <span className="text-base leading-none">
+                                {isAllCategoryMenuOpen ? '-' : '+'}
+                              </span>
+                            </button>
+
+                            {isAllCategoryMenuOpen && (
+                              <div className="mt-1.5 space-y-1">
+                                {hiddenMenuCategories.map((category) => (
+                                  <Link
+                                    key={category.rawName}
+                                    href={category.href}
+                                    onClick={handleCloseMenu}
+                                    className="block rounded-2xl px-3.5 py-2.5 text-[0.84rem] font-medium leading-6 text-zinc-500 transition duration-300 hover:bg-zinc-50 hover:text-zinc-950"
+                                  >
+                                    {category.label}
+                                  </Link>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <Link
+                        href="/products"
+                        onClick={handleCloseMenu}
+                        className="block rounded-2xl px-3 py-3 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 hover:text-zinc-950"
+                      >
+                        Browse all products
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <p className="px-1 text-[0.68rem] font-bold uppercase tracking-[0.24em] text-zinc-400">
+                Support
+              </p>
+              <div className="mt-3 space-y-1">
+                {supportLinks.map((link) => (
+                  <Link
+                    key={link.label}
+                    href={link.href}
+                    onClick={(event) => {
+                      if (link.label === 'Cart') {
+                        event.preventDefault();
+                        handleCartToggle();
+                        return;
+                      }
+                      if (link.label === 'Logout') {
+                        event.preventDefault();
+                        void handleCustomerLogout();
+                        return;
+                      }
+
+                      handleCloseMenu();
+                    }}
+                    className="group flex items-center justify-between rounded-2xl px-3 py-3 transition hover:bg-white hover:shadow-sm"
+                  >
+                    <span>
+                      <span className="block text-base font-semibold leading-5 text-zinc-950">
+                        {link.label}
+                      </span>
+                      <span className="mt-1 block text-xs font-medium leading-5 text-zinc-500">
+                        {link.description}
+                      </span>
+                    </span>
+                    <span className="text-zinc-300 transition group-hover:translate-x-0.5 group-hover:text-zinc-950">
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          </nav>
         </aside>
 
         <aside
-          className={`absolute right-0 top-0 box-border flex h-full w-[26rem] max-w-[94vw] flex-col overflow-x-hidden overflow-y-auto bg-white shadow-2xl transition-transform duration-300 ease-out ${
+          className={`absolute right-0 top-0 box-border flex h-full w-full max-w-[100vw] flex-col overflow-x-hidden overflow-y-auto bg-white shadow-[0_24px_70px_rgba(24,24,27,0.18)] ring-1 ring-zinc-950/5 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:w-[31rem] lg:w-[34rem] ${
             isCartOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
-          <div className="mb-2 flex items-center justify-between px-6 pt-6">
+          <div className="sticky top-0 z-10 mb-2 flex items-center justify-between border-b border-zinc-100 bg-white/95 px-5 py-4 backdrop-blur sm:px-7">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">
+              <p className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-zinc-400">
                 {isCheckoutView ? 'Checkout' : 'Cart'}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-zinc-950">
+                {isCheckoutView
+                  ? 'Complete your delivery details'
+                  : `${selectedItemCount} selected item${selectedItemCount === 1 ? '' : 's'}`}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {isCheckoutView && (
-                <button
-                  type="button"
-                  onClick={resetCheckoutView}
-                  className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-gray-600 transition hover:bg-gray-50"
-                >
-                  Back
-                </button>
-              )}
               <button
                 type="button"
                 onClick={handleCloseCart}
                 aria-label="Close cart"
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 text-gray-700 transition hover:bg-gray-50"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-950 hover:text-white focus:outline-none focus:ring-4 focus:ring-zinc-950/10"
               >
                 <svg
                   className="h-5 w-5"
@@ -1043,29 +1368,52 @@ export default function Header() {
             </div>
           </div>
 
-          <div className={`mb-6 px-6 ${isCheckoutView ? 'hidden' : ''}`}>
-            <div className="rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50 px-4 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">
-                    Basket
-                  </p>
-                  <p className="mt-2 text-[10px] font-medium leading-5 text-gray-700">
-                    {selectedItemCount} of {itemCount} item
-                    {itemCount === 1 ? '' : 's'} selected
-                  </p>
-                </div>
-                <span className="text-[0.68rem] font-medium uppercase tracking-[0.14em] text-slate-400">
-                  Pick items
-                </span>
-              </div>
+          <div className="px-5 pt-3 sm:px-7">
+            <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 p-1">
+              {checkoutSteps.map((step, index) => (
+                <button
+                  type="button"
+                  key={step}
+                  onClick={() => {
+                    if (step === 'Cart') {
+                      resetCheckoutView();
+                      return;
+                    }
+                    handleProceedToCheckout();
+                  }}
+                  disabled={step === 'Checkout' && !canCheckoutWithAuthoritativePricing}
+                  aria-current={index === activeCheckoutStep ? 'step' : undefined}
+                  className={`flex min-w-0 flex-1 items-center justify-center rounded-full px-2.5 py-2 text-[0.68rem] font-bold uppercase tracking-[0.12em] transition focus:outline-none focus:ring-4 focus:ring-zinc-950/10 disabled:cursor-not-allowed ${
+                    index === activeCheckoutStep
+                      ? 'bg-zinc-950 text-white shadow-sm'
+                      : index < activeCheckoutStep
+                        ? 'text-zinc-700'
+                        : 'text-zinc-400 disabled:opacity-45'
+                  }`}
+                >
+                  {step}
+                </button>
+              ))}
             </div>
           </div>
 
           {isCheckoutView ? (
             <>
-              <div className="px-3 pb-6">
-                <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="px-5 pb-6 pt-4 sm:px-7">
+                <div className="space-y-4 rounded-3xl border border-zinc-200 bg-white p-4 shadow-[0_12px_34px_rgba(24,24,27,0.06)] sm:p-5">
+                  <div className="flex items-start justify-between gap-4 border-b border-zinc-100 pb-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-400">
+                        Delivery Details
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-zinc-900">
+                        We will confirm before dispatch.
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-emerald-700">
+                      COD
+                    </span>
+                  </div>
                   <div>
                       <motion.input
                       type="tel"
@@ -1080,7 +1428,7 @@ export default function Header() {
                           : { scale: 1, y: 0 }
                       }
                       transition={fieldSpringTransition}
-                      className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
+                      className={`${checkoutFieldClass} ${
                         isCustomerMobileInvalid
                           ? 'rounded-b-none border-rose-300 bg-rose-50/40 shadow-[0_0_0_2px_rgba(244,63,94,0.16)]'
                           : isFieldFilled(checkoutForm.customerMobile)
@@ -1128,7 +1476,7 @@ export default function Header() {
                             : { scale: 1, y: 0 }
                         }
                         transition={fieldSpringTransition}
-                        className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
+                        className={`${checkoutFieldClass} ${
                           isFirstNameInvalid
                             ? invalidFieldGlow
                             : isFieldFilled(checkoutForm.firstName)
@@ -1170,7 +1518,7 @@ export default function Header() {
                             : { scale: 1, y: 0 }
                         }
                         transition={fieldSpringTransition}
-                        className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
+                        className={`${checkoutFieldClass} ${
                           isFieldFilled(checkoutForm.lastName)
                             ? completedFieldGlow
                             : 'border-slate-200'
@@ -1205,7 +1553,7 @@ export default function Header() {
                           : { scale: 1, y: 0 }
                       }
                       transition={fieldSpringTransition}
-                      className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
+                      className={`${checkoutFieldClass} ${
                         isEmailInvalid
                           ? 'rounded-b-none border-rose-300 bg-rose-50/40 shadow-[0_0_0_2px_rgba(244,63,94,0.16)]'
                           : isFieldFilled(checkoutForm.email)
@@ -1241,7 +1589,7 @@ export default function Header() {
                           : { scale: 1, y: 0 }
                       }
                       transition={fieldSpringTransition}
-                      className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
+                      className={`${checkoutFieldClass} ${
                         isReceiverMobileInvalid
                           ? 'rounded-b-none border-rose-300 bg-rose-50/40 shadow-[0_0_0_2px_rgba(244,63,94,0.16)]'
                           : isFieldFilled(checkoutForm.receiverMobile)
@@ -1282,7 +1630,7 @@ export default function Header() {
                           handleCheckoutLocationSelect('district', value)
                         }
                         onBlur={() => handleCheckoutFieldBlur('district')}
-                        className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 disabled:bg-slate-50 ${
+                        className={`${checkoutDropdownClass} ${
                           isDistrictInvalid
                             ? invalidFieldGlow
                             : isFieldFilled(checkoutForm.district)
@@ -1291,33 +1639,33 @@ export default function Header() {
                         }`}
                       />
                     </motion.div>
-                  </div>
-                  <motion.div
-                    animate={
-                      isFieldFilled(checkoutForm.thana)
-                        ? { scale: 1.01, y: -1 }
-                        : { scale: 1, y: 0 }
-                    }
-                    transition={fieldSpringTransition}
-                  >
-                    <SearchableDropdown
-                      value={checkoutForm.thana}
-                      options={groupedAreaOptions}
-                      placeholder="Select thana/upazila *"
-                      disabled={!checkoutForm.district}
-                      onSelect={(value) =>
-                        handleCheckoutLocationSelect('thana', value)
+                    <motion.div
+                      animate={
+                        isFieldFilled(checkoutForm.thana)
+                          ? { scale: 1.01, y: -1 }
+                          : { scale: 1, y: 0 }
                       }
-                      onBlur={() => handleCheckoutFieldBlur('thana')}
-                      className={`w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-pink-300 disabled:bg-slate-50 ${
-                        isThanaInvalid
-                          ? invalidFieldGlow
-                          : isFieldFilled(checkoutForm.thana)
-                            ? completedFieldGlow
-                            : 'border-slate-200'
-                      }`}
-                    />
-                  </motion.div>
+                      transition={fieldSpringTransition}
+                    >
+                      <SearchableDropdown
+                        value={checkoutForm.thana}
+                        options={groupedAreaOptions}
+                        placeholder="Select thana/upazila *"
+                        disabled={!checkoutForm.district}
+                        onSelect={(value) =>
+                          handleCheckoutLocationSelect('thana', value)
+                        }
+                        onBlur={() => handleCheckoutFieldBlur('thana')}
+                        className={`${checkoutDropdownClass} ${
+                          isThanaInvalid
+                            ? invalidFieldGlow
+                            : isFieldFilled(checkoutForm.thana)
+                              ? completedFieldGlow
+                              : 'border-slate-200'
+                        }`}
+                      />
+                    </motion.div>
+                  </div>
                   <motion.textarea
                     name="address"
                     value={checkoutForm.address}
@@ -1331,7 +1679,7 @@ export default function Header() {
                         : { scale: 1, y: 0 }
                     }
                     transition={fieldSpringTransition}
-                    className={`w-full rounded-xl border px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 ${
+                    className={`!min-h-24 ${checkoutFieldClass} resize-none ${
                       isAddressInvalid
                         ? invalidFieldGlow
                         : isFieldFilled(checkoutForm.address)
@@ -1339,29 +1687,32 @@ export default function Header() {
                           : 'border-slate-200'
                     }`}
                   />
-                  <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  <div className="space-y-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-3.5">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-zinc-500">
                       Payment Method
                     </p>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-2.5">
                       <button
                         type="button"
-                        onClick={() => setPaymentMethod('bkash')}
-                          className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold transition-all duration-200 transform-gpu ${
-                            paymentMethod === 'bkash'
-                              ? 'scale-[1.03] border-pink-400 bg-pink-50 text-pink-700 shadow-[0_6px_16px_rgba(236,72,153,0.22)]'
-                              : 'border-pink-200 bg-pink-50/70 text-pink-700 hover:bg-pink-100/70'
-                          }`}
+                        title="Coming soon"
+                        aria-disabled="true"
+                        onClick={() => {
+                          setPlaceOrderError('bKash is coming soon. Please choose Cash on Delivery.');
+                        }}
+                        className="min-h-12 cursor-not-allowed rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm font-bold text-zinc-400 opacity-70 transition-all duration-200 transform-gpu hover:border-zinc-300 focus:outline-none focus:ring-4 focus:ring-zinc-950/10"
                       >
                         bKash
                       </button>
                       <button
                         type="button"
-                        onClick={() => setPaymentMethod('cod')}
-                          className={`rounded-xl border-2 px-3 py-2 text-sm font-semibold transition-all duration-200 transform-gpu ${
+                        onClick={() => {
+                          setPaymentMethod('cod');
+                          setPlaceOrderError('');
+                        }}
+                          className={`min-h-12 rounded-2xl border px-3 py-2 text-sm font-bold transition-all duration-200 transform-gpu focus:outline-none focus:ring-4 focus:ring-zinc-950/10 ${
                             paymentMethod === 'cod'
-                              ? 'scale-[1.03] border-blue-400 bg-blue-50 text-slate-700 shadow-[0_6px_16px_rgba(59,130,246,0.22)]'
-                              : 'border-blue-200 bg-blue-50/70 text-slate-700 hover:bg-blue-100/70'
+                              ? 'scale-[1.015] border-zinc-950 bg-white text-zinc-950 shadow-sm'
+                              : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:text-zinc-950'
                           }`}
                       >
                         Cash on Delivery
@@ -1371,23 +1722,23 @@ export default function Header() {
                 </div>
               </div>
 
-              <div className="border-t border-slate-200 px-6 pt-4 pb-6">
-                <div className="mb-4 space-y-2 text-sm">
-                  <div className="flex items-center justify-between text-slate-600">
+              <div className="sticky bottom-0 border-t border-zinc-200 bg-white/96 px-4 pb-3 pt-3 shadow-[0_-18px_45px_rgba(24,24,27,0.08)] backdrop-blur sm:px-7 sm:pb-6 sm:pt-4">
+                <div className="mb-3 space-y-2 rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-xs sm:mb-4 sm:space-y-2.5 sm:rounded-3xl sm:p-4 sm:text-sm">
+                  <div className="flex items-center justify-between text-zinc-600">
                     <span>Items Total</span>
-                    <span className="font-medium text-slate-900">
+                    <span className="font-semibold text-zinc-900">
                       ৳{subtotal.toFixed(2)}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-slate-600">
+                  <div className="flex items-center justify-between text-zinc-600">
                     <span>Shipping Charge</span>
-                    <span className="font-medium text-slate-900">
+                    <span className="font-semibold text-zinc-900">
                       ৳{shippingCharge.toFixed(2)}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-slate-900">
-                    <span className="font-semibold">Total</span>
-                    <span className="text-lg font-bold text-blue-600">
+                  <div className="flex items-center justify-between border-t border-zinc-200 pt-3 text-zinc-950">
+                    <span className="font-bold">Total</span>
+                    <span className="text-lg font-black text-zinc-950 sm:text-xl">
                       ৳{checkoutTotal.toFixed(2)}
                     </span>
                   </div>
@@ -1401,10 +1752,10 @@ export default function Header() {
                     type="button"
                     onClick={handlePlaceOrder}
                     disabled={!isCheckoutFormValid || isPlacingOrder || !canCheckoutWithAuthoritativePricing}
-                    className={`flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] !text-white transition ${
+                    className={`${primaryCtaClass} ${
                       isCheckoutFormValid && !isPlacingOrder && canCheckoutWithAuthoritativePricing
-                        ? 'bg-[#2d5db3] hover:bg-[#244a8f]'
-                        : 'cursor-not-allowed bg-slate-300'
+                        ? 'bg-zinc-950 hover:-translate-y-0.5 hover:bg-zinc-800'
+                        : 'cursor-not-allowed bg-zinc-300 shadow-none'
                     }`}
                 >
                   {isPlacingOrder ? 'Placing...' : 'Place Order'}
@@ -1418,13 +1769,13 @@ export default function Header() {
             </>
           ) : (
             <>
-              <div className="px-3 pb-6">
+              <div className="px-5 pb-6 pt-4 sm:px-7">
                 {cartItems.length > 0 ? (
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-4">
                     {groupedCartItems.map((group) => (
                       <div key={group.productId} className="flex items-start gap-3">
-                        <div className="flex shrink-0 items-center self-stretch">
-                          <div className="flex h-full items-center">
+                        <div className="flex shrink-0 items-start pt-5">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white">
                             <input
                               type="checkbox"
                               checked={group.allSelected}
@@ -1435,13 +1786,13 @@ export default function Header() {
                                 );
                               }}
                               aria-label={`Select ${group.productName} for checkout`}
-                              className="h-4 w-4 rounded border-slate-300 text-[#2d5db3] focus:ring-[#2d5db3]"
+                              className="h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-950"
                             />
                           </div>
                         </div>
-                        <div className="flex-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                          <div className="grid grid-cols-[80px_minmax(0,1fr)] gap-3">
-                            <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-slate-100">
+                        <div className="min-w-0 flex-1 rounded-3xl border border-zinc-200 bg-white p-3.5 shadow-[0_10px_28px_rgba(24,24,27,0.055)]">
+                          <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3.5">
+                            <div className="h-[5.5rem] w-[5.5rem] shrink-0 overflow-hidden rounded-2xl bg-zinc-100">
                               {group.productImage ? (
                                 <img
                                   src={group.productImage}
@@ -1449,32 +1800,53 @@ export default function Header() {
                                   className="h-full w-full object-cover"
                                 />
                               ) : (
-                                <div className="h-full w-full bg-slate-100" />
+                                <div className="h-full w-full bg-zinc-100" />
                               )}
                             </div>
-                            <div className="min-w-0 flex-1">
+                            <div className="min-w-0 flex-1 pt-1">
                               <Link
                                 href={`/products/${group.productId}`}
                                 onClick={handleCloseCart}
-                                className="line-clamp-2 text-sm font-medium text-slate-800 transition hover:text-blue-600"
+                                className="line-clamp-2 text-sm font-bold leading-5 text-zinc-900 transition hover:text-zinc-600"
                               >
                                 {group.productName}
                               </Link>
+                              <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-zinc-50 px-3 py-2">
+                                <span className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-zinc-400">
+                                  Subtotal
+                                </span>
+                                <span className="text-sm font-black text-zinc-950">
+                                  ৳{group.subtotalAfterDiscount.toFixed(2)}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                          <div className="col-span-2 mt-2 w-full space-y-2">
+                          <div className="col-span-2 mt-3 w-full space-y-2.5">
                             {group.lines.map((item) => {
                               const unitBasePrice = item.salePrice ?? item.price;
                               return (
                                 <div
                                   key={item.id}
-                                  className="w-full rounded-lg border border-slate-100 bg-slate-50 p-2"
+                                  className="w-full rounded-2xl border border-zinc-100 bg-zinc-50/80 p-3"
                                 >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <p className="text-xs text-slate-600">
-                                      {item.variantLabel || 'Variant'}
-                                    </p>
-                                    <p className="text-xs font-semibold text-slate-900">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      <div className="h-6 w-6 shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+                                        {item.image ? (
+                                          <img
+                                            src={item.image}
+                                            alt=""
+                                            className="h-full w-full object-cover"
+                                          />
+                                        ) : (
+                                          <div className="h-full w-full bg-zinc-100" />
+                                        )}
+                                      </div>
+                                      <p className="line-clamp-2 min-w-0 text-xs font-semibold leading-5 text-zinc-600">
+                                        {item.variantLabel || 'Variant'}
+                                      </p>
+                                    </div>
+                                    <p className="shrink-0 text-xs font-bold text-zinc-950">
                                       ৳{unitBasePrice.toFixed(2)} x {item.quantity}
                                     </p>
                                   </div>
@@ -1482,22 +1854,22 @@ export default function Header() {
                                     <button
                                       type="button"
                                       onClick={() => removeFromCart(item.id)}
-                                      className="shrink-0 text-[11px] font-medium uppercase tracking-[0.12em] text-rose-500 transition hover:text-rose-600"
+                                      className="min-h-9 shrink-0 rounded-full border border-transparent px-2 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-zinc-400 transition hover:border-rose-100 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-4 focus:ring-rose-500/10"
                                     >
                                       Remove
                                     </button>
-                                    <div className="flex shrink-0 items-center rounded-full border border-slate-200 bg-white">
+                                    <div className="flex min-h-9 shrink-0 items-center overflow-hidden rounded-full border border-zinc-200 bg-white shadow-sm">
                                       <button
                                         type="button"
                                         onClick={() =>
                                           updateQuantity(item.id, item.quantity - 1)
                                         }
-                                        className="px-3 py-1 text-sm text-slate-600 transition hover:bg-slate-50"
+                                        className="flex h-9 w-9 items-center justify-center text-base font-semibold text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-zinc-950/10"
                                         aria-label={`Decrease quantity for ${item.name}`}
                                       >
                                         -
                                       </button>
-                                      <span className="min-w-8 text-center text-sm font-medium text-slate-800">
+                                      <span className="min-w-9 text-center text-sm font-bold text-zinc-900">
                                         {item.quantity}
                                       </span>
                                       <button
@@ -1505,7 +1877,7 @@ export default function Header() {
                                         onClick={() =>
                                           updateQuantity(item.id, item.quantity + 1)
                                         }
-                                        className="px-3 py-1 text-sm text-slate-600 transition hover:bg-slate-50"
+                                        className="flex h-9 w-9 items-center justify-center text-base font-semibold text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-zinc-950/10"
                                         aria-label={`Increase quantity for ${item.name}`}
                                       >
                                         +
@@ -1516,8 +1888,8 @@ export default function Header() {
                               );
                             })}
                           </div>
-                          <div className="col-span-2 mt-3 w-full space-y-1 text-xs">
-                            <div className="flex items-center justify-between text-slate-600">
+                          <div className="col-span-2 mt-3 w-full space-y-1.5 rounded-2xl border border-zinc-100 bg-white px-3 py-2.5 text-xs">
+                            <div className="flex items-center justify-between text-zinc-500">
                               <span>Product subtotal</span>
                               <span>৳{group.subtotalBeforeDiscount.toFixed(2)}</span>
                             </div>
@@ -1527,7 +1899,7 @@ export default function Header() {
                                   <span>Bundle discount</span>
                                   <span>-৳{group.discount.toFixed(2)}</span>
                                 </div>
-                                <div className="flex items-center justify-between font-semibold text-slate-800">
+                                <div className="flex items-center justify-between border-t border-zinc-100 pt-1.5 font-bold text-zinc-900">
                                   <span>After discount</span>
                                   <span>৳{group.subtotalAfterDiscount.toFixed(2)}</span>
                                 </div>
@@ -1539,36 +1911,19 @@ export default function Header() {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
-                    <p className="text-sm font-medium text-slate-700">
+                  <div className="rounded-3xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-10 text-center">
+                    <p className="text-sm font-bold text-zinc-800">
                       Your cart is empty
                     </p>
-                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
                       Add a few products and they will appear here instantly.
                     </p>
                   </div>
                 )}
-              </div>
-
-              <div className="border-t border-slate-200 px-6 pt-4 pb-6">
-                <div className="mb-4 space-y-2 text-sm">
-                  <div className="flex items-center justify-between text-slate-600">
-                    <span>Selected items</span>
-                    <span className="font-medium text-slate-900">
-                      {selectedItemCount}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-600">
-                    <span>Items Total</span>
-                    <span className="font-medium text-slate-900">
-                      ৳{subtotal.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-                <div className="mb-4">
+                <div className="mt-4 rounded-3xl border border-zinc-200 bg-white p-3">
                   <label
                     htmlFor="cart-coupon"
-                    className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"
+                    className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-zinc-500"
                   >
                     Coupon
                   </label>
@@ -1577,21 +1932,32 @@ export default function Header() {
                       id="cart-coupon"
                       type="text"
                       placeholder="Apply coupon"
-                      className="w-36 min-w-0 rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-300"
+                      className="min-h-11 min-w-0 flex-1 rounded-2xl border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-800 outline-none transition placeholder:text-zinc-400 focus:border-zinc-950 focus:shadow-[0_0_0_4px_rgba(24,24,27,0.08)]"
                     />
                     <button
                       type="button"
-                      className="shrink-0 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      className="min-h-11 shrink-0 rounded-2xl border border-zinc-200 px-4 py-2 text-sm font-bold text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-950 focus:outline-none focus:ring-4 focus:ring-zinc-950/10"
                     >
                       Apply
                     </button>
                   </div>
                 </div>
-                <div className="mb-4 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-900">
+              </div>
+
+              <div className="sticky bottom-0 border-t border-zinc-200 bg-white/96 px-4 pb-3 pt-3 shadow-[0_-18px_45px_rgba(24,24,27,0.08)] backdrop-blur sm:px-7 sm:pb-6 sm:pt-4">
+                <div className="hidden">
+                  <div className="flex items-center justify-between text-zinc-600">
+                    <span>Items Total</span>
+                    <span className="font-semibold text-zinc-900">
+                      ৳{subtotal.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+                <div className="mb-3 flex items-center justify-between rounded-2xl bg-zinc-950 px-4 py-3 text-white sm:mb-4 sm:rounded-3xl">
+                  <span className="text-sm font-bold">
                     Cart Subtotal
                   </span>
-                  <span className="text-lg font-bold text-blue-600">
+                  <span className="text-lg font-black sm:text-xl">
                     ৳{subtotal.toFixed(2)}
                   </span>
                 </div>
@@ -1603,21 +1969,13 @@ export default function Header() {
                 <button
                   type="button"
                   onClick={handleProceedToCheckout}
-                  className={`flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em] !text-white transition ${
+                  className={`${primaryCtaClass} ${
                     canCheckoutWithAuthoritativePricing
-                      ? 'bg-[#2d5db3] hover:bg-[#244a8f] hover:!text-white'
-                      : 'pointer-events-none bg-slate-300 !text-white'
+                      ? 'bg-zinc-950 hover:-translate-y-0.5 hover:bg-zinc-800 hover:!text-white'
+                      : 'pointer-events-none bg-zinc-300 !text-white shadow-none'
                   }`}
                 >
                   <span>Proceed Checkout</span>
-                  <span className="ml-3 flex items-center gap-1.5" aria-hidden="true">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
-                      <GoogleIcon className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
-                      <FacebookIcon className="h-4 w-4" />
-                    </span>
-                  </span>
                 </button>
               </div>
             </>

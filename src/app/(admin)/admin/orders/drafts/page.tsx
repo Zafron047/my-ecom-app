@@ -1,7 +1,7 @@
 import { requireAdminPermission } from '@/lib/admin-session';
 
 export default async function AdminOrdersDraftsPage() {
-  await requireAdminPermission('/admin/orders/drafts', 'orders.read');
+  await requireAdminPermission('/admin/orders/drafts', 'orderDrafts.manage');
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

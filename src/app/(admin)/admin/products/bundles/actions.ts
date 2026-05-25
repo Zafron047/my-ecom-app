@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 
@@ -24,6 +24,15 @@ function getOptionalString(formData: FormData, key: string) {
 
 function getBoolean(formData: FormData, key: string) {
   return formData.get(key) === 'on';
+}
+
+function revalidateBundlePaths() {
+  revalidateTag('storefront-catalog', 'max');
+  revalidateTag('storefront-products', 'max');
+  revalidatePath('/admin/products/bundles');
+  revalidatePath('/');
+  revalidatePath('/products');
+  revalidatePath('/api/storefront/catalog');
 }
 
 function getVariantIds(formData: FormData) {
@@ -102,7 +111,7 @@ export async function createBundleOffer(
   _previousState: BundleOfferFormState,
   formData: FormData,
 ): Promise<BundleOfferFormState> {
-  await requireAdminPermission('/admin/products/bundles', 'products.write');
+  await requireAdminPermission('/admin/products/bundles', 'productCatalog.manage');
 
   try {
     const payload = await getBundlePayload(formData);
@@ -130,9 +139,7 @@ export async function createBundleOffer(
       },
     });
 
-    revalidatePath('/admin/products/bundles');
-    revalidatePath('/api/storefront/catalog');
-    revalidatePath('/products');
+    revalidateBundlePaths();
 
     return {
       error: null,
@@ -153,7 +160,7 @@ export async function updateBundleOffer(
   _previousState: BundleOfferFormState,
   formData: FormData,
 ): Promise<BundleOfferFormState> {
-  await requireAdminPermission('/admin/products/bundles', 'products.write');
+  await requireAdminPermission('/admin/products/bundles', 'productCatalog.manage');
 
   const bundleId = getString(formData, 'bundleId');
   const intent = getString(formData, 'intent') || 'save';
@@ -174,9 +181,7 @@ export async function updateBundleOffer(
       data: { isActive: false },
       where: { id: bundleId },
     });
-    revalidatePath('/admin/products/bundles');
-    revalidatePath('/api/storefront/catalog');
-    revalidatePath('/products');
+    revalidateBundlePaths();
     return {
       archivedAt: Date.now(),
       archivedBundleId: bundleId,
@@ -189,9 +194,7 @@ export async function updateBundleOffer(
     await prisma.bundleOffer.delete({
       where: { id: bundleId },
     });
-    revalidatePath('/admin/products/bundles');
-    revalidatePath('/api/storefront/catalog');
-    revalidatePath('/products');
+    revalidateBundlePaths();
     return {
       archivedAt: Date.now(),
       archivedBundleId: bundleId,
@@ -230,9 +233,7 @@ export async function updateBundleOffer(
       }
     });
 
-    revalidatePath('/admin/products/bundles');
-    revalidatePath('/api/storefront/catalog');
-    revalidatePath('/products');
+    revalidateBundlePaths();
 
     return {
       error: null,

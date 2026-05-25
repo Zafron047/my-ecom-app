@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   getCustomerSession: vi.fn(),
   orderFindFirst: vi.fn(),
   productFindMany: vi.fn(),
+  requireAdminApiPermission: vi.fn(),
   transaction: vi.fn(),
   verifyRecentOrderAccessToken: vi.fn(),
 }));
@@ -34,6 +35,10 @@ vi.mock('next/headers', () => ({
 
 vi.mock('@/lib/admin-session', () => ({
   getAdminSession: mocks.getAdminSession,
+}));
+
+vi.mock('@/lib/admin-api-auth', () => ({
+  requireAdminApiPermission: mocks.requireAdminApiPermission,
 }));
 
 vi.mock('@/lib/checkout-pricing', () => ({
@@ -208,6 +213,17 @@ describe('abuse protection rate limits', () => {
         ],
       },
     ]);
+    mocks.requireAdminApiPermission.mockResolvedValue({
+      actor: {
+        email: 'admin@example.test',
+        id: 'admin-1',
+        mustResetPassword: false,
+        name: 'Admin',
+        role: 'admin',
+        sessionId: 'session-1',
+        sessionTokenHash: 'hash-1',
+      },
+    });
     mocks.buildCheckoutPricing.mockReturnValue({
       deliveryCharge: 80,
       discountAmount: 0,

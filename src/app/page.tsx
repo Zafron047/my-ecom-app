@@ -10,6 +10,7 @@ export default async function Home() {
     <HomePageClient
       catalogProducts={catalog.products}
       catalogCategories={catalog.categories}
+      heroSlides={catalog.heroSlides}
       homepageSections={catalog.homepageSections}
       categoryThumbnails={catalog.categoryThumbnails}
     />

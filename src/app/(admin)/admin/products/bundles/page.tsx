@@ -22,7 +22,7 @@ function decimalToString(value: { toString: () => string }) {
 }
 
 export default async function AdminProductsBundlesPage() {
-  await requireAdminPermission('/admin/products/bundles', 'products.read');
+  await requireAdminPermission('/admin/products/bundles', 'productCatalog.read');
 
   const [bundleOffers, variants] = await Promise.all([
     prisma.bundleOffer.findMany({

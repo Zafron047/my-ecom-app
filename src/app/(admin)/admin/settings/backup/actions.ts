@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { Prisma, ProductStatus } from '@prisma/client';
-import { requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import {
   createOpeningStockBatches,
   type OpeningStockBatchInput,
@@ -493,7 +493,7 @@ export async function repairMissingStockBatchesAction(
   _prevState: StockBatchRepairState,
   formData: FormData,
 ): Promise<StockBatchRepairState> {
-  await requireAdminRole('/admin/settings/backup', ['admin']);
+  await requireAdminPermission('/admin/settings/backup', 'backups.manage');
 
   const modeRaw = formData.get('mode');
   const mode: RestoreMode = modeRaw === 'apply' ? 'apply' : 'dry-run';
@@ -592,7 +592,7 @@ export async function restoreInventoryBatchesBackupAction(
   _prevState: InventoryBatchRestoreState,
   formData: FormData,
 ): Promise<InventoryBatchRestoreState> {
-  await requireAdminRole('/admin/settings/backup', ['admin']);
+  await requireAdminPermission('/admin/settings/backup', 'backups.manage');
 
   const modeRaw = formData.get('mode');
   const mode: RestoreMode = modeRaw === 'apply' ? 'apply' : 'dry-run';
@@ -977,7 +977,7 @@ export async function restoreProductsBackupAction(
   _prevState: BackupRestoreState,
   formData: FormData,
 ): Promise<BackupRestoreState> {
-  await requireAdminRole('/admin/settings/backup', ['admin']);
+  await requireAdminPermission('/admin/settings/backup', 'backups.manage');
 
   const modeRaw = formData.get('mode');
   const mode: RestoreMode = modeRaw === 'apply' ? 'apply' : 'dry-run';
@@ -1979,7 +1979,7 @@ export async function runCatalogQaChecksAction(
   prevState: CatalogQaState,
 ): Promise<CatalogQaState> {
   void prevState;
-  await requireAdminRole('/admin/settings/backup', ['admin']);
+  await requireAdminPermission('/admin/settings/backup', 'backups.manage');
 
   const products = await prisma.product.findMany({
     select: {

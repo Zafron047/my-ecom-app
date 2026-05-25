@@ -1,5 +1,5 @@
 import ProductForm from '@/components/admin/ProductForm';
-import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import { createProduct } from '../actions';
 
@@ -30,7 +30,6 @@ async function safeCreateProduct(formData: FormData) {
 
 export default async function NewProductPage() {
   await requireAdminPermission('/admin/products/new', 'products.write');
-  await requireAdminRole('/admin/products/new', ['admin']);
 
   const [categories, brands] = await Promise.all([
     prisma.category.findMany({

@@ -16,7 +16,6 @@
     "prisma:seed:catalog": "node prisma/seed-catalog.mjs",
     "prisma:seed:delivery-areas": "node prisma/seed-delivery-areas.mjs",
     "prisma:import:frontend-images": "node prisma/import-frontend-images.mjs",
-    "images:backfill:variants": "node scripts/backfill-product-image-variants.mjs",
     "ops:backup:catalog": "node scripts/ops/catalog-backup.mjs",
     "ops:backup:dbjson": "node scripts/ops/db-json-backup.mjs",
     "ops:cleanup:staged-images": "node scripts/ops/storage-cleanup-staged-product-images.mjs",
@@ -33,6 +32,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-redux": "^9.2.0",
+    "resend": "^6.12.3",
     "sharp": "^0.34.5"
   },
   "devDependencies": {

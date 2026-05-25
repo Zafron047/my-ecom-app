@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { Prisma } from '@prisma/client';
-import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import {
   PURCHASE_ORDER_STATUS,
@@ -258,12 +258,11 @@ function requireRecordedLines(lines: PurchaseOrderLineInput[]) {
 }
 
 async function requirePurchaseDraftWriteAccess() {
-  return requireAdminPermission(PURCHASE_ORDER_DRAFT_PATH, 'products.write');
+  return requireAdminPermission(PURCHASE_ORDER_DRAFT_PATH, 'purchaseOrders.write');
 }
 
 async function requirePurchaseOwnerAccess() {
   const session = await requirePurchaseDraftWriteAccess();
-  await requireAdminRole(PURCHASE_ORDER_DRAFT_PATH, ['admin']);
   return session;
 }
 
@@ -467,7 +466,10 @@ export async function submitPurchaseOrder(
   _previousState: PurchaseOrderState,
   formData: FormData,
 ): Promise<PurchaseOrderState> {
-  const adminSession = await requirePurchaseOwnerAccess();
+  const adminSession = await requireAdminPermission(
+    PURCHASE_ORDER_DRAFT_PATH,
+    'purchaseOrders.submit',
+  );
 
   let submittedPurchaseOrderId = '';
   try {

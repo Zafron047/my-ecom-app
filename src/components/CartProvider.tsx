@@ -97,9 +97,11 @@ function getAbandonedCheckoutSessionId() {
 function CartStateSync({ children }: { children: React.ReactNode }) {
   const dispatch = useDispatch<AppDispatch>();
   const hasSanitizedCartRef = useRef(false);
+  const lastAbandonedSyncCartLengthRef = useRef<number | null>(null);
   const { cartItems, hasHydrated, shippingOption } = useSelector(
     (state: RootState) => state.cart,
   );
+  const isCartOpen = useSelector(selectIsCartOpen);
 
   useEffect(() => {
     try {
@@ -162,9 +164,24 @@ function CartStateSync({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hasHydrated) return;
+    const previousCartLength = lastAbandonedSyncCartLengthRef.current;
+    lastAbandonedSyncCartLengthRef.current = cartItems.length;
+
+    if (previousCartLength === null) return;
+
+    if (
+      cartItems.length === 0 &&
+      previousCartLength === 0
+    ) {
+      return;
+    }
+
+    const existingSessionId = window.localStorage.getItem(
+      ABANDONED_CHECKOUT_SESSION_KEY,
+    );
 
     const syncTimer = window.setTimeout(() => {
-      const sessionId = getAbandonedCheckoutSessionId();
+      const sessionId = existingSessionId ?? getAbandonedCheckoutSessionId();
       void fetch('/api/cart/abandoned-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -191,6 +208,7 @@ function CartStateSync({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hasHydrated) return;
     if (cartItems.length === 0) return;
+    if (!isCartOpen) return;
 
     let isMounted = true;
 
@@ -261,7 +279,7 @@ function CartStateSync({ children }: { children: React.ReactNode }) {
             id: normalizedLineId,
             detailId: product.id,
             variantId: parsedVariantId,
-            image: product.image,
+            image: matchedVariant.image || product.image,
             name: product.name,
             price: syncedPrice,
             salePrice: syncedSalePrice,
@@ -328,7 +346,7 @@ function CartStateSync({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted = false;
     };
-  }, [cartItems, dispatch, hasHydrated]);
+  }, [cartItems, dispatch, hasHydrated, isCartOpen]);
 
   return <>{children}</>;
 }

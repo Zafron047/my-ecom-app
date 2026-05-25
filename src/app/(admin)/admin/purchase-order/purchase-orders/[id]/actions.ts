@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { Prisma } from '@prisma/client';
-import { requireAdminPermission, requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import {
   PURCHASE_ORDER_STATUS,
@@ -122,9 +122,18 @@ function assertRecordIsEditable(status: string) {
 }
 
 async function requirePurchaseRecordWriteAccess() {
-  const session = await requireAdminPermission(PURCHASE_ORDERS_PERMISSION_PATH, 'products.write');
-  await requireAdminRole(PURCHASE_ORDERS_PERMISSION_PATH, ['admin']);
+  const session = await requireAdminPermission(
+    PURCHASE_ORDERS_PERMISSION_PATH,
+    'purchaseOrders.write',
+  );
   return session;
+}
+
+async function requirePurchasePaymentAccess() {
+  return requireAdminPermission(
+    PURCHASE_ORDERS_PERMISSION_PATH,
+    'purchaseOrders.payment.manage',
+  );
 }
 
 function parseReceiveQuantities(formData: FormData) {
@@ -529,7 +538,7 @@ export async function receivePurchaseRecord(
 export async function updatePurchaseRecordPayment(
   formData: FormData,
 ): Promise<PurchaseRecordActionState> {
-  const adminSession = await requirePurchaseRecordWriteAccess();
+  const adminSession = await requirePurchasePaymentAccess();
 
   try {
     const recordId = getString(formData, 'recordId');

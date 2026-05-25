@@ -7,6 +7,14 @@ import { notFound } from 'next/navigation';
 
 export const revalidate = 300;
 
+export async function generateStaticParams() {
+  const products = await getCatalogCards();
+
+  return products.map((product) => ({
+    id: product.id,
+  }));
+}
+
 export default async function ProductDetail({
   params,
 }: {
@@ -19,8 +27,15 @@ export default async function ProductDetail({
     notFound();
   }
 
+  const seenRelatedProductIds = new Set<string>();
   const relatedProducts = (await getCatalogCards())
-    .filter((catalogProduct) => catalogProduct.id !== product.id)
+    .filter((catalogProduct) => {
+      if (catalogProduct.id === product.id || seenRelatedProductIds.has(catalogProduct.id)) {
+        return false;
+      }
+      seenRelatedProductIds.add(catalogProduct.id);
+      return true;
+    })
     .slice(0, 4);
 
   return (

@@ -29,7 +29,7 @@ function normalizeMobileInput(value: string) {
 export default function Checkout() {
   const router = useRouter();
   const { selectedCartItems, subtotal } = useCart();
-  const [paymentMethod, setPaymentMethod] = useState<'bkash' | 'cod' | ''>('');
+  const [paymentMethod, setPaymentMethod] = useState<'bkash' | 'cod' | ''>('cod');
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [placeOrderError, setPlaceOrderError] = useState('');
   const [formData, setFormData] = useState({
@@ -560,13 +560,14 @@ export default function Checkout() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {/* Bkash */}
             <div
-              onClick={() => setPaymentMethod('bkash')}
-              className={`relative flex items-center gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer
-    ${
-      paymentMethod === 'bkash'
-        ? 'scale-[1.02] border-pink-500 bg-pink-50 ring-2 ring-pink-100 shadow-[0_8px_18px_rgba(236,72,153,0.2)]'
-        : 'border-pink-200 bg-pink-50/70 hover:bg-pink-100/70 hover:shadow-md'
-    }`}
+              onClick={() =>
+                setPlaceOrderError(
+                  'bKash is coming soon. Please choose Cash on Delivery.',
+                )
+              }
+              title="Coming soon"
+              aria-disabled="true"
+              className="relative flex cursor-not-allowed items-center gap-4 rounded-2xl border-2 border-pink-100 bg-pink-50/50 p-4 opacity-70 transition-all"
             >
               {/* BIG Icon */}
               <div className="w-11 h-11 bg-pink-100 rounded-2xl flex items-center justify-center">
@@ -601,7 +602,10 @@ export default function Checkout() {
 
             {/* COD */}
             <div
-              onClick={() => setPaymentMethod('cod')}
+              onClick={() => {
+                setPaymentMethod('cod');
+                setPlaceOrderError('');
+              }}
               className={`relative flex items-center gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer
     ${
       paymentMethod === 'cod'

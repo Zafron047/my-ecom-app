@@ -5,6 +5,7 @@ import { CartProvider } from '@/components/CartProvider';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import MetaPixel from '@/components/MetaPixel';
+import type { StorefrontBusinessProfile } from '@/lib/storefront-types';
 
 function isStorefrontPath(pathname: string) {
   return !(
@@ -14,7 +15,15 @@ function isStorefrontPath(pathname: string) {
   );
 }
 
-export default function AppFrame({ children }: { children: React.ReactNode }) {
+export default function AppFrame({
+  businessProfile,
+  catalogCategories,
+  children,
+}: {
+  businessProfile: StorefrontBusinessProfile;
+  catalogCategories: string[];
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const shouldUseStorefrontFrame = isStorefrontPath(pathname);
 
@@ -25,9 +34,14 @@ export default function AppFrame({ children }: { children: React.ReactNode }) {
   return (
     <CartProvider>
       <MetaPixel />
-      <Header />
-      <main className="flex-1">{children}</main>
-      <Footer />
+      <Header
+        businessProfile={businessProfile}
+        catalogCategories={catalogCategories}
+      />
+      <main className="flex-1 pt-[5.75rem] sm:pt-[6.25rem] lg:pt-[6.75rem]">
+        {children}
+      </main>
+      <Footer businessProfile={businessProfile} />
     </CartProvider>
   );
 }

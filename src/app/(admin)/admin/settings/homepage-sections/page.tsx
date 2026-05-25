@@ -2,7 +2,7 @@ import Link from 'next/link';
 import HomepageSectionsReorderManager from '@/components/admin/HomepageSectionsReorderManager';
 import HomepageSectionItem from '@/components/admin/HomepageSectionItem';
 import ProductMultiSelectDropdown from '@/components/admin/ProductMultiSelectDropdown';
-import { requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import { prisma } from '@/lib/prisma';
 import {
   createHomepageSection,
@@ -12,7 +12,7 @@ import {
 } from './actions';
 
 export default async function HomepageSectionsSettingsPage() {
-  await requireAdminRole('/admin/settings/homepage-sections', ['admin']);
+  await requireAdminPermission('/admin/settings/homepage-sections', 'settings.manage');
 
   const homepageSectionDelegate = (prisma as { homepageSection?: unknown })
     .homepageSection as
@@ -114,7 +114,7 @@ export default async function HomepageSectionsSettingsPage() {
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="text-base font-semibold text-slate-900">Sections Serial Manager</h3>
         <p className="mt-2 text-sm text-slate-600">
-          Reorder sections top-to-bottom with drag and drop.
+          Edit serial numbers directly or move sections top-to-bottom.
         </p>
         <HomepageSectionsReorderManager
           sections={sections.map((section) => ({ id: section.id, title: section.title }))}
@@ -205,6 +205,7 @@ export default async function HomepageSectionsSettingsPage() {
               </select>
             </label>
             <input type="hidden" name="sourceType" value="latest" />
+            <input type="hidden" name="displayOrder" value={sections.length + 1} />
             <label className="inline-flex items-center gap-2 text-sm text-slate-700">
               <input name="isActive" type="checkbox" defaultChecked />
               Active

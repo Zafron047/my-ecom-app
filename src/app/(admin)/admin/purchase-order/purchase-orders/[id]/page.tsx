@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import PurchaseRecordForm from '../../_components/PurchaseRecordForm';
 import { requireAdminPermission } from '@/lib/admin-session';
+import { canAccessPermission } from '@/lib/admin-rbac';
 import { prisma } from '@/lib/prisma';
 import { PURCHASE_ORDER_STATUS } from '@/lib/purchase-order-status';
 import {
@@ -40,7 +41,15 @@ function getPurchaseOrderNumber(orderNumber: string) {
 export default async function AdminPurchaseOrderDetailsPage({
   params,
 }: PurchaseRecordPageProps) {
-  await requireAdminPermission('/admin/purchase-order/purchase-orders', 'products.read');
+  const session = await requireAdminPermission(
+    '/admin/purchase-order/purchase-orders',
+    'purchaseOrders.read',
+  );
+  const canViewCost = canAccessPermission(session.role, 'purchaseOrders.cost.read');
+  const canManagePayment = canAccessPermission(
+    session.role,
+    'purchaseOrders.payment.manage',
+  );
 
   const { id } = await params;
   const record = await prisma.purchaseOrder.findFirst({
@@ -138,6 +147,8 @@ export default async function AdminPurchaseOrderDetailsPage({
       payAction={updatePurchaseRecordPayment}
       receiveAction={receivePurchaseRecord}
       updateDetailsAction={updatePurchaseRecordDetails}
+      canManagePayment={canManagePayment}
+      canViewCost={canViewCost}
       record={{
         id: record.id,
         lines: record.lines.map((line) => ({
@@ -148,12 +159,12 @@ export default async function AdminPurchaseOrderDetailsPage({
             null,
           batchNumber: line.batch?.batchNumber ?? line.batchNumber ?? '-',
           id: line.id,
-          lineTotal: decimalToNumber(line.lineTotal),
+          lineTotal: canViewCost ? decimalToNumber(line.lineTotal) : null,
           orderedQuantity: line.quantity,
           productName: line.variant?.product.name ?? line.product?.name ?? '-',
           receivedQuantity: line.batch?.receivedQuantity ?? 0,
           sku: line.variant?.sku ?? '-',
-          unitCost: decimalToNumber(line.unitCost),
+          unitCost: canViewCost ? decimalToNumber(line.unitCost) : null,
           variantLabel: line.variant ? formatVariantLabel(line.variant) : 'Select variant',
         })),
         notes: record.notes ?? '',
@@ -167,7 +178,7 @@ export default async function AdminPurchaseOrderDetailsPage({
         referenceNo: record.referenceNo ?? '',
         status: record.status,
         supplierName: record.supplierName ?? '',
-        totalCost: decimalToNumber(record.totalCost),
+        totalCost: canViewCost ? decimalToNumber(record.totalCost) : null,
         totalQuantity: record.totalQuantity,
       }}
     />

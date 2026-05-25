@@ -18,6 +18,6 @@
   <circle cx="33.5" cy="60.5" r="1.8" fill="white"/>
   <circle cx="42" cy="60.5" r="1.8" fill="white"/>
 
-  <text x="61" y="46" fill="white" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="800" letter-spacing="0.08em">BUY</text>
+  <text x="57" y="46" fill="white" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="800" letter-spacing="0.04em">BDBUY</text>
   <text x="61" y="68" fill="#FFEDD5" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="800" letter-spacing="0.08em">EASY</text>
 </svg>

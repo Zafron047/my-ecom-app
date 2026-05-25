@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { redirect } from 'next/navigation';
 import path from 'path';
 import { requireAdminPermission } from '@/lib/admin-session';
@@ -10,6 +10,16 @@ const CATEGORY_STORAGE_FOLDER = 'categories';
 const SUPABASE_STORAGE_BUCKET =
   process.env.SUPABASE_STORAGE_BUCKET || 'product-images';
 const MAX_CATEGORY_IMAGE_UPLOAD_ATTEMPTS = 100;
+
+function revalidateCategoryPaths() {
+  revalidateTag('storefront-catalog', 'max');
+  revalidateTag('storefront-categories', 'max');
+  revalidatePath('/');
+  revalidatePath('/products');
+  revalidatePath('/api/storefront/catalog');
+  revalidatePath('/admin/products/categories');
+  revalidatePath('/admin/products/new');
+}
 
 export type CategoryFormState = {
   archivedAt?: number;
@@ -184,7 +194,10 @@ export async function createCategory(
   _previousState: CategoryFormState,
   formData: FormData,
 ): Promise<CategoryFormState> {
-  await requireAdminPermission('/admin/products/categories/new', 'products.write');
+  await requireAdminPermission(
+    '/admin/products/categories/new',
+    'productCatalog.manage',
+  );
 
   const name = getString(formData, 'name');
   if (!name) {
@@ -233,8 +246,7 @@ export async function createCategory(
     },
   });
 
-  revalidatePath('/admin/products/categories');
-  revalidatePath('/admin/products/new');
+  revalidateCategoryPaths();
   redirect('/admin/products/categories');
 }
 
@@ -242,7 +254,10 @@ export async function updateCategory(
   _previousState: CategoryFormState,
   formData: FormData,
 ): Promise<CategoryFormState> {
-  await requireAdminPermission('/admin/products/categories', 'products.write');
+  await requireAdminPermission(
+    '/admin/products/categories',
+    'productCatalog.manage',
+  );
 
   const categoryId = getString(formData, 'categoryId');
   const intent = getString(formData, 'intent') || 'save';
@@ -270,8 +285,7 @@ export async function updateCategory(
       },
     });
 
-    revalidatePath('/admin/products/categories');
-    revalidatePath('/admin/products/new');
+    revalidateCategoryPaths();
 
     return {
       deletedAt: Date.now(),
@@ -306,10 +320,7 @@ export async function updateCategory(
       },
     });
 
-    revalidatePath('/admin/products/categories');
-    revalidatePath('/admin/products/new');
-    revalidatePath('/api/storefront/catalog');
-    revalidatePath('/products');
+    revalidateCategoryPaths();
 
     return {
       archivedAt: Date.now(),
@@ -388,8 +399,7 @@ export async function updateCategory(
     },
   });
 
-  revalidatePath('/admin/products/categories');
-  revalidatePath('/admin/products/new');
+  revalidateCategoryPaths();
 
   return {
     error: null,

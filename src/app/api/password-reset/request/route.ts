@@ -6,6 +6,8 @@ import {
   createCustomerPasswordResetUrl,
   hashCustomerPasswordResetToken,
 } from '@/lib/customer-password-reset';
+import { getPublicAppOrigin } from '@/lib/app-url';
+import { sendCustomerPasswordResetEmail } from '@/lib/password-reset-email';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
@@ -24,11 +26,8 @@ function normalizePhoneVariants(phone: string) {
   return [trimmed];
 }
 
-function genericResponse(resetLink?: string) {
-  return NextResponse.json({
-    success: true,
-    ...(resetLink && process.env.NODE_ENV !== 'production' ? { resetLink } : {}),
-  });
+function genericResponse() {
+  return NextResponse.json({ success: true });
 }
 
 export async function POST(request: Request) {
@@ -65,6 +64,7 @@ export async function POST(request: Request) {
       ? { email: identifier.toLowerCase(), isBlocked: false }
       : { phone: { in: normalizePhoneVariants(identifier) }, isBlocked: false },
     select: {
+      email: true,
       id: true,
       passwordHash: true,
     },
@@ -92,5 +92,17 @@ export async function POST(request: Request) {
     now,
   );
 
-  return genericResponse(createCustomerPasswordResetUrl(new URL(request.url).origin, token));
+  const resetLink = createCustomerPasswordResetUrl(
+    getPublicAppOrigin(request.url),
+    token,
+  );
+  if (customer.email) {
+    await sendCustomerPasswordResetEmail({
+      expiresAt,
+      resetLink,
+      to: customer.email,
+    });
+  }
+
+  return genericResponse();
 }

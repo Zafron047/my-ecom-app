@@ -4,13 +4,28 @@ import { getStorefrontCatalog } from '@/lib/storefront-data';
 import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 import { notFound } from 'next/navigation';
 
+export const revalidate = 300;
+
 const collectionConfig = {
   'super-sale': {
     title: 'Super Sale',
-    description: 'Browse our best markdowns and limited-time deal picks.',
+    description: 'Featured deals for everyday use.',
     filter: (product: StorefrontCatalogProduct) => product.superSale,
   },
 } as const;
+
+export async function generateStaticParams() {
+  const catalog = await getStorefrontCatalog();
+  const categorySlugs = catalog.categories
+    .filter((category) => category !== 'All')
+    .map((category) => slugifyCategory(category))
+    .filter(Boolean);
+
+  return [
+    ...Object.keys(collectionConfig),
+    ...categorySlugs,
+  ].map((slug) => ({ slug }));
+}
 
 export default async function CollectionPage({
   params,
@@ -30,15 +45,11 @@ export default async function CollectionPage({
   }
 
   if (categoryName) {
-    const products = catalog.products.filter(
-      (product) => product.category === categoryName,
-    );
-
     return (
       <ProductCollectionView
         title={categoryName}
-        description={`Browse products from ${categoryName}.`}
-        products={products}
+        description="Selected essentials for everyday use."
+        products={catalog.products}
         categories={catalog.categories}
         initialCategory={categoryName}
       />

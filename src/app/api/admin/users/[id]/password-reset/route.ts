@@ -5,15 +5,18 @@ import {
   createPasswordResetToken,
   hashPasswordResetToken,
 } from '@/lib/admin-password-reset';
-import { requireAdminApiRole } from '@/lib/admin-api-auth';
+import { requireAdminApiPermission } from '@/lib/admin-api-auth';
 import { logAdminAudit } from '@/lib/admin-audit';
+import { adminRoleLabels, canManageAdminUser } from '@/lib/admin-rbac';
+import { getPublicAppOrigin } from '@/lib/app-url';
+import { sendAdminPasswordResetEmail } from '@/lib/password-reset-email';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireAdminApiRole(['admin']);
+  const auth = await requireAdminApiPermission('adminUsers.manage');
   if (auth.response) return auth.response;
   const { actor } = auth;
 
@@ -36,6 +39,13 @@ export async function POST(
     return NextResponse.json({ error: 'Admin user not found.' }, { status: 404 });
   }
 
+  if (!canManageAdminUser(actor.role, target.role)) {
+    return NextResponse.json(
+      { error: `You cannot modify a ${adminRoleLabels[target.role]} user.` },
+      { status: 403 },
+    );
+  }
+
   if (!target.isActive) {
     return NextResponse.json(
       { error: 'Activate this admin account before issuing a reset link.' },
@@ -46,6 +56,10 @@ export async function POST(
   const now = new Date();
   const resetToken = createPasswordResetToken();
   const resetExpiresAt = createPasswordResetExpiry(now);
+  const resetLink = createAdminPasswordResetUrl(
+    getPublicAppOrigin(request.url),
+    resetToken,
+  );
 
   await prisma.$transaction(async (tx) => {
     await tx.adminPasswordResetToken.updateMany({
@@ -86,6 +100,12 @@ export async function POST(
     });
   });
 
+  const mailResult = await sendAdminPasswordResetEmail({
+    expiresAt: resetExpiresAt,
+    resetLink,
+    to: target.email,
+  });
+
   await logAdminAudit({
     action: 'update',
     actorAdminId: actor.id,
@@ -93,6 +113,7 @@ export async function POST(
     entityType: 'admin_user_password_reset',
     message: `Password reset link created for ${target.email}.`,
     metadata: {
+      emailSent: mailResult.sent,
       expiresAt: resetExpiresAt.toISOString(),
       targetEmail: target.email,
     },
@@ -100,7 +121,7 @@ export async function POST(
   });
 
   return NextResponse.json({
+    emailSent: mailResult.sent,
     resetExpiresAt: resetExpiresAt.toISOString(),
-    resetLink: createAdminPasswordResetUrl(request.url, resetToken),
   });
 }

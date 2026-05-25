@@ -1,12 +1,12 @@
 import Link from 'next/link';
-import { requireAdminRole } from '@/lib/admin-session';
+import { requireAdminPermission } from '@/lib/admin-session';
 import BackupRestoreForm from '@/components/admin/BackupRestoreForm';
 import CatalogQaForm from '@/components/admin/CatalogQaForm';
 import InventoryBatchRestoreForm from '@/components/admin/InventoryBatchRestoreForm';
 import StockBatchRepairForm from '@/components/admin/StockBatchRepairForm';
 
 export default async function AdminBackupSettingsPage() {
-  await requireAdminRole('/admin/settings/backup', ['admin']);
+  await requireAdminPermission('/admin/settings/backup', 'backups.manage');
 
   return (
     <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

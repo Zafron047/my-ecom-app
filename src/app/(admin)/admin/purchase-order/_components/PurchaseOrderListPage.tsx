@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { requireAdminPermission } from '@/lib/admin-session';
+import { canAccessPermission } from '@/lib/admin-rbac';
 import { prisma } from '@/lib/prisma';
 import {
   CLOSED_PURCHASE_ORDER_STATUSES,
@@ -104,7 +105,12 @@ export default async function PurchaseOrderListPage({
   title,
   view,
 }: PurchaseOrderListPageProps) {
-  await requireAdminPermission(pathname, 'products.read');
+  const session = await requireAdminPermission(pathname, 'purchaseOrders.read');
+  const canViewCost = canAccessPermission(session.role, 'purchaseOrders.cost.read');
+  const canViewPayment = canAccessPermission(
+    session.role,
+    'purchaseOrders.payment.manage',
+  );
   const isDraftView = view === 'draft';
 
   const orders = await prisma.purchaseOrder.findMany({
@@ -187,17 +193,22 @@ export default async function PurchaseOrderListPage({
                 </th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Supplier</th>
-                <th className="px-4 py-3">Payment</th>
+                {canViewPayment ? <th className="px-4 py-3">Payment</th> : null}
                 <th className="px-4 py-3">Receiving</th>
                 <th className="px-4 py-3 text-right">Units</th>
-                <th className="px-4 py-3 text-right">Cost</th>
+                {canViewCost ? (
+                  <th className="px-4 py-3 text-right">Cost</th>
+                ) : null}
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {visibleOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                  <td
+                    colSpan={6 + (canViewPayment ? 1 : 0) + (canViewCost ? 1 : 0)}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
                     {getEmptyMessage(view)}
                   </td>
                 </tr>
@@ -248,14 +259,16 @@ export default async function PurchaseOrderListPage({
                       <td className="px-4 py-4 text-slate-700">
                         {entry.supplierName || '-'}
                       </td>
-                      <td className="px-4 py-4 text-slate-700">
-                        <div className="font-semibold text-slate-900">
-                          {formatPurchasePaymentStatus(entry.paymentStatus)}
-                        </div>
-                        <div className="text-xs capitalize text-slate-500">
-                          {entry.paymentMethod || '-'}
-                        </div>
-                      </td>
+                      {canViewPayment ? (
+                        <td className="px-4 py-4 text-slate-700">
+                          <div className="font-semibold text-slate-900">
+                            {formatPurchasePaymentStatus(entry.paymentStatus)}
+                          </div>
+                          <div className="text-xs capitalize text-slate-500">
+                            {entry.paymentMethod || '-'}
+                          </div>
+                        </td>
+                      ) : null}
                       <td className="px-4 py-4 text-slate-700">
                         {getPurchaseOrderReceivingStatus(
                           entry.totalQuantity,
@@ -269,20 +282,24 @@ export default async function PurchaseOrderListPage({
                       <td className="px-4 py-4 text-right font-semibold text-slate-900">
                         {entry.totalQuantity}
                       </td>
-                      <td className="px-4 py-4 text-right font-semibold text-slate-900">
-                        <div>{formatMoney(entry.totalCost)}</div>
-                        <div className="mt-1 text-xs font-medium text-slate-500">
-                          {formatMoney(entry.paidAmount)} paid /{' '}
-                          {formatMoneyNumber(
-                            Math.max(
-                              0,
-                              entry.totalCost.toNumber() -
-                                entry.paidAmount.toNumber(),
-                            ),
-                          )}{' '}
-                          due
-                        </div>
-                      </td>
+                      {canViewCost ? (
+                        <td className="px-4 py-4 text-right font-semibold text-slate-900">
+                          <div>{formatMoney(entry.totalCost)}</div>
+                          {canViewPayment ? (
+                            <div className="mt-1 text-xs font-medium text-slate-500">
+                              {formatMoney(entry.paidAmount)} paid /{' '}
+                              {formatMoneyNumber(
+                                Math.max(
+                                  0,
+                                  entry.totalCost.toNumber() -
+                                    entry.paidAmount.toNumber(),
+                                ),
+                              )}{' '}
+                              due
+                            </div>
+                          ) : null}
+                        </td>
+                      ) : null}
                       <td className="px-4 py-4 text-right">
                         <Link
                           href={actionHref}

@@ -1,31 +1,165 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import AppFrame from '@/components/AppFrame';
+import { getBusinessProfile, getStorefrontCategories } from '@/lib/storefront-data';
 import './globals.css';
 
-export const metadata: Metadata = {
-  metadataBase: new URL('https://shopeasy.com.bd'),
-  title: 'Shop Easy - Trending AliExpress Finds',
-  description:
-    'Shop trending gadgets, home finds, accessories, and everyday AliExpress picks.',
-  alternates: {
-    canonical: '/',
-  },
-  icons: {
-    icon: '/shop-easy-logo.svg',
-    shortcut: '/shop-easy-logo.svg',
-    apple: '/shop-easy-logo.svg',
-  },
-};
+const siteName = 'BDBuyEasy';
+const siteTitle = 'BDBuyEasy - Practical Home & Kitchen Finds';
+const siteDescription =
+  'Shop home tools, kitchen finds, decor, and useful gadgets for easier everyday living.';
+const fallbackSiteUrl = 'https://bdbuyeasy.com.bd';
 
-export default function RootLayout({
+function getSiteUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || fallbackSiteUrl;
+
+  try {
+    const url = new URL(configuredUrl);
+    if (process.env.NODE_ENV === 'production' && url.protocol !== 'https:') {
+      return new URL(fallbackSiteUrl);
+    }
+    return url;
+  } catch {
+    return new URL(fallbackSiteUrl);
+  }
+}
+
+const siteUrl = getSiteUrl();
+
+export async function generateMetadata(): Promise<Metadata> {
+  const businessProfile = await getBusinessProfile();
+  const name = businessProfile.businessName || siteName;
+  const title = businessProfile.metaTitle || siteTitle;
+  const description = businessProfile.metaDescription || siteDescription;
+  const socialImageUrl = new URL(
+    businessProfile.ogImageUrl || '/og-image.png',
+    siteUrl,
+  ).toString();
+
+  return {
+    metadataBase: siteUrl,
+    title: {
+      default: title,
+      template: `%s | ${name}`,
+    },
+    description,
+    applicationName: name,
+    alternates: {
+      canonical: '/',
+    },
+    keywords: businessProfile.metaKeywords
+      ?.split(',')
+      .map((keyword) => keyword.trim())
+      .filter(Boolean),
+    openGraph: {
+      type: 'website',
+      locale: 'en_US',
+      url: siteUrl.toString(),
+      siteName: name,
+      title,
+      description,
+      images: [
+        {
+          url: socialImageUrl,
+          width: 1200,
+          height: 630,
+          alt: `${name} social preview`,
+          type: 'image/png',
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: [
+        {
+          url: socialImageUrl,
+          alt: `${name} social preview`,
+        },
+      ],
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+        'max-video-preview': -1,
+      },
+    },
+    icons: {
+      icon: businessProfile.logoUrl,
+      shortcut: businessProfile.logoUrl,
+      apple: businessProfile.logoUrl,
+    },
+  };
+}
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const [businessProfile, categoryData] = await Promise.all([
+    getBusinessProfile(),
+    getStorefrontCategories(),
+  ]);
+
   return (
     <html lang="en" data-scroll-behavior="smooth" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-white">
-        <AppFrame>{children}</AppFrame>
+        <Script id="strip-extension-button-attrs" strategy="beforeInteractive">
+          {`
+            (() => {
+              const attributeName = 'fdprocessedid';
+
+              const stripAttribute = (root) => {
+                if (!root) return;
+
+                if (root.nodeType === Node.ELEMENT_NODE && root.hasAttribute?.(attributeName)) {
+                  root.removeAttribute(attributeName);
+                }
+
+                root.querySelectorAll?.('[' + attributeName + ']').forEach((element) => {
+                  element.removeAttribute(attributeName);
+                });
+              };
+
+              stripAttribute(document.documentElement);
+
+              const observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                  if (mutation.type === 'attributes') {
+                    stripAttribute(mutation.target);
+                    continue;
+                  }
+
+                  mutation.addedNodes.forEach(stripAttribute);
+                }
+              });
+
+              observer.observe(document.documentElement, {
+                attributeFilter: [attributeName],
+                attributes: true,
+                childList: true,
+                subtree: true,
+              });
+
+              window.addEventListener('load', () => {
+                window.setTimeout(() => observer.disconnect(), 5000);
+              }, { once: true });
+            })();
+          `}
+        </Script>
+        <AppFrame
+          businessProfile={businessProfile}
+          catalogCategories={categoryData.categories}
+        >
+          {children}
+        </AppFrame>
       </body>
     </html>
   );

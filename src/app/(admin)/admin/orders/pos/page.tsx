@@ -1,7 +1,7 @@
 import { requireAdminPermission } from '@/lib/admin-session';
 
 export default async function AdminOrdersPosPage() {
-  await requireAdminPermission('/admin/orders/pos', 'orders.write');
+  await requireAdminPermission('/admin/orders/pos', 'pos.manage');
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

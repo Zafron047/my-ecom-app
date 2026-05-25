@@ -2,16 +2,98 @@ import { prisma } from '@/lib/prisma';
 import { toVariantImageUrl, type ImageVariantSize } from '@/lib/image-variants';
 import { unstable_cache } from 'next/cache';
 import type {
+  StorefrontBusinessProfile,
   StorefrontCatalogProduct,
+  StorefrontHeroSlide,
   StorefrontHomepageSection,
   StorefrontProductDetail,
 } from '@/lib/storefront-types';
 
 export const STOREFRONT_REVALIDATE_SECONDS = 300;
+const shouldBypassStorefrontCache =
+  process.env.NEXT_DISABLE_STOREFRONT_CACHE === 'true';
 
 type CatalogCardProduct = Awaited<ReturnType<typeof loadCatalogCardProducts>>[number];
 type ProductDetailProduct = NonNullable<Awaited<ReturnType<typeof loadProductDetail>>>;
 type StorefrontProductRow = CatalogCardProduct | ProductDetailProduct;
+type AsyncStorefrontLoader<Args extends unknown[], Result> = (
+  ...args: Args
+) => Promise<Result>;
+
+function cacheStorefrontLoader<Args extends unknown[], Result>(
+  loader: AsyncStorefrontLoader<Args, Result>,
+  keyParts: string[],
+  options: NonNullable<Parameters<typeof unstable_cache>[2]>,
+) {
+  if (shouldBypassStorefrontCache) {
+    return loader;
+  }
+
+  return unstable_cache(loader, keyParts, options) as AsyncStorefrontLoader<
+    Args,
+    Result
+  >;
+}
+
+const defaultBusinessProfile: StorefrontBusinessProfile = {
+  businessName: 'BDBuyEasy',
+  tagline: 'EASY DEALS, EVERYDAY',
+  logoAlt: 'BDBuyEasy logo',
+  logoUrl: '/business-logo.png',
+  metaDescription:
+    'Shop home tools, kitchen finds, decor, and useful gadgets for easier everyday living.',
+  metaTitle: 'BDBuyEasy - Practical Home & Kitchen Finds',
+  websiteUrl: 'https://bdbuyeasy.com.bd',
+};
+
+export const defaultHeroSlides: StorefrontHeroSlide[] = [
+  {
+    id: 'default-trending-gadgets',
+    imageUrl:
+      'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=1920&h=1080&fit=crop',
+    title: 'Trending Gadgets & Daily Finds',
+    subtitle: 'Useful home tools, kitchen finds, decor, and practical gadgets',
+    ctaLabel: 'Shop Now',
+    ctaHref: '/products',
+    secondaryLabel: 'Explore More',
+    secondaryHref: '#featured',
+  },
+  {
+    id: 'default-home-upgrades',
+    imageUrl:
+      'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=1920&h=1080&fit=crop',
+    title: 'Smart Home Upgrades',
+    subtitle: 'Smart little upgrades that make your space more useful and fun',
+    ctaLabel: 'Explore Home',
+    ctaHref: '/products',
+    secondaryLabel: 'Explore More',
+    secondaryHref: '#featured',
+  },
+  {
+    id: 'default-accessories',
+    imageUrl:
+      'https://images.unsplash.com/photo-1511556820780-d912e42b4980?w=1920&h=1080&fit=crop',
+    title: 'Useful Finds For Every Room',
+    subtitle:
+      'Home tools, kitchen helpers, decor, and everyday gadgets worth keeping close',
+    ctaLabel: 'Browse Bestsellers',
+    ctaHref: '/products',
+    secondaryLabel: 'Explore More',
+    secondaryHref: '#featured',
+  },
+  {
+    id: 'default-category-picks',
+    imageUrl:
+      'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=1920&h=1080&fit=crop',
+    title: 'Organized Picks For Daily Needs',
+    subtitle:
+      'Browse practical household finds across kitchen, cleaning, decor, and gadgets',
+    ctaLabel: 'View Collection',
+    ctaHref: '/products',
+    secondaryLabel: 'Explore More',
+    secondaryHref: '#featured',
+  },
+];
 
 async function loadCatalogCardProducts() {
   return prisma.product.findMany({
@@ -311,7 +393,7 @@ function toCatalogProduct(product: StorefrontProductRow): StorefrontCatalogProdu
   };
 }
 
-export const getCatalogCards = unstable_cache(
+export const getCatalogCards = cacheStorefrontLoader(
   async () => {
     const products = await loadCatalogCardProducts();
     return products.map(toCatalogProduct);
@@ -323,7 +405,7 @@ export const getCatalogCards = unstable_cache(
   },
 );
 
-export const getHeaderSearchProducts = unstable_cache(
+export const getHeaderSearchProducts = cacheStorefrontLoader(
   async () => {
     const products = await prisma.product.findMany({
       where: {
@@ -376,7 +458,7 @@ export const getHeaderSearchProducts = unstable_cache(
   },
 );
 
-export const getHomepageSections = unstable_cache(
+export const getHomepageSections = cacheStorefrontLoader(
   async () => {
   const homepageSectionDelegate = (prisma as { homepageSection?: unknown })
     .homepageSection as
@@ -446,19 +528,19 @@ export const getHomepageSections = unstable_cache(
           {
             id: 'default-featured',
             title: 'Featured Products',
-            eyebrow: 'Fresh Picks',
+            eyebrow: 'Useful Finds',
             variant: 'default',
-            layout: 'grid',
+            layout: 'carousel',
             sourceType: 'latest',
             productLimit: 6,
             displayOrder: 1,
           },
           {
             id: 'default-super-sale',
-            title: 'Super Sale',
+            title: "Today's Deals",
             eyebrow: 'Limited-Time Offers',
             variant: 'sale',
-            layout: 'grid',
+            layout: 'carousel',
             sourceType: 'super_sale',
             productLimit: 5,
             displayOrder: 2,
@@ -474,7 +556,135 @@ export const getHomepageSections = unstable_cache(
   },
 );
 
-export const getStorefrontCategories = unstable_cache(
+export const getHeroSlides = cacheStorefrontLoader(
+  async () => {
+    const heroSlideDelegate = (prisma as { heroSlide?: unknown }).heroSlide as
+      | {
+          findMany: (args: unknown) => Promise<
+            {
+              id: string;
+              title: string;
+              subtitle: string | null;
+              imageUrl: string;
+              ctaLabel: string | null;
+              ctaHref: string | null;
+              secondaryLabel: string | null;
+              secondaryHref: string | null;
+            }[]
+          >;
+        }
+      | undefined;
+
+    if (!heroSlideDelegate) return defaultHeroSlides;
+
+    const slides = await heroSlideDelegate.findMany({
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+      where: { isActive: true },
+    });
+
+    return slides.length > 0
+      ? slides.map(
+          (slide): StorefrontHeroSlide => ({
+            id: slide.id,
+            title: slide.title,
+            ...(slide.subtitle ? { subtitle: slide.subtitle } : {}),
+            imageUrl: slide.imageUrl,
+            ...(slide.ctaLabel ? { ctaLabel: slide.ctaLabel } : {}),
+            ...(slide.ctaHref ? { ctaHref: slide.ctaHref } : {}),
+            ...(slide.secondaryLabel ? { secondaryLabel: slide.secondaryLabel } : {}),
+            ...(slide.secondaryHref ? { secondaryHref: slide.secondaryHref } : {}),
+          }),
+        )
+      : defaultHeroSlides;
+  },
+  ['storefront-hero-slides'],
+  {
+    revalidate: STOREFRONT_REVALIDATE_SECONDS,
+    tags: ['storefront-hero-slides'],
+  },
+);
+
+export const getBusinessProfile = cacheStorefrontLoader(
+  async () => {
+    const rows = await prisma.$queryRaw<
+      {
+        businessName: string;
+        tagline: string | null;
+        logoUrl: string | null;
+        logoAlt: string | null;
+        bannerUrl: string | null;
+        bannerAlt: string | null;
+        phone: string | null;
+        email: string | null;
+        address: string | null;
+        facebookUrl: string | null;
+        instagramUrl: string | null;
+        websiteUrl: string | null;
+        returnRefundPolicy: string | null;
+        metaTitle: string | null;
+        metaDescription: string | null;
+        metaKeywords: string | null;
+        ogImageUrl: string | null;
+      }[]
+    >`
+      SELECT
+        "businessName",
+        "tagline",
+        "logoUrl",
+        "logoAlt",
+        "bannerUrl",
+        "bannerAlt",
+        "phone",
+        "email",
+        "address",
+        "facebookUrl",
+        "instagramUrl",
+        "websiteUrl",
+        "returnRefundPolicy",
+        "metaTitle",
+        "metaDescription",
+        "metaKeywords",
+        "ogImageUrl"
+      FROM "BusinessProfile"
+      ORDER BY "updatedAt" DESC
+      LIMIT 1
+    `.catch(() => []);
+    const profile = rows[0];
+
+    if (!profile) return defaultBusinessProfile;
+
+    return {
+      businessName: profile.businessName || defaultBusinessProfile.businessName,
+      tagline: profile.tagline || defaultBusinessProfile.tagline,
+      logoAlt:
+        profile.logoAlt ||
+        `${profile.businessName || defaultBusinessProfile.businessName} logo`,
+      logoUrl: profile.logoUrl || defaultBusinessProfile.logoUrl,
+      ...(profile.bannerUrl ? { bannerUrl: profile.bannerUrl } : {}),
+      ...(profile.bannerAlt ? { bannerAlt: profile.bannerAlt } : {}),
+      ...(profile.phone ? { phone: profile.phone } : {}),
+      ...(profile.email ? { email: profile.email } : {}),
+      ...(profile.address ? { address: profile.address } : {}),
+      ...(profile.facebookUrl ? { facebookUrl: profile.facebookUrl } : {}),
+      ...(profile.instagramUrl ? { instagramUrl: profile.instagramUrl } : {}),
+      ...(profile.websiteUrl ? { websiteUrl: profile.websiteUrl } : {}),
+      ...(profile.returnRefundPolicy
+        ? { returnRefundPolicy: profile.returnRefundPolicy }
+        : {}),
+      ...(profile.metaTitle ? { metaTitle: profile.metaTitle } : {}),
+      ...(profile.metaDescription ? { metaDescription: profile.metaDescription } : {}),
+      ...(profile.metaKeywords ? { metaKeywords: profile.metaKeywords } : {}),
+      ...(profile.ogImageUrl ? { ogImageUrl: profile.ogImageUrl } : {}),
+    } satisfies StorefrontBusinessProfile;
+  },
+  ['storefront-business-profile'],
+  {
+    revalidate: STOREFRONT_REVALIDATE_SECONDS,
+    tags: ['storefront-business-profile'],
+  },
+);
+
+export const getStorefrontCategories = cacheStorefrontLoader(
   async () => {
     const activeCategories = await prisma.category.findMany({
     where: {
@@ -514,13 +724,22 @@ export const getStorefrontCategories = unstable_cache(
 );
 
 export async function getStorefrontCatalog() {
-  const [products, homepageSections, categoryData] = await Promise.all([
+  const [products, homepageSections, heroSlides, businessProfile, categoryData] =
+    await Promise.all([
     getCatalogCards(),
     getHomepageSections(),
+    getHeroSlides(),
+    getBusinessProfile(),
     getStorefrontCategories(),
   ]);
 
   return {
+    businessProfile,
+    heroSlides: businessProfile.bannerUrl
+      ? heroSlides.map((slide, index) =>
+          index === 0 ? { ...slide, imageUrl: businessProfile.bannerUrl! } : slide,
+        )
+      : heroSlides,
     products,
     homepageSections,
     ...categoryData,
@@ -631,7 +850,7 @@ async function loadProductDetail(productId: string) {
   });
 }
 
-export const getProductDetail = unstable_cache(
+export const getProductDetail = cacheStorefrontLoader(
   async (productId: string) => {
     const product = await loadProductDetail(productId);
   if (!product) return null;
