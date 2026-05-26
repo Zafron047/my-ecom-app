@@ -86,11 +86,6 @@ const adminNavGroups: AdminNavGroup[] = [
         label: 'Stock',
         requiredPermission: 'inventory.read',
       },
-      {
-        href: '/admin/products/stock-transfer',
-        label: 'Stock Transfers',
-        requiredPermission: 'stockTransfers.manage',
-      },
     ],
   },
   {

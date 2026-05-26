@@ -18,6 +18,8 @@
     "prisma:import:frontend-images": "node prisma/import-frontend-images.mjs",
     "ops:backup:catalog": "node scripts/ops/catalog-backup.mjs",
     "ops:backup:dbjson": "node scripts/ops/db-json-backup.mjs",
+    "ops:cleanup:test-content:apply": "node scripts/ops/test-content-cleanup-dry-run.mjs --apply --yes",
+    "ops:cleanup:test-content:dry-run": "node scripts/ops/test-content-cleanup-dry-run.mjs",
     "ops:cleanup:staged-images": "node scripts/ops/storage-cleanup-staged-product-images.mjs",
     "ops:monitor:usage": "node scripts/ops/usage-snapshot.mjs"
   },

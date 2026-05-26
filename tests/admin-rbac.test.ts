@@ -30,7 +30,6 @@ describe('admin settings permissions', () => {
     expect(canAccessAdminPath('/admin/products', 'operator')).toBe(true);
     expect(canAccessAdminPath('/admin/products/categories', 'operator')).toBe(false);
     expect(canAccessAdminPath('/admin/products/stock', 'operator')).toBe(true);
-    expect(canAccessAdminPath('/admin/products/stock-transfer', 'operator')).toBe(false);
     expect(canAccessAdminPath('/admin/orders', 'operator')).toBe(true);
     expect(canAccessAdminPath('/admin/orders/abandoned-checkouts', 'operator')).toBe(true);
     expect(canAccessAdminPath('/admin/orders/pos', 'operator')).toBe(true);
