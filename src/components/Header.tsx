@@ -83,14 +83,6 @@ function polishCategoryLabel(value: string, index: number) {
   return matchingLabel ?? value.trim();
 }
 
-function normalizeMobileInput(value: string) {
-  const digits = value.replace(/\D/g, '');
-  if (digits.startsWith('8801') && digits.length === 13) {
-    return `0${digits.slice(3)}`;
-  }
-  return digits;
-}
-
 export default function Header({
   businessProfile,
   catalogCategories,
@@ -170,9 +162,7 @@ export default function Header({
   const [locationAreas, setLocationAreas] = useState<string[]>([]);
   const desktopSearchRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchRef = useRef<HTMLDivElement | null>(null);
-  const lastAutofillPhoneRef = useRef<string>('');
   const metaInitiateCheckoutEventIdRef = useRef<string | null>(null);
-  const [isCustomerLookupLoading, setIsCustomerLookupLoading] = useState(false);
   const firstNameHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -385,58 +375,6 @@ export default function Header({
   useEffect(() => {
     setIsCustomerLoggedIn(document.cookie.includes('customer_auth=1'));
   }, []);
-
-  useEffect(() => {
-    const normalizedPhone = normalizeMobileInput(checkoutForm.customerMobile);
-
-    if (!MOBILE_PATTERN.test(normalizedPhone)) return;
-    if (lastAutofillPhoneRef.current === normalizedPhone) return;
-
-    const timer = setTimeout(async () => {
-      setIsCustomerLookupLoading(true);
-      try {
-        const query = new URLSearchParams({ phone: normalizedPhone });
-        const response = await fetch(`/api/customers/by-phone?${query.toString()}`);
-        if (!response.ok) return;
-        const payload = (await response.json()) as {
-          customer: {
-            firstName: string;
-            lastName: string | null;
-            email: string | null;
-            phone: string;
-            division: string | null;
-            district: string | null;
-            thana: string | null;
-            address: string | null;
-          } | null;
-        };
-        if (!payload.customer) {
-          lastAutofillPhoneRef.current = normalizedPhone;
-          return;
-        }
-        setCheckoutForm((current) => ({
-          ...current,
-          customerMobile: current.customerMobile,
-          firstName: payload.customer?.firstName ?? current.firstName,
-          lastName: payload.customer?.lastName ?? current.lastName,
-          email: payload.customer?.email ?? current.email,
-          division: payload.customer?.division ?? current.division,
-          district: payload.customer?.district ?? current.district,
-          thana: payload.customer?.thana ?? current.thana,
-          address: payload.customer?.address ?? current.address,
-        }));
-        lastAutofillPhoneRef.current = normalizedPhone;
-      } catch {
-        // silent fail: checkout still works manually.
-      } finally {
-        setIsCustomerLookupLoading(false);
-      }
-    }, 320);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [checkoutForm.customerMobile]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1457,11 +1395,6 @@ export default function Header({
                         </motion.span>
                       )}
                     </AnimatePresence>
-                    {isCustomerLookupLoading && (
-                      <p className="mt-1 text-[10px] font-medium text-slate-500">
-                        Checking existing customer...
-                      </p>
-                    )}
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
