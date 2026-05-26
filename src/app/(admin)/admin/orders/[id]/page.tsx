@@ -22,6 +22,10 @@ function formatTk(value: number) {
   })}`;
 }
 
+function isWowMallOrder(orderNumber: string) {
+  return orderNumber.startsWith('WM-');
+}
+
 export default async function AdminOrderDetailsPage({
   params,
 }: OrderDetailsPageProps) {
@@ -202,7 +206,14 @@ export default async function AdminOrderDetailsPage({
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm print:hidden">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">{order.orderNumber}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-semibold text-slate-900">{order.orderNumber}</h2>
+              {isWowMallOrder(order.orderNumber) ? (
+                <span className="rounded-md bg-fuchsia-50 px-2 py-1 text-xs font-semibold text-fuchsia-700">
+                  WoWMall order/{order.orderNumber}
+                </span>
+              ) : null}
+            </div>
             <p className="mt-1 text-sm text-slate-600">
               {new Intl.DateTimeFormat('en-US', {
                 month: 'long',

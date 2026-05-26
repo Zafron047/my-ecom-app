@@ -44,7 +44,7 @@ export function publicCorsHeaders(request: NextRequest | Request) {
     headers.set('Vary', 'Origin');
   }
 
-  headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   headers.set(
     'Access-Control-Allow-Headers',
     'Content-Type, X-WoWMall-Api-Key',

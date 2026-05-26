@@ -42,6 +42,10 @@ function formatPaymentMethod(value: PaymentMethod) {
   return value === PaymentMethod.COD ? 'COD' : 'bKash';
 }
 
+function isWowMallOrder(orderNumber: string) {
+  return orderNumber.startsWith('WM-');
+}
+
 export default async function AdminOrdersPage({ searchParams }: OrdersPageProps) {
   await requireAdminPermission('/admin/orders', 'orders.read');
 
@@ -198,7 +202,12 @@ export default async function AdminOrdersPage({ searchParams }: OrdersPageProps)
                       className="absolute inset-0"
                       aria-label={`View details for order ${order.orderNumber}`}
                     />
-                    {order.orderNumber}
+                    <span className="block">{order.orderNumber}</span>
+                    {isWowMallOrder(order.orderNumber) ? (
+                      <span className="mt-1 inline-flex rounded-md bg-fuchsia-50 px-2 py-0.5 text-xs font-semibold text-fuchsia-700">
+                        WoWMall order/{order.orderNumber}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-3 py-3 text-slate-700">
                     <p>
