@@ -1,5 +1,6 @@
 import { OrderStatus } from '@prisma/client';
 import { requireAdminPermission } from '@/lib/admin-session';
+import { businessData } from '@/lib/business-data';
 import { prisma } from '@/lib/prisma';
 
 function formatMoney(value: { toNumber: () => number } | number | null | undefined) {
@@ -90,7 +91,7 @@ export default async function AdminDashboardPage() {
       <div>
         <h2 className="text-xl font-semibold text-slate-900">Dashboard</h2>
         <p className="text-sm text-slate-600">
-          Central operations overview for BDBuyEasy.
+          Central operations overview for {businessData.name}.
         </p>
       </div>
 

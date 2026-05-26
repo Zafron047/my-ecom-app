@@ -107,8 +107,6 @@ export interface StorefrontProductDetail {
     isActive: boolean;
   }[];
   inStock: boolean;
-  rating: number;
-  reviews: number;
   variants: {
     id: string;
     color: string;

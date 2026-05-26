@@ -1,4 +1,5 @@
 import { sendMail } from '@/lib/mail';
+import { businessData } from '@/lib/business-data';
 
 type PasswordResetEmailInput = {
   expiresAt: Date;
@@ -34,7 +35,7 @@ export async function sendCustomerPasswordResetEmail({
     html: `
       <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.5;">
         <h1 style="font-size: 20px;">Reset your password</h1>
-        <p>We received a request to reset your BDBuyEasy password.</p>
+        <p>We received a request to reset your ${businessData.name} password.</p>
         <p>
           <a href="${escapeHtml(resetLink)}" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 10px 16px; border-radius: 6px; text-decoration: none; font-weight: 700;">
             Reset password
@@ -68,7 +69,7 @@ export async function sendAdminPasswordResetEmail({
     html: `
       <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.5;">
         <h1 style="font-size: 20px;">Reset your admin password</h1>
-        <p>An admin password reset link was requested for your BDBuyEasy account.</p>
+        <p>An admin password reset link was requested for your ${businessData.name} account.</p>
         <p>
           <a href="${escapeHtml(resetLink)}" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 10px 16px; border-radius: 6px; text-decoration: none; font-weight: 700;">
             Reset admin password

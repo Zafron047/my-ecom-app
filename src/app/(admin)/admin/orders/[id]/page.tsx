@@ -3,6 +3,7 @@ import { requireAdminPermission } from '@/lib/admin-session';
 import OrderDetailsEditor from '@/components/admin/OrderDetailsEditor';
 import OrderPrintButton from '@/components/admin/OrderPrintButton';
 import SafeImage from '@/components/SafeImage';
+import { businessData } from '@/lib/business-data';
 import { prisma } from '@/lib/prisma';
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
 import { getSalesOrderTimeline } from './order-timeline';
@@ -316,8 +317,8 @@ export default async function AdminOrderDetailsPage({
             <div className="mb-1 flex items-start justify-between leading-tight">
               <div className="h-14 w-20 overflow-hidden bg-white">
                 <img
-                  src="/business-logo.png"
-                  alt="BDBuyEasy logo"
+                  src={businessData.logo}
+                  alt={businessData.logoAlt}
                   className="h-full w-full object-contain"
                 />
               </div>
@@ -442,7 +443,7 @@ export default async function AdminOrderDetailsPage({
 
           <div className="mt-12 text-center text-[18px] leading-tight">
             <p>Thank you for shopping with us!</p>
-            <p className="mt-3 font-bold">BDBuyEasy</p>
+            <p className="mt-3 font-bold">{businessData.name}</p>
             <p>Oli Miar Tek, Shewrapara, Mirpur, Dhaka</p>
             <p>01712345678</p>
           </div>

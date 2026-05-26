@@ -1,5 +1,9 @@
 import rawDistricts from '@/data/bd-geocode/districts.json';
 import rawDivisions from '@/data/bd-geocode/divisions.json';
+import {
+  deliveryShippingOptionsById,
+  dhakaOuterDeliveryAreas,
+} from '@/lib/dhaka-delivery-zones';
 
 type TableEnvelope<T> = {
   type: 'table';
@@ -16,15 +20,6 @@ type DistrictRow = {
   division_id: string;
   name: string;
 };
-
-const DHAKA_OUTER_AREAS = new Set([
-  'Dhamrai',
-  'Savar',
-  'Dohar',
-  'Keraniganj',
-  'Nawabganj',
-  'Demra',
-]);
 
 function getTableData<T>(raw: unknown, tableName: string): T[] {
   if (!Array.isArray(raw)) return [];
@@ -62,11 +57,14 @@ export function getShippingCharge(input: {
   const area = input.area.trim();
 
   if (!division) return 0;
-  if (division !== 'Dhaka') return 150;
+  if (division !== 'Dhaka') {
+    return deliveryShippingOptionsById['outside-dhaka-division'].deliveryCharge;
+  }
   if (!district) return 0;
-  if (district !== 'Dhaka') return 120;
-  if (area && DHAKA_OUTER_AREAS.has(area)) return 120;
-  return 80;
+  if (district !== 'Dhaka' || (area && dhakaOuterDeliveryAreas.has(area))) {
+    return deliveryShippingOptionsById['dhaka-division'].deliveryCharge;
+  }
+  return deliveryShippingOptionsById['dhaka-city'].deliveryCharge;
 }
 
 function inferDivisionFromDistrict(district: string) {

@@ -1,5 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { BundleOfferLite } from '@/lib/bundle-types';
+import type { ShippingOptionId } from '@/lib/dhaka-delivery-zones';
 
 export type CartProduct = {
   id: string;
@@ -29,10 +30,7 @@ export type CartNotice = {
   image: string;
 };
 
-export type ShippingOption =
-  | 'dhaka-city'
-  | 'dhaka-division'
-  | 'outside-dhaka-division';
+export type ShippingOption = ShippingOptionId;
 
 export type CartState = {
   cartItems: CartItem[];

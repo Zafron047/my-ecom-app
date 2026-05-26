@@ -1,0 +1,112 @@
+{
+  "shippingOptions": [
+    {
+      "id": "dhaka-city",
+      "label": "Inside Dhaka City",
+      "badge": "Inside City",
+      "title": "Dhaka City",
+      "deliveryCharge": 80,
+      "deliveryTime": "24hrs",
+      "summary": "24hrs 80/-"
+    },
+    {
+      "id": "dhaka-division",
+      "label": "Inside Dhaka Division",
+      "badge": "Regional",
+      "title": "Dhaka Division",
+      "deliveryCharge": 120,
+      "deliveryTime": "24 - 48hrs",
+      "summary": "24 - 48hrs 120/-"
+    },
+    {
+      "id": "outside-dhaka-division",
+      "label": "Outside Dhaka Division",
+      "badge": "Nationwide",
+      "title": "Outer Dhaka",
+      "deliveryCharge": 150,
+      "deliveryTime": "72 - 96hrs",
+      "summary": "72 - 96hrs 150/-"
+    }
+  ],
+  "zones": [
+    {
+      "id": "dhaka-metro",
+      "shippingOption": "dhaka-city",
+      "heading": "Dhaka Metro (80 Tk)",
+      "deliveryCharge": 80,
+      "areas": [
+        "Adabor",
+        "Airport",
+        "Badda",
+        "Banani",
+        "Bangshal",
+        "Bhashantek",
+        "Cantonment",
+        "Chackbazar",
+        "Dakshin Khan",
+        "Darus Salam",
+        "Dhanmondi",
+        "Gandaria",
+        "Gulshan",
+        "Hatirjheel",
+        "Hazaribagh",
+        "Jatrabari",
+        "Kadamtoli",
+        "Kafrul",
+        "Kalabagan",
+        "Kamrangirchar",
+        "Khilgaon",
+        "Khilkhet",
+        "Kotwali",
+        "Lalbagh",
+        "Mirpur Model",
+        "Mohammadpur",
+        "Motijheel",
+        "Mugda",
+        "New Market",
+        "Pallabi",
+        "Paltan Model",
+        "Ramna Model",
+        "Rampura",
+        "Rupnagar",
+        "Sabujbag",
+        "Shah Ali",
+        "Shahbag",
+        "Shahjahanpur",
+        "Sher-e-Bangla Nagar",
+        "Shyampur",
+        "Sutrapur",
+        "Tejgaon",
+        "Tejgaon Industrial Area",
+        "Turag",
+        "Uttar Khan",
+        "Uttara East",
+        "Uttara West",
+        "Vatara",
+        "Wari"
+      ]
+    },
+    {
+      "id": "dhaka-upazila",
+      "shippingOption": "dhaka-division",
+      "heading": "Upazila (120 Tk)",
+      "deliveryCharge": 120,
+      "areas": [
+        "Dhamrai",
+        "Savar",
+        "Dohar",
+        "Keraniganj",
+        "Nawabganj"
+      ]
+    },
+    {
+      "id": "dhaka-outer-metro",
+      "shippingOption": "dhaka-division",
+      "heading": "Outer Metro (120 Tk)",
+      "deliveryCharge": 120,
+      "areas": [
+        "Demra"
+      ]
+    }
+  ]
+}

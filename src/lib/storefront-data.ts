@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { toVariantImageUrl, type ImageVariantSize } from '@/lib/image-variants';
 import { unstable_cache } from 'next/cache';
+import { businessData } from '@/lib/business-data';
 import type {
   StorefrontBusinessProfile,
   StorefrontCatalogProduct,
@@ -36,14 +37,13 @@ function cacheStorefrontLoader<Args extends unknown[], Result>(
 }
 
 const defaultBusinessProfile: StorefrontBusinessProfile = {
-  businessName: 'BDBuyEasy',
-  tagline: 'EASY DEALS, EVERYDAY',
-  logoAlt: 'BDBuyEasy logo',
-  logoUrl: '/business-logo.png',
-  metaDescription:
-    'Shop home tools, kitchen finds, decor, and useful gadgets for easier everyday living.',
-  metaTitle: 'BDBuyEasy - Practical Home & Kitchen Finds',
-  websiteUrl: 'https://bdbuyeasy.com.bd',
+  businessName: businessData.name,
+  tagline: businessData.tagLine,
+  logoAlt: businessData.logoAlt,
+  logoUrl: businessData.logo,
+  metaDescription: businessData.description,
+  metaTitle: businessData.siteTitle,
+  websiteUrl: businessData.websiteUrl,
 };
 
 export const defaultHeroSlides: StorefrontHeroSlide[] = [
@@ -507,8 +507,7 @@ export const getHomepageSections = cacheStorefrontLoader(
       })
     : [];
 
-    return homepageSections.length > 0
-      ? homepageSections.map(
+    return homepageSections.map(
           (section): StorefrontHomepageSection => ({
             id: section.id,
             title: section.title,
@@ -523,31 +522,7 @@ export const getHomepageSections = cacheStorefrontLoader(
             ...(section.ctaLabel ? { ctaLabel: section.ctaLabel } : {}),
             ...(section.ctaHref ? { ctaHref: section.ctaHref } : {}),
           }),
-        )
-      : ([
-          {
-            id: 'default-featured',
-            title: 'Featured Products',
-            eyebrow: 'Useful Finds',
-            variant: 'default',
-            layout: 'carousel',
-            sourceType: 'latest',
-            productLimit: 6,
-            displayOrder: 1,
-          },
-          {
-            id: 'default-super-sale',
-            title: "Today's Deals",
-            eyebrow: 'Limited-Time Offers',
-            variant: 'sale',
-            layout: 'carousel',
-            sourceType: 'super_sale',
-            productLimit: 5,
-            displayOrder: 2,
-            ctaLabel: 'Shop all deals',
-            ctaHref: '/collections/super-sale',
-          },
-        ] satisfies StorefrontHomepageSection[]);
+        );
   },
   ['storefront-homepage-sections'],
   {
@@ -909,8 +884,6 @@ export const getProductDetail = cacheStorefrontLoader(
     bundleOffers,
     variants: toVariantRows(product, 'detail'),
     inStock: stock > 0,
-    rating: 4.5,
-    reviews: 124,
   } satisfies StorefrontProductDetail;
   },
   ['storefront-product-detail'],

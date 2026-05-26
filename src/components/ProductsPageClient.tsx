@@ -6,6 +6,7 @@ import {
   buildMobileCollectionChips,
   getDisplayProductName,
 } from '@/lib/collection-display';
+import { businessData } from '@/lib/business-data';
 import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
@@ -82,7 +83,7 @@ export default function ProductsPageClient({
           Back to home
         </Link>
         <p className="mb-3 hidden text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 sm:block">
-          BDBuyEasy collection
+          {businessData.name} collection
         </p>
         <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 sm:mb-4 sm:text-4xl lg:text-5xl">
           Useful finds<span className="hidden sm:inline"> for modern living</span>

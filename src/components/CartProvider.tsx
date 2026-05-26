@@ -25,26 +25,26 @@ import {
 import { type CartPricingResult } from '@/lib/cart-bundle-pricing';
 import { trackMetaAddToCart } from '@/lib/meta-pixel';
 import { fetchStorefrontCatalogClient } from '@/lib/storefront-catalog-client';
+import {
+  deliveryShippingOptions,
+  type ShippingOptionId,
+} from '@/lib/dhaka-delivery-zones';
+import { uxConfig } from '@/lib/ux-config';
 
 export type { CartItem } from '@/store/cartSlice';
 
 export const shippingOptions: Record<
-  ShippingOption,
+  ShippingOptionId,
   { label: string; charge: number }
-> = {
-  'dhaka-city': {
-    label: 'Inside Dhaka City',
-    charge: 80,
-  },
-  'dhaka-division': {
-    label: 'Inside Dhaka Division',
-    charge: 120,
-  },
-  'outside-dhaka-division': {
-    label: 'Outside Dhaka Division',
-    charge: 150,
-  },
-};
+> = Object.fromEntries(
+  deliveryShippingOptions.map((option) => [
+    option.id,
+    {
+      label: option.label,
+      charge: option.deliveryCharge,
+    },
+  ]),
+) as Record<ShippingOptionId, { label: string; charge: number }>;
 
 type CartContextValue = {
   cartItems: CartItem[];
@@ -442,7 +442,7 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const retries = [0, 200, 600, 1200];
+    const retries = uxConfig.cartPricingRetryDelaysMs;
     let activeTimer: number | null = null;
     let disposed = false;
     const controllers = new Set<AbortController>();
@@ -606,7 +606,7 @@ function CartRuntimeProvider({ children }: { children: React.ReactNode }) {
 
     window.setTimeout(() => {
       dispatch(cartActions.removeCartNoticeById(nextNotice.id));
-    }, 2200);
+    }, uxConfig.cartNoticeDurationMs);
 
     const existingItem = cartItems.find((item) => item.id === normalizedId);
     if (existingItem) {

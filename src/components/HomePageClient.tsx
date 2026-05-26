@@ -3,6 +3,7 @@
 import HomeProductListSection from '@/components/HomeProductListSection';
 import HeroSlider from '@/components/HeroSlider';
 import { slugifyCategory } from '@/lib/category-slug';
+import { deliveryShippingOptions } from '@/lib/dhaka-delivery-zones';
 import type {
   StorefrontCatalogProduct,
   StorefrontHeroSlide,
@@ -294,41 +295,30 @@ export default function HomePageClient({
             </div>
 
             <div className="grid grid-cols-1 gap-3 px-4 py-4 sm:px-5 md:grid-cols-3 md:gap-4 md:py-5">
-              <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-4 text-center shadow-sm transition duration-300 hover:-translate-y-0.5 hover:shadow-md">
-                <div className="mb-2 inline-flex rounded-full bg-zinc-100 px-3 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-zinc-700">
-                  Inside City
+              {deliveryShippingOptions.map((option) => (
+                <div
+                  key={option.id}
+                  className="rounded-2xl border border-zinc-200 bg-white px-4 py-4 text-center shadow-sm transition duration-300 hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  <div
+                    className={`mb-2 inline-flex rounded-full px-3 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] ${
+                      option.id === 'outside-dhaka-division'
+                        ? 'bg-zinc-950 text-white'
+                        : option.id === 'dhaka-division'
+                          ? 'bg-slate-100 text-slate-700'
+                          : 'bg-zinc-100 text-zinc-700'
+                    }`}
+                  >
+                    {option.badge}
+                  </div>
+                  <div className="mb-1 text-[1.05rem] font-bold text-zinc-950">
+                    {option.title}
+                  </div>
+                  <p className="text-[0.76rem] font-medium text-slate-600">
+                    {option.summary}
+                  </p>
                 </div>
-                <div className="mb-1 text-[1.05rem] font-bold text-zinc-950">
-                  Dhaka City
-                </div>
-                <p className="text-[0.76rem] font-medium text-slate-600">
-                  24hrs 80/-
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-center shadow-sm transition duration-300 hover:-translate-y-0.5 hover:shadow-md">
-                <div className="mb-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-slate-700">
-                  Regional
-                </div>
-                <div className="mb-1 text-[1.05rem] font-bold text-zinc-950">
-                  Dhaka Division
-                </div>
-                <p className="text-[0.76rem] font-medium text-slate-600">
-                  24 - 48hrs 120/-
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-4 text-center shadow-sm transition duration-300 hover:-translate-y-0.5 hover:shadow-md">
-                <div className="mb-2 inline-flex rounded-full bg-zinc-950 px-3 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-white">
-                  Nationwide
-                </div>
-                <div className="mb-1 text-[1.05rem] font-bold text-zinc-950">
-                  Outer Dhaka
-                </div>
-                <p className="text-[0.76rem] font-medium text-slate-600">
-                  72 - 96hrs 150/-
-                </p>
-              </div>
+              ))}
             </div>
           </div>
         </div>

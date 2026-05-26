@@ -21,6 +21,7 @@ import {
   getClientIp,
   rateLimitHeaders,
 } from '@/lib/rate-limit';
+import { uxConfig } from '@/lib/ux-config';
 
 type PlaceOrderPayload = {
   customer: {
@@ -98,10 +99,7 @@ function getCookieValue(request: Request, name: string) {
     ?.slice(name.length + 1);
 }
 
-const PLACE_ORDER_RATE_LIMIT = {
-  limit: 8,
-  windowMs: 60_000,
-};
+const PLACE_ORDER_RATE_LIMIT = uxConfig.checkoutPlaceOrderRateLimit;
 
 function blockedCustomerResponse() {
   return Response.json(

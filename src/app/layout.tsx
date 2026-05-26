@@ -1,26 +1,21 @@
 import type { Metadata } from 'next';
 import Script from 'next/script';
 import AppFrame from '@/components/AppFrame';
+import { businessData } from '@/lib/business-data';
 import { getBusinessProfile, getStorefrontCategories } from '@/lib/storefront-data';
 import './globals.css';
 
-const siteName = 'BDBuyEasy';
-const siteTitle = 'BDBuyEasy - Practical Home & Kitchen Finds';
-const siteDescription =
-  'Shop home tools, kitchen finds, decor, and useful gadgets for easier everyday living.';
-const fallbackSiteUrl = 'https://bdbuyeasy.com.bd';
-
 function getSiteUrl() {
-  const configuredUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || fallbackSiteUrl;
+  const configuredUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || businessData.websiteUrl;
 
   try {
     const url = new URL(configuredUrl);
     if (process.env.NODE_ENV === 'production' && url.protocol !== 'https:') {
-      return new URL(fallbackSiteUrl);
+      return new URL(businessData.websiteUrl);
     }
     return url;
   } catch {
-    return new URL(fallbackSiteUrl);
+    return new URL(businessData.websiteUrl);
   }
 }
 
@@ -28,11 +23,11 @@ const siteUrl = getSiteUrl();
 
 export async function generateMetadata(): Promise<Metadata> {
   const businessProfile = await getBusinessProfile();
-  const name = businessProfile.businessName || siteName;
-  const title = businessProfile.metaTitle || siteTitle;
-  const description = businessProfile.metaDescription || siteDescription;
+  const name = businessProfile.businessName || businessData.name;
+  const title = businessProfile.metaTitle || businessData.siteTitle;
+  const description = businessProfile.metaDescription || businessData.description;
   const socialImageUrl = new URL(
-    businessProfile.ogImageUrl || '/og-image.png',
+    businessProfile.ogImageUrl || businessData.ogImage,
     siteUrl,
   ).toString();
 

@@ -1076,13 +1076,13 @@ export default function Header({
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-[0.68rem] font-bold uppercase tracking-[0.24em] text-zinc-400">
-                BDBuyEasy
+                {businessProfile.businessName}
               </p>
               <h2 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.01em] text-zinc-950">
-                Buy Easy
+                {businessProfile.businessName}
               </h2>
               <p className="mt-1 text-sm font-medium leading-6 text-zinc-500">
-                Easy deals everyday
+                {businessProfile.tagline || 'Easy deals everyday'}
               </p>
             </div>
             <button

@@ -4,6 +4,7 @@ import { revalidatePath, revalidateTag } from 'next/cache';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { requireAdminPermission } from '@/lib/admin-session';
+import { businessData } from '@/lib/business-data';
 import { prisma } from '@/lib/prisma';
 import type { BusinessProfileActionState } from '@/components/admin/BusinessProfileFormShell';
 
@@ -384,7 +385,7 @@ export async function saveBusinessProfileImage(formData: FormData) {
     return;
   }
 
-  const businessName = getString(formData, 'businessName') || 'BDBuyEasy';
+  const businessName = getString(formData, 'businessName') || businessData.name;
   const slotConfig =
     imageSlot === 'logo'
       ? {

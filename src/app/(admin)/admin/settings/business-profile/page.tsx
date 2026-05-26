@@ -2,6 +2,7 @@ import Link from 'next/link';
 import BusinessLogoPicker from '@/components/admin/BusinessLogoPicker';
 import BusinessProfileFormShell from '@/components/admin/BusinessProfileFormShell';
 import { requireAdminPermission } from '@/lib/admin-session';
+import { businessData } from '@/lib/business-data';
 import { prisma } from '@/lib/prisma';
 import {
   saveBusinessProfileImage,
@@ -197,8 +198,8 @@ export default async function BusinessProfileSettingsPage() {
             businessImages={imageOptions}
             currentBannerAlt={profile?.bannerAlt ?? 'Business banner'}
             currentBannerUrl={profile?.bannerUrl ?? ''}
-            currentLogoAlt={profile?.logoAlt ?? 'BDBuyEasy logo'}
-            currentLogoUrl={profile?.logoUrl ?? '/business-logo.png'}
+            currentLogoAlt={profile?.logoAlt ?? businessData.logoAlt}
+            currentLogoUrl={profile?.logoUrl ?? businessData.logo}
             currentMetadataImageUrl={profile?.ogImageUrl ?? ''}
             imageSlots={['logo']}
             saveImageAction={saveBusinessProfileImage}
@@ -210,7 +211,7 @@ export default async function BusinessProfileSettingsPage() {
               <input
                 name="businessName"
                 required
-                defaultValue={profile?.businessName ?? 'BDBuyEasy'}
+                defaultValue={profile?.businessName ?? businessData.name}
                 className={inputClass}
               />
             </label>
@@ -293,8 +294,8 @@ export default async function BusinessProfileSettingsPage() {
             businessImages={imageOptions}
             currentBannerAlt={profile?.bannerAlt ?? 'Business banner'}
             currentBannerUrl={profile?.bannerUrl ?? ''}
-            currentLogoAlt={profile?.logoAlt ?? 'BDBuyEasy logo'}
-            currentLogoUrl={profile?.logoUrl ?? '/business-logo.png'}
+            currentLogoAlt={profile?.logoAlt ?? businessData.logoAlt}
+            currentLogoUrl={profile?.logoUrl ?? businessData.logo}
             currentMetadataImageUrl={profile?.ogImageUrl ?? ''}
             imageSlots={['banner']}
             saveImageAction={saveBusinessProfileImage}
@@ -329,8 +330,8 @@ export default async function BusinessProfileSettingsPage() {
               businessImages={imageOptions}
               currentBannerAlt={profile?.bannerAlt ?? 'Business banner'}
               currentBannerUrl={profile?.bannerUrl ?? ''}
-              currentLogoAlt={profile?.logoAlt ?? 'BDBuyEasy logo'}
-              currentLogoUrl={profile?.logoUrl ?? '/business-logo.png'}
+              currentLogoAlt={profile?.logoAlt ?? businessData.logoAlt}
+              currentLogoUrl={profile?.logoUrl ?? businessData.logo}
               currentMetadataImageUrl={profile?.ogImageUrl ?? ''}
               imageSlots={['metadata']}
               saveImageAction={saveBusinessProfileImage}
@@ -383,7 +384,7 @@ export default async function BusinessProfileSettingsPage() {
               Logo Alt Text
               <input
                 name="logoAlt"
-                placeholder="BDBuyEasy logo"
+                placeholder={businessData.logoAlt}
                 defaultValue={profile?.logoAlt ?? ''}
                 className={inputClass}
               />
