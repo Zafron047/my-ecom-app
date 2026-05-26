@@ -9,6 +9,20 @@ vi.mock('@/lib/mail', () => ({
   sendMail: mocks.sendMail,
 }));
 
+vi.mock('@/lib/storefront-data', () => ({
+  getBusinessProfile: vi.fn(async () => ({
+    businessName: 'BDBuyEasy',
+    tagline: 'Easy deals everyday',
+    logoUrl: '/business-logo.png',
+    logoAlt: 'BDBuyEasy logo',
+    phone: '01712345678',
+    email: 'support@bdbuyeasy.com',
+    address: 'Oli Miar Tek, Shewrapara, Mirpur, Dhaka',
+    websiteUrl: 'https://bdbuyeasy.com',
+    returnRefundPolicy: 'Check items during delivery.',
+  })),
+}));
+
 function order(overrides: Record<string, unknown> = {}) {
   return {
     address: 'House 10',
@@ -59,9 +73,13 @@ describe('order invoice email', () => {
       }),
     );
     const message = mocks.sendMail.mock.calls[0][0];
+    expect(message.text).toContain('BDBuyEasy invoice');
     expect(message.text).toContain('Invoice for ORD-1001');
     expect(message.text).toContain('Shoe - Black / 42 x 2: BDT 1,000');
+    expect(message.text).toContain('Business phone: 01712345678');
     expect(message.html).toContain('https://bdbuyeasy.com/order-confirmation?orderId=ORD-1001');
+    expect(message.html).toContain('https://bdbuyeasy.com/business-logo.png');
+    expect(message.html).toContain('Check items during delivery.');
   });
 
   it('skips delivery when the order has no valid email', async () => {

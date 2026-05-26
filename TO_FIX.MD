@@ -56,7 +56,9 @@ Support:
 - [x] Expose API for wowmall to fetch Products
 
 ### Invoice Template
-- [ ] BDBuyEasy
+- BDBuyEasy
+- [x] Must fit in A5 size paper
+
 - [ ] WoWMall
 - [ ] Ensure resel orders are print with relevant invoice templates with logo on supplier webapp
 

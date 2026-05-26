@@ -4,6 +4,7 @@ import OrderDetailsEditor from '@/components/admin/OrderDetailsEditor';
 import OrderPrintButton from '@/components/admin/OrderPrintButton';
 import SafeImage from '@/components/SafeImage';
 import { businessData } from '@/lib/business-data';
+import { getBusinessProfile } from '@/lib/storefront-data';
 import { prisma } from '@/lib/prisma';
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
 import { getSalesOrderTimeline } from './order-timeline';
@@ -27,6 +28,7 @@ export default async function AdminOrderDetailsPage({
   const { id } = await params;
   await requireAdminPermission(`/admin/orders/${id}`, 'orders.read');
 
+  const businessProfile = await getBusinessProfile();
   const order = await prisma.order.findUnique({
     where: { id },
     include: {
@@ -115,6 +117,14 @@ export default async function AdminOrderDetailsPage({
   const effectiveDistrict = order.district;
   const effectiveThana = order.thana;
   const effectiveAddress = order.address;
+  const invoiceBusinessName = businessProfile.businessName || businessData.name;
+  const invoiceLogoUrl = businessProfile.logoUrl || businessData.logo;
+  const invoiceLogoAlt = businessProfile.logoAlt || businessData.logoAlt;
+  const invoiceBusinessAddress = businessProfile.address || 'Oli Miar Tek, Shewrapara, Mirpur, Dhaka';
+  const invoiceBusinessPhone = businessProfile.phone || '01712345678';
+  const invoiceBusinessEmail = businessProfile.email;
+  const invoiceBusinessWebsite = businessProfile.websiteUrl || businessData.websiteUrl;
+  const invoiceReturnRefundPolicy = businessProfile.returnRefundPolicy;
   const paidAmountValue =
     order.paidAmount && typeof order.paidAmount.toNumber === 'function'
       ? order.paidAmount.toNumber()
@@ -162,8 +172,8 @@ export default async function AdminOrderDetailsPage({
       <style>{`
         @media print {
           @page {
-            size: A4 portrait;
-            margin: 12mm;
+            size: A5 portrait;
+            margin: 6mm;
           }
 
           body * {
@@ -182,7 +192,7 @@ export default async function AdminOrderDetailsPage({
             width: 100%;
             background: white;
             color: black;
-            padding: 2mm 4mm;
+            padding: 0;
             margin: 0;
             border: 0;
           }
@@ -310,113 +320,107 @@ export default async function AdminOrderDetailsPage({
 
       <section
         id="order-print-sheet"
-        className="hidden text-[12px] text-black print:block"
+        className="hidden text-[9px] text-black print:block"
       >
-        <div className="mx-auto max-w-[760px]">
-          <div className="h-[2.5in] overflow-hidden">
-            <div className="mb-1 flex items-start justify-between leading-tight">
-              <div className="h-14 w-20 overflow-hidden bg-white">
-                <img
-                  src={businessData.logo}
-                  alt={businessData.logoAlt}
+        <div className="mx-auto flex min-h-[198mm] w-[136mm] max-w-[136mm] flex-col py-[4mm]">
+          <div className="overflow-hidden">
+            <div className="mb-2 flex items-start justify-between gap-3 leading-tight">
+              <div className="h-10 w-16 overflow-hidden bg-white">
+                <SafeImage
+                  src={invoiceLogoUrl}
+                  alt={invoiceLogoAlt}
                   className="h-full w-full object-contain"
+                  fallbackClassName="flex h-full w-full items-center justify-center bg-white px-1 text-center text-[7px] font-medium leading-tight text-slate-400"
                 />
               </div>
-              <div className="leading-tight">
-                <p className="text-right text-[20px] font-medium">
+              <div className="max-w-[100mm] leading-tight">
+                <p className="text-right text-[12px] font-semibold">{invoiceBusinessName}</p>
+                <p className="text-right text-[14px] font-medium">
                   Receipt / Invoice #{order.orderNumber}
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 leading-tight">
+            <div className="grid grid-cols-2 gap-3 leading-tight">
               <div className="leading-tight">
-                <p className="mb-1 text-[14px] font-semibold uppercase">Shipping Address</p>
-                <p className="text-[14px]">{[effectiveFirstName, effectiveLastName].filter(Boolean).join(' ') || '-'}</p>
-                <p className="text-[14px]">
+                <p className="mb-1 text-[9px] font-semibold uppercase">Shipping Address</p>
+                <p>{[effectiveFirstName, effectiveLastName].filter(Boolean).join(' ') || '-'}</p>
+                <p>
                   {[effectiveAddress, effectiveThana, effectiveDistrict].filter(Boolean).join(', ')}
                 </p>
-                <p className="text-[14px]">{effectiveDivision}, Bangladesh</p>
-                <p className="mt-1 text-[14px]">Tel. {order.receiverPhone || '-'}</p>
+                <p>{effectiveDivision}, Bangladesh</p>
+                <p className="mt-1">Tel. {order.receiverPhone || '-'}</p>
               </div>
-              <div className="leading-tight">
-                <p className="mb-1 text-[14px] font-semibold uppercase">Customer</p>
-                <p className="text-[14px]">{[effectiveFirstName, effectiveLastName].filter(Boolean).join(' ') || '-'}</p>
-                <p className="text-[14px]">
+              <div className="justify-self-end text-right leading-tight">
+                <p className="mb-1 text-[9px] font-semibold uppercase">Customer</p>
+                <p>{[effectiveFirstName, effectiveLastName].filter(Boolean).join(' ') || '-'}</p>
+                <p>
                   {[effectiveAddress, effectiveThana, effectiveDistrict].filter(Boolean).join(', ')}
                 </p>
-                <p className="text-[14px]">{effectiveDivision}, Bangladesh</p>
-                <p className="mt-1 text-[14px]">Tel. {effectivePhone || '-'}</p>
-              </div>
-              <div className="leading-tight">
-                <p className="mb-1 text-[14px] font-semibold uppercase">Payment Method</p>
-                <p className="text-[14px]">
-                  {order.paymentMethod === 'COD' ? 'Cash on Delivery (COD)' : 'bKash'}
-                </p>
-                <p className="mb-1 mt-2 text-[14px] font-semibold uppercase">Shipping Method</p>
-                <p className="text-[14px]">Home Delivery</p>
+                <p>{effectiveDivision}, Bangladesh</p>
+                <p className="mt-1">Tel. {effectivePhone || '-'}</p>
               </div>
             </div>
           </div>
 
-          <hr className="my-5 border-0 border-t-[4px] border-black" />
+          <hr className="my-3 border-0 border-t-2 border-black" />
 
-          <div className="grid grid-cols-[1fr_170px_90px_170px] text-[18px] font-semibold uppercase">
+          <div className="grid grid-cols-[1fr_26mm_10mm_26mm] text-[10px] font-semibold uppercase">
             <p>Items</p>
             <p className="text-right">Price</p>
             <p className="text-right">Qty</p>
             <p className="text-right">Item Total</p>
           </div>
 
-          <div className="mt-3 space-y-2 leading-tight">
+          <div className="mt-2 space-y-1.5 leading-tight">
             {order.products.map((item) => (
-              <div key={item.id} className="grid grid-cols-[1fr_170px_90px_170px] items-center gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-16 w-16 overflow-hidden border border-slate-300">
+              <div key={item.id} className="grid grid-cols-[1fr_26mm_10mm_26mm] items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="h-9 w-9 shrink-0 overflow-hidden border border-slate-300">
                     <SafeImage
                       src={item.imagePath ?? item.variant.imagePath}
                       alt={item.productName}
                       className="h-full w-full object-cover"
-                      fallbackClassName="flex h-full w-full items-center justify-center bg-white px-1 text-center text-[9px] font-medium leading-tight text-slate-400"
+                      fallbackClassName="flex h-full w-full items-center justify-center bg-white px-1 text-center text-[6px] font-medium leading-tight text-slate-400"
                     />
                   </div>
-                  <div>
-                    <p className="text-[18px] leading-6">{item.productName}</p>
-                    <p className="text-[18px]">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-medium leading-tight">{item.productName}</p>
+                    <p>
                       {item.variantLabel ??
                         `${item.variant.color || 'Standard'} / ${item.variant.size || 'Standard'}`}
                     </p>
                     {item.bundleTitle ? (
-                      <p className="text-[14px]">
+                      <p className="text-[8px]">
                         {item.bundleTitle}
                         {item.bundleRule ? ` (${item.bundleRule})` : ''}
                       </p>
                     ) : null}
                   </div>
                 </div>
-                <div className="text-right text-[18px]">
+                <div className="text-right">
                   <p className={item.discountAmount.toNumber() > 0 ? 'line-through' : ''}>
                     {formatTk(item.unitPrice.toNumber())}
                   </p>
                   {item.discountAmount.toNumber() > 0 ? (
                     <>
                       <p>{formatTk(item.unitPrice.toNumber() - item.discountAmount.toNumber())}</p>
-                      <p className="text-[15px]">
+                      <p className="text-[8px]">
                         (-{formatTk(item.discountAmount.toNumber())} / unit)
                       </p>
                     </>
                   ) : null}
                 </div>
-                <p className="text-right text-[18px]">{item.quantity}</p>
-                <p className="text-right text-[18px]">{formatTk(item.lineTotal.toNumber())}</p>
+                <p className="text-right">{item.quantity}</p>
+                <p className="text-right">{formatTk(item.lineTotal.toNumber())}</p>
               </div>
             ))}
           </div>
 
-          <hr className="my-5 border-0 border-t-[4px] border-black" />
+          <hr className="my-3 border-0 border-t-2 border-black" />
 
-          <div className="ml-auto w-[350px]">
-            <div className="space-y-3 text-[20px]">
+          <div className="ml-auto w-[58mm]">
+            <div className="space-y-1 text-[10px]">
               <div className="flex justify-between">
                 <p>Subtotal</p>
                 <p>{formatTk(order.subtotalAmount.toNumber())}</p>
@@ -434,18 +438,25 @@ export default async function AdminOrderDetailsPage({
                 <p>{formatTk(order.totalAmount.toNumber())}</p>
               </div>
               <div className="flex justify-between">
-                <p>Total due</p>
+                <p>Total due (COD)</p>
                 <p>{formatTk(Math.max(0, order.totalAmount.toNumber() - paidAmountValue))}</p>
               </div>
             </div>
-            <hr className="mt-4 border-0 border-t-[4px] border-black" />
+            <hr className="mt-2 border-0 border-t-2 border-black" />
           </div>
 
-          <div className="mt-12 text-center text-[18px] leading-tight">
+          <div className="mt-auto pt-5 text-center text-[10px] leading-tight">
             <p>Thank you for shopping with us!</p>
-            <p className="mt-3 font-bold">{businessData.name}</p>
-            <p>Oli Miar Tek, Shewrapara, Mirpur, Dhaka</p>
-            <p>01712345678</p>
+            <p className="mt-2 font-bold">{invoiceBusinessName}</p>
+            {invoiceBusinessAddress ? <p>{invoiceBusinessAddress}</p> : null}
+            {invoiceBusinessPhone ? <p>{invoiceBusinessPhone}</p> : null}
+            {invoiceBusinessEmail ? <p>{invoiceBusinessEmail}</p> : null}
+            {invoiceBusinessWebsite ? <p>{invoiceBusinessWebsite}</p> : null}
+            {invoiceReturnRefundPolicy ? (
+              <p className="mx-auto mt-2 max-w-[120mm] text-[8px]">
+                {invoiceReturnRefundPolicy}
+              </p>
+            ) : null}
           </div>
         </div>
       </section>
