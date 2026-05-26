@@ -2,6 +2,7 @@ import { Resend } from 'resend';
 
 type SendMailInput = {
   html: string;
+  idempotencyKey?: string;
   subject: string;
   text: string;
   to: string;
@@ -33,6 +34,7 @@ function getResend(apiKey: string) {
 
 export async function sendMail({
   html,
+  idempotencyKey,
   subject,
   text,
   to,
@@ -43,13 +45,16 @@ export async function sendMail({
   }
 
   const resend = getResend(config.apiKey);
-  const { error } = await resend.emails.send({
-    from: config.from,
-    html,
-    subject,
-    text,
-    to,
-  });
+  const { error } = await resend.emails.send(
+    {
+      from: config.from,
+      html,
+      subject,
+      text,
+      to,
+    },
+    idempotencyKey ? { idempotencyKey } : undefined,
+  );
 
   if (error) {
     throw new Error(error.message);

@@ -15,6 +15,7 @@ import {
   sendMetaPurchaseEvent,
   sendMetaServerEvent,
 } from '@/lib/meta-capi';
+import { sendOrderInvoiceEmail } from '@/lib/order-invoice-email';
 import {
   checkDistributedRateLimit,
   getClientIp,
@@ -506,6 +507,10 @@ export async function POST(request: Request) {
       order,
     }).catch((error) => {
       console.error('Meta CAPI Purchase event failed', error);
+    });
+
+    await sendOrderInvoiceEmail(order).catch((error) => {
+      console.error('Order invoice email failed', error);
     });
 
     const response = NextResponse.json(

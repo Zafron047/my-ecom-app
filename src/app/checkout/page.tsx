@@ -410,6 +410,9 @@ export default function Checkout() {
                 onChange={handleInputChange}
                 className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
               />
+              <p className="mt-1.5 inline-flex rounded-full bg-gradient-to-r from-emerald-500 via-sky-500 to-fuchsia-500 px-3 py-1 text-xs font-bold !text-white shadow-sm ring-1 ring-sky-100 [text-shadow:0_1px_1px_rgba(0,0,0,0.2)]">
+                Get invoice on your email.
+              </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>

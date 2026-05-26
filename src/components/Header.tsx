@@ -1569,6 +1569,9 @@ export default function Header({
                             : 'border-slate-200'
                       }`}
                     />
+                    <p className="mt-1 inline-flex rounded-full bg-gradient-to-r from-emerald-500 via-sky-500 to-fuchsia-500 px-2.5 py-1 text-[11px] font-bold leading-4 !text-white shadow-sm ring-1 ring-sky-100 [text-shadow:0_1px_1px_rgba(0,0,0,0.2)]">
+                      Get invoice on your email.
+                    </p>
                     <AnimatePresence initial={false}>
                       {isEmailInvalid && (
                         <motion.span
