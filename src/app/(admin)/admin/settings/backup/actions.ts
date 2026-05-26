@@ -178,7 +178,7 @@ function parseCsv(content: string): ParsedRow[] {
 
     if (char === '"') {
       if (inQuotes && next === '"') {
-        currentLine += '"';
+        currentLine += '""';
         i += 1;
         continue;
       }

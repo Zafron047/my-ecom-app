@@ -46,11 +46,11 @@ Support:
 
 ## Clean Up Test contents
 - Note: This cleanup is large enough to do on a separate branch.
-- [ ] Create branch cleanup/test-content-removal
-- [ ] Take a DB backup first
-- [ ] create a dry-run cleanup script
-- [ ] review the output
-- [ ] then run the actual cleanup only after the affected orders/inventory/bundles/media/customer records are confirmed
+- [x] Create branch cleanup/test-content-removal
+- [x] Take a DB backup first
+- [x] create a dry-run cleanup script
+- [x] review the output
+- [x] then run the actual cleanup only after the affected orders/inventory/bundles/media/customer records are confirmed
 
 - [x] Find anything with test in app then list below (DB scan for `test` in catalog/order-related records; no cleanup done)
 - [ ] All Test Products

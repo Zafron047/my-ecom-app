@@ -31,7 +31,6 @@ export const adminPermissions = [
   'productCatalog.manage',
   'productImages.upload',
   'inventory.read',
-  'stockTransfers.manage',
   'purchaseOrders.read',
   'purchaseOrders.write',
   'purchaseOrders.submit',
@@ -78,7 +77,6 @@ export const rolePermissions: Record<AdminRole, AdminPermission[]> = {
     'productCatalog.manage',
     'productImages.upload',
     'inventory.read',
-    'stockTransfers.manage',
     'purchaseOrders.read',
     'purchaseOrders.write',
     'purchaseOrders.submit',
@@ -103,7 +101,6 @@ export const rolePermissions: Record<AdminRole, AdminPermission[]> = {
     'productCatalog.manage',
     'productImages.upload',
     'inventory.read',
-    'stockTransfers.manage',
     'purchaseOrders.read',
     'purchaseOrders.write',
     'customers.read',
@@ -168,10 +165,6 @@ const adminRouteRules: AdminRouteRule[] = [
   {
     prefix: '/admin/products/bundles',
     requiredPermissions: ['productCatalog.read'],
-  },
-  {
-    prefix: '/admin/products/stock-transfer',
-    requiredPermissions: ['stockTransfers.manage'],
   },
   {
     prefix: '/admin/products/stock',
