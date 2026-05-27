@@ -133,7 +133,7 @@ The app is structured for easy backend integration:
 ## 📂 File Structure
 
 ```
-my-ecom-app/
+bdbuyeasy-webapp/
 ├── src/
 │   ├── app/                    # Routes and pages
 │   ├── components/             # Reusable components
