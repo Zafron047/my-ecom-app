@@ -5,6 +5,7 @@ import type { StorefrontCatalogProduct } from '@/lib/storefront-types';
 import { notFound } from 'next/navigation';
 
 export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 const collectionConfig = {
   'super-sale': {

@@ -47,6 +47,11 @@ const adminNavGroups: AdminNavGroup[] = [
         requiredPermission: 'orderDrafts.manage',
       },
       {
+        href: '/admin/orders/fulfillment',
+        label: 'BDBuy Fulfillment',
+        requiredPermission: 'orders.read',
+      },
+      {
         href: '/admin/orders/abandoned-checkouts',
         label: 'Abandoned Checkouts',
         requiredPermission: 'orders.read',

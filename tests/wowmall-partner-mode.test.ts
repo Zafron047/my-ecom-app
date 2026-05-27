@@ -4,13 +4,21 @@ import { GET as orderDetails } from '../src/app/api/orders/[orderNumber]/route';
 import { businessData } from '../src/lib/business-data';
 
 const mocks = vi.hoisted(() => ({
-  createBDBuyPartnerOrder: vi.fn(),
+  customerCreate: vi.fn(),
+  customerFindFirst: vi.fn(),
+  customerFindUnique: vi.fn(),
+  customerUpdate: vi.fn(),
   getBDBuyPartnerOrder: vi.fn(),
   getBDBuyProductDetails: vi.fn(),
   getAdminSession: vi.fn(),
   getCookie: vi.fn(),
   getCustomerSession: vi.fn(),
+  orderCreate: vi.fn(),
+  orderEventCreate: vi.fn(),
+  orderFindFirst: vi.fn(),
   rateLimit: vi.fn(),
+  sendBDBuyFulfillmentOrder: vi.fn(),
+  supplierFulfillmentCreate: vi.fn(),
   verifyRecentOrderAccessToken: vi.fn(),
 }));
 
@@ -26,7 +34,6 @@ vi.mock('@/lib/admin-session', () => ({
 
 vi.mock('@/lib/bdbuy-partner-api', () => ({
   BDBUY_SUPPLIER_PRODUCT_ID_PREFIX: 'bdbuy:',
-  createBDBuyPartnerOrder: mocks.createBDBuyPartnerOrder,
   getBDBuyPartnerOrder: mocks.getBDBuyPartnerOrder,
   getBDBuyProductDetails: mocks.getBDBuyProductDetails,
   isBDBuyPartnerModeEnabled: () =>
@@ -45,13 +52,41 @@ vi.mock('@/lib/customer-session', () => ({
 }));
 
 vi.mock('@/lib/prisma', () => ({
-  prisma: {},
+  prisma: {
+    $transaction: vi.fn((callback) =>
+      callback({
+        order: {
+          create: mocks.orderCreate,
+        },
+        supplierFulfillmentOrder: {
+          create: mocks.supplierFulfillmentCreate,
+        },
+      }),
+    ),
+    customer: {
+      create: mocks.customerCreate,
+      findFirst: mocks.customerFindFirst,
+      findUnique: mocks.customerFindUnique,
+      update: mocks.customerUpdate,
+    },
+    order: {
+      findFirst: mocks.orderFindFirst,
+    },
+    orderEvent: {
+      create: mocks.orderEventCreate,
+    },
+  },
 }));
 
 vi.mock('@/lib/rate-limit', () => ({
   checkDistributedRateLimit: mocks.rateLimit,
   getClientIp: vi.fn(() => '127.0.0.1'),
   rateLimitHeaders: vi.fn(() => ({ 'X-RateLimit-Limit': '100' })),
+}));
+
+vi.mock('@/lib/supplier-fulfillment', () => ({
+  BDBUY_SUPPLIER_KEY: 'bdbuy',
+  sendBDBuyFulfillmentOrder: mocks.sendBDBuyFulfillmentOrder,
 }));
 
 function request(body: unknown) {
@@ -103,6 +138,21 @@ describe('WoWMall partner mode', () => {
     mocks.getCustomerSession.mockResolvedValue(null);
     mocks.getCookie.mockReturnValue(undefined);
     mocks.verifyRecentOrderAccessToken.mockReturnValue(null);
+    mocks.customerCreate.mockResolvedValue({ id: 'customer-1' });
+    mocks.customerFindFirst.mockResolvedValue(null);
+    mocks.customerFindUnique.mockResolvedValue(null);
+    mocks.customerUpdate.mockResolvedValue({});
+    mocks.orderCreate.mockResolvedValue({
+      id: 'order-1',
+      orderNumber: 'ORD-LOCAL-1001',
+    });
+    mocks.orderEventCreate.mockResolvedValue({});
+    mocks.orderFindFirst.mockResolvedValue(null);
+    mocks.supplierFulfillmentCreate.mockResolvedValue({ id: 'fulfillment-1' });
+    mocks.sendBDBuyFulfillmentOrder.mockResolvedValue({
+      ok: true,
+      supplierOrderNumber: 'WM-1001',
+    });
     mocks.getBDBuyProductDetails.mockResolvedValue([
       {
         id: 'bdbuy:kitchen-tool',
@@ -118,10 +168,6 @@ describe('WoWMall partner mode', () => {
         ],
       },
     ]);
-    mocks.createBDBuyPartnerOrder.mockResolvedValue({
-      created: true,
-      order: { orderNumber: 'WM-1001' },
-    });
   });
 
   it('uses WoWMall public business identity', () => {
@@ -133,30 +179,48 @@ describe('WoWMall partner mode', () => {
     });
   });
 
-  it('sends checkout orders to the BDBuy supplier with a WM order number', async () => {
+  it('creates a local order and sends a BDBuy supplier fulfillment order', async () => {
     const response = await placeOrder(request(checkoutPayload()));
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.orderId).toBe('WM-1001');
-    expect(mocks.createBDBuyPartnerOrder).toHaveBeenCalledWith(
+    expect(payload.orderId).toBe('ORD-LOCAL-1001');
+    expect(payload.fulfillmentStatus).toBe('sent');
+    expect(mocks.orderCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        customer: expect.objectContaining({ firstName: 'Nina' }),
-        items: [
-          expect.objectContaining({
-            quantity: 2,
-            unitPrice: 990,
-            variantId: 'variant-1',
-          }),
-        ],
-        orderNumber: expect.stringMatching(/^WM-\d{10}-\d{4}$/),
-        totals: expect.objectContaining({
-          shipping: 80,
-          subtotal: 1980,
-          total: 2060,
+        data: expect.objectContaining({
+          customerId: 'customer-1',
+          notes: 'BDBuy supplier fulfillment order.',
+          subtotalAmount: 1980,
+          totalAmount: 2060,
         }),
       }),
     );
+    expect(mocks.supplierFulfillmentCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          localOrderNumber: 'ORD-LOCAL-1001',
+          orderId: 'order-1',
+          requestPayload: expect.objectContaining({
+            customer: expect.objectContaining({ firstName: 'Nina' }),
+            items: [
+              expect.objectContaining({
+                quantity: 2,
+                unitPrice: 990,
+                variantId: 'variant-1',
+              }),
+            ],
+            orderNumber: expect.stringMatching(/^WM-\d{10}-\d{4}$/),
+            totals: expect.objectContaining({
+              shipping: 80,
+              subtotal: 1980,
+              total: 2060,
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(mocks.sendBDBuyFulfillmentOrder).toHaveBeenCalledWith('fulfillment-1');
   });
 
   it('reads partner order details for recent WM orders', async () => {

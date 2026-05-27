@@ -118,6 +118,11 @@ vi.mock('@/lib/storefront-data', () => ({
   getStorefrontProductDetailById: mocks.getStorefrontProductDetailById,
 }));
 
+vi.mock('@/lib/supplier-fulfillment', () => ({
+  BDBUY_SUPPLIER_KEY: 'bdbuy',
+  sendBDBuyFulfillmentOrder: vi.fn(),
+}));
+
 const PUBLIC_CACHE = 'public, s-maxage=300, stale-while-revalidate=86400';
 const PRIVATE_NO_STORE = 'private, no-store, max-age=0, must-revalidate';
 

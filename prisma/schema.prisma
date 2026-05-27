@@ -74,6 +74,14 @@ enum OrderTag {
   DISCOUNTED_ORDER
 }
 
+enum SupplierFulfillmentStatus {
+  pending
+  sent
+  failed
+  accepted
+  cancelled
+}
+
 enum CouponType {
   PERCENTAGE
   FIXED
@@ -650,11 +658,33 @@ model Order {
   orderEvents OrderEvent[]
   orderNotes OrderNote[]
   orderReturns OrderReturn[]
+  supplierFulfillments SupplierFulfillmentOrder[]
 
   @@index([customerId, createdAt])
   @@index([couponId])
   @@index([status, createdAt])
   @@index([paymentMethod, createdAt])
+}
+
+model SupplierFulfillmentOrder {
+  id                  String                    @id @default(cuid())
+  orderId             String
+  order               Order                     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  supplier            String
+  status              SupplierFulfillmentStatus @default(pending)
+  localOrderNumber    String
+  supplierOrderNumber String?
+  requestPayload      Json
+  responsePayload     Json?
+  lastError           String?
+  attemptCount        Int                       @default(0)
+  sentAt              DateTime?
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+
+  @@index([orderId])
+  @@index([supplier, status, createdAt])
+  @@index([supplierOrderNumber])
 }
 
 model OrderNote {

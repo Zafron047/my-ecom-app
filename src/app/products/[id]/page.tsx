@@ -6,6 +6,7 @@ import {
 import { notFound } from 'next/navigation';
 
 export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 export async function generateStaticParams() {
   const products = await getCatalogCards();

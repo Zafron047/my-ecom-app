@@ -33,6 +33,26 @@ const supabaseStorageHostname = supabaseUrl
   : undefined;
 const disableImageOptimization =
   process.env.NEXT_DISABLE_IMAGE_OPTIMIZATION === 'true';
+const remoteImagePatterns = [
+  {
+    hostname: 'images.unsplash.com',
+    protocol: 'https' as const,
+  },
+  {
+    hostname: '**.supabase.co',
+    pathname: '/storage/v1/object/public/**',
+    protocol: 'https' as const,
+  },
+  ...(supabaseStorageHostname
+    ? [
+        {
+          hostname: supabaseStorageHostname,
+          pathname: '/storage/v1/object/public/**',
+          protocol: 'https' as const,
+        },
+      ]
+    : []),
+];
 const privateNoStoreHeaders = [
   {
     key: 'Cache-Control',
@@ -75,34 +95,10 @@ const nextConfig: NextConfig = {
   ...(allowedDevOrigins?.length
     ? { allowedDevOrigins }
     : {}),
-  ...(supabaseStorageHostname
-    ? {
-        images: {
-          unoptimized: disableImageOptimization,
-          remotePatterns: [
-            {
-              hostname: 'images.unsplash.com',
-              protocol: 'https',
-            },
-            {
-              hostname: supabaseStorageHostname,
-              pathname: '/storage/v1/object/public/**',
-              protocol: 'https',
-            },
-          ],
-        },
-      }
-    : {
-        images: {
-          unoptimized: disableImageOptimization,
-          remotePatterns: [
-            {
-              hostname: 'images.unsplash.com',
-              protocol: 'https',
-            },
-          ],
-        },
-      }),
+  images: {
+    unoptimized: disableImageOptimization,
+    remotePatterns: remoteImagePatterns,
+  },
 };
 
 export default nextConfig;

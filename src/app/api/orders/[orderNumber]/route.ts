@@ -9,6 +9,7 @@ import {
   getBDBuyPartnerOrder,
   isBDBuyPartnerModeEnabled,
 } from '@/lib/bdbuy-partner-api';
+import { BDBUY_SUPPLIER_KEY } from '@/lib/supplier-fulfillment';
 import { withPrivateNoStoreHeaders } from '@/lib/http-cache';
 import { prisma } from '@/lib/prisma';
 import {
@@ -20,6 +21,18 @@ import {
 const ORDER_LOOKUP_RATE_LIMIT = {
   limit: 30,
   windowMs: 60_000,
+};
+
+type SupplierFulfillmentRequestPayload = {
+  items?: Array<{
+    name?: string;
+    sku?: string;
+    variantId?: string;
+    variantLabel?: string;
+    quantity?: number;
+    unitPrice?: number;
+    lineTotal?: number;
+  }>;
 };
 
 function isPartnerOrderNumber(orderNumber: string) {
@@ -143,6 +156,12 @@ export async function GET(
           },
         },
       },
+      supplierFulfillments: {
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: 1,
+      },
     },
   });
 
@@ -153,23 +172,44 @@ export async function GET(
     );
   }
 
-  const items = order.products.map((item) => ({
-    id: item.productId,
-    detailId: item.productId,
-    variantId: item.variantId,
-    name: item.productName,
-    price: Number(item.unitPrice),
+  const supplierFulfillment = order.supplierFulfillments.find(
+    (fulfillment) => fulfillment.supplier === BDBUY_SUPPLIER_KEY,
+  );
+  const supplierPayload =
+    supplierFulfillment?.requestPayload as SupplierFulfillmentRequestPayload | undefined;
+  const supplierItems = supplierPayload?.items?.map((item, index) => ({
+    id: item.variantId ?? `supplier-line-${index + 1}`,
+    detailId: item.variantId ?? `supplier-line-${index + 1}`,
+    variantId: item.variantId ?? '',
+    name: item.name ?? 'BDBuy supplier item',
+    price: Number(item.unitPrice ?? item.lineTotal ?? 0),
     salePrice: undefined,
-    quantity: item.quantity,
+    quantity: Math.max(1, Math.floor(item.quantity ?? 1)),
     variantLabel: item.variantLabel ?? 'Standard',
-    image:
-      item.imagePath ||
-      item.product.images.find((image) => image.isPrimary)?.storagePath ||
-      item.product.images[0]?.storagePath ||
-      '',
-    bundleTitle: item.bundleTitle,
-    bundleRule: item.bundleRule,
+    image: '',
+    bundleTitle: null,
+    bundleRule: null,
   }));
+
+  const items = order.products.length > 0
+    ? order.products.map((item) => ({
+        id: item.productId,
+        detailId: item.productId,
+        variantId: item.variantId,
+        name: item.productName,
+        price: Number(item.unitPrice),
+        salePrice: undefined,
+        quantity: item.quantity,
+        variantLabel: item.variantLabel ?? 'Standard',
+        image:
+          item.imagePath ||
+          item.product.images.find((image) => image.isPrimary)?.storagePath ||
+          item.product.images[0]?.storagePath ||
+          '',
+        bundleTitle: item.bundleTitle,
+        bundleRule: item.bundleRule,
+      }))
+    : supplierItems ?? [];
 
   return Response.json(
     {

@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import {
   BDBUY_SUPPLIER_PRODUCT_ID_PREFIX,
-  createBDBuyPartnerOrder,
   getBDBuyProductDetails,
   isBDBuyPartnerModeEnabled,
 } from '@/lib/bdbuy-partner-api';
@@ -27,6 +26,10 @@ import {
   getClientIp,
   rateLimitHeaders,
 } from '@/lib/rate-limit';
+import {
+  BDBUY_SUPPLIER_KEY,
+  sendBDBuyFulfillmentOrder,
+} from '@/lib/supplier-fulfillment';
 import { uxConfig } from '@/lib/ux-config';
 
 type PlaceOrderPayload = {
@@ -166,7 +169,65 @@ async function placePartnerOrder(
   const subtotal = Number(lines.reduce((sum, line) => sum + line.lineTotal, 0).toFixed(2));
   const shipping = Number(payload.totals.shipping.toFixed(2));
   const total = Number((subtotal + shipping).toFixed(2));
-  const partnerResult = await createBDBuyPartnerOrder({
+
+  const normalizedPhone = normalizePhone(payload.customer.customerMobile);
+  const customerSession = await getCustomerSessionFromToken(
+    getCookieValue(request, 'customer_session'),
+  );
+  const sessionCustomer = customerSession
+    ? await prisma.customer.findUnique({
+        where: { id: customerSession.customerId },
+      })
+    : null;
+  if (sessionCustomer?.isBlocked) {
+    return blockedCustomerResponse();
+  }
+
+  const existingCustomerByPhone = await prisma.customer.findFirst({
+    where: {
+      OR: [{ phone: normalizedPhone }, { phone: payload.customer.customerMobile.trim() }],
+    },
+  });
+  if (existingCustomerByPhone?.isBlocked) {
+    return blockedCustomerResponse();
+  }
+
+  const customer =
+    existingCustomerByPhone ??
+    sessionCustomer ??
+    (await prisma.customer.create({
+      data: {
+        firstName: payload.customer.firstName.trim(),
+        lastName: payload.customer.lastName?.trim() || null,
+        email: payload.customer.email?.trim() || null,
+        phone: normalizedPhone,
+        division: resolvedDivision,
+        district: payload.shipping.district.trim(),
+        thana: payload.shipping.thana.trim(),
+        address: payload.shipping.address.trim(),
+        customerType: 'retail',
+        isBlocked: false,
+        identifierTag: 'NEW',
+      },
+    }));
+
+  if (existingCustomerByPhone || sessionCustomer) {
+    await prisma.customer.update({
+      where: { id: customer.id },
+      data: {
+        firstName: payload.customer.firstName.trim(),
+        lastName: payload.customer.lastName?.trim() || null,
+        email: payload.customer.email?.trim() || null,
+        phone: normalizedPhone,
+        division: resolvedDivision,
+        district: payload.shipping.district.trim(),
+        thana: payload.shipping.thana.trim(),
+        address: payload.shipping.address.trim(),
+      },
+    });
+  }
+
+  const fulfillmentPayload = {
     orderNumber,
     placedAt: new Date().toISOString(),
     customer: payload.customer,
@@ -186,18 +247,117 @@ async function placePartnerOrder(
       discount: 0,
     },
     notes: `WoWMall order ${orderNumber}`,
+  };
+
+  let createdOrder:
+    | {
+        id: string;
+        fulfillmentOrderId: string;
+        orderNumber: string;
+      }
+    | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      createdOrder = await prisma.$transaction(async (tx) => {
+        const order = await tx.order.create({
+          data: {
+            orderNumber: createOrderNumber(),
+            customerId: customer.id,
+            status: 'pending',
+            paymentMethod: payload.payment.method === 'bkash' ? 'BKASH' : 'COD',
+            firstName: payload.customer.firstName.trim(),
+            lastName: payload.customer.lastName?.trim() || null,
+            phone: normalizedPhone,
+            receiverPhone:
+              payload.customer.receiverMobile?.trim() ||
+              payload.customer.customerMobile.trim(),
+            email: payload.customer.email?.trim() || null,
+            division: resolvedDivision,
+            district: payload.shipping.district.trim(),
+            thana: payload.shipping.thana.trim(),
+            address: payload.shipping.address.trim(),
+            notes: 'BDBuy supplier fulfillment order.',
+            subtotalAmount: subtotal,
+            discountAmount: 0,
+            deliveryCharge: shipping,
+            totalAmount: total,
+            orderEvents: {
+              create: {
+                createdByName: 'System',
+                eventType: 'supplier_fulfillment_created',
+                message: 'BDBuy supplier fulfillment order created.',
+              },
+            },
+          },
+          select: {
+            id: true,
+            orderNumber: true,
+          },
+        });
+
+        const fulfillmentOrder = await tx.supplierFulfillmentOrder.create({
+          data: {
+            localOrderNumber: order.orderNumber,
+            orderId: order.id,
+            requestPayload: fulfillmentPayload,
+            supplier: BDBUY_SUPPLIER_KEY,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        return {
+          id: order.id,
+          fulfillmentOrderId: fulfillmentOrder.id,
+          orderNumber: order.orderNumber,
+        };
+      });
+      break;
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        attempt < 2
+      ) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (!createdOrder) {
+    return Response.json(
+      { error: 'Could not generate a unique order number. Please retry.' },
+      withPrivateNoStoreHeaders({ status: 500 }),
+    );
+  }
+
+  const sendResult = await sendBDBuyFulfillmentOrder(createdOrder.fulfillmentOrderId);
+  await prisma.orderEvent.create({
+    data: {
+      createdByName: 'System',
+      eventType: sendResult.ok
+        ? 'supplier_fulfillment_sent'
+        : 'supplier_fulfillment_failed',
+      message: sendResult.ok
+        ? `BDBuy fulfillment sent as ${sendResult.supplierOrderNumber}.`
+        : `BDBuy fulfillment send failed: ${sendResult.error}`,
+      orderId: createdOrder.id,
+    },
   });
-  const partnerOrderNumber = partnerResult.order.orderNumber;
-  const metaEventId = createMetaCapiEventId('purchase', partnerOrderNumber);
+
+  const metaEventId = createMetaCapiEventId('purchase', createdOrder.orderNumber);
   const response = NextResponse.json(
     {
+      fulfillmentStatus: sendResult.ok ? 'sent' : 'failed',
       success: true,
-      orderId: partnerOrderNumber,
+      orderId: createdOrder.orderNumber,
       metaEventId,
     },
     withPrivateNoStoreHeaders(),
   );
-  const recentOrderToken = createRecentOrderAccessToken(partnerOrderNumber);
+  const recentOrderToken = createRecentOrderAccessToken(createdOrder.orderNumber);
   if (recentOrderToken) {
     response.cookies.set(CUSTOMER_RECENT_ORDER_COOKIE, recentOrderToken, {
       httpOnly: true,

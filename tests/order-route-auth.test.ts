@@ -35,6 +35,10 @@ vi.mock('@/lib/bdbuy-partner-api', () => ({
     Boolean(process.env.BDBUY_PARTNER_API_URL && process.env.BDBUY_PARTNER_API_KEY),
 }));
 
+vi.mock('@/lib/supplier-fulfillment', () => ({
+  BDBUY_SUPPLIER_KEY: 'bdbuy',
+}));
+
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     order: {

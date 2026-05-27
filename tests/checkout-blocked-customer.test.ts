@@ -41,6 +41,11 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
+vi.mock('@/lib/supplier-fulfillment', () => ({
+  BDBUY_SUPPLIER_KEY: 'bdbuy',
+  sendBDBuyFulfillmentOrder: vi.fn(),
+}));
+
 function checkoutRequest() {
   return new Request('https://example.test/api/checkout/place-order', {
     body: JSON.stringify({

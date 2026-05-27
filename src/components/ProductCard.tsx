@@ -50,6 +50,7 @@ export default function ProductCard({
   variant?: ProductCardVariant;
 }) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [loadedImages, setLoadedImages] = useState<Record<string, boolean>>({});
   const { cartItems, addToCart, updateQuantity } = useCart();
   const isCatalog = variant === 'catalog';
   const productId = product.detailId ?? product.id;
@@ -66,6 +67,7 @@ export default function ProductCard({
   const activeImage =
     productImages[normalizedActiveImageIndex] ||
     (product.image && product.image.trim() ? product.image : undefined);
+  const isActiveImageLoaded = activeImage ? loadedImages[activeImage] : false;
 
   const normalizeImagePath = (value: string | undefined) =>
     (value ?? '')
@@ -175,20 +177,34 @@ export default function ProductCard({
             }`}
           >
             {activeImage ? (
-              <Image
-                key={activeImage}
-                src={activeImage}
-                alt={product.name}
-                fill
-                sizes={
-                  isCatalog
-                    ? '(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw'
-                    : '(min-width: 1536px) 15vw, (min-width: 1024px) 20vw, (min-width: 640px) 33vw, 50vw'
-                }
-                className={`object-contain transition duration-500 group-hover:scale-[1.16] ${
-                  isCatalog ? 'p-1' : 'p-0'
-                }`}
-              />
+              <>
+                <div
+                  className={`absolute inset-0 bg-[linear-gradient(135deg,#f7f7f6_0%,#eeeeec_44%,#f9f9f8_100%)] transition-opacity duration-300 ${
+                    isActiveImageLoaded ? 'opacity-0' : 'product-image-loading opacity-100'
+                  }`}
+                  aria-hidden="true"
+                />
+                <Image
+                  key={activeImage}
+                  src={activeImage}
+                  alt={product.name}
+                  fill
+                  sizes={
+                    isCatalog
+                      ? '(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw'
+                      : '(min-width: 1536px) 15vw, (min-width: 1024px) 20vw, (min-width: 640px) 33vw, 50vw'
+                  }
+                  onLoad={() =>
+                    setLoadedImages((current) => ({
+                      ...current,
+                      [activeImage]: true,
+                    }))
+                  }
+                  className={`object-contain transition duration-500 group-hover:scale-[1.16] ${
+                    isActiveImageLoaded ? 'opacity-100' : 'opacity-0'
+                  } ${isCatalog ? 'p-1' : 'p-0'}`}
+                />
+              </>
             ) : (
               <div
                 key={`${product.id}-image-placeholder`}
