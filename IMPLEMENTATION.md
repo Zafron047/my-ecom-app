@@ -1,4 +1,4 @@
-# BDBuyEasy - Premium Wellness E-Commerce App
+# WoWMall - Premium Wellness E-Commerce App
 
 A modern, fast-loading ecommerce application built with Next.js 16, React 19, and Tailwind CSS 4. Featuring a Shopify Dawn-inspired design for premium wellness supplements.
 
@@ -213,7 +213,7 @@ This project is private and ready for commercial use.
 
 ## 👥 Support
 
-For questions or issues, please contact: support@bdbuyeasy.com.bd
+For questions or issues, please contact: support@wowmall.xyz
 
 ---
 

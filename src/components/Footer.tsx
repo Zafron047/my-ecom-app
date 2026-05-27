@@ -10,44 +10,43 @@ export default function Footer({
   const currentYear = new Date().getFullYear();
   const footerAssurances = [
     'Cash on Delivery',
-    'Fast Dhaka delivery',
+    'Fast Nationwide delivery',
     'Secure checkout',
-    'Practical home finds',
+    'Problem-solving finds',
   ];
 
   return (
-    <footer className="border-t border-zinc-200 bg-[linear-gradient(180deg,#f7f7f8_0%,#fff_100%)] text-zinc-950">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="overflow-hidden rounded-[28px] border border-zinc-200 bg-white shadow-[0_24px_70px_rgba(24,24,27,0.08)]">
-          <div className="flex flex-col gap-6 px-5 py-6 sm:px-7 sm:py-7">
-            <div className="grid gap-6 md:grid-cols-[1.2fr_1fr] md:items-start">
-              <div className="flex flex-col items-start gap-4 text-left">
+    <footer className="border-t border-zinc-200/80 bg-[#f7f7f5] text-zinc-950">
+      <div className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
+        <div className="border border-zinc-200/70 bg-white/70 shadow-[0_12px_34px_rgba(24,24,27,0.035)]">
+          <div className="flex flex-col gap-4 px-5 py-5 sm:px-6 sm:py-6">
+            <div className="grid gap-5 md:grid-cols-[1.15fr_1fr] md:items-start">
+              <div className="flex flex-col items-start gap-3.5 text-left">
                 <div className="flex items-center gap-3">
-                <Link href="/" className="inline-flex items-center">
-                  <div className="relative h-11 w-[5.4rem] overflow-hidden rounded-xl bg-white ring-1 ring-zinc-900/10">
+                <Link href="/" className="inline-flex items-center rounded-md transition duration-300 hover:opacity-85 focus:outline-none focus:ring-4 focus:ring-zinc-950/10">
+                  <div className="relative grid h-12 w-16 place-items-center rounded-md bg-zinc-950 px-1.5 ring-1 ring-zinc-950/10">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={businessProfile.logoUrl}
+                      src="/wowmall-logo-header-transparent.png"
                       alt={businessProfile.logoAlt}
-                      className="h-full w-full object-contain"
+                      className="h-auto w-full object-contain"
                     />
                   </div>
                 </Link>
                 <div>
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-zinc-500">
+                  <p className="text-[0.64rem] font-medium uppercase tracking-[0.18em] text-zinc-500">
                     {businessProfile.businessName}
                   </p>
-                  <p className="mt-1 max-w-md text-sm font-medium leading-6 text-zinc-600">
-                    Kitchen, decor and daily essentials selected for simpler
-                    home routines.
+                  <p className="mt-1 max-w-md text-sm font-normal leading-6 text-zinc-600">
+                    Curated products that solve real everyday friction points.
                   </p>
                 </div>
               </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-x-3 gap-y-1.5">
                   {footerAssurances.map((assurance) => (
                     <span
                       key={assurance}
-                      className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-zinc-600"
+                      className="border-b border-zinc-200/80 pb-0.5 text-[0.62rem] font-medium uppercase tracking-[0.1em] text-zinc-500"
                     >
                       {assurance}
                     </span>
@@ -55,16 +54,16 @@ export default function Footer({
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-start gap-3 text-sm font-semibold text-zinc-700 md:justify-end">
+              <div className="flex flex-wrap items-center justify-start gap-2 text-sm font-medium text-zinc-700 md:justify-end">
                 <a
                   href="#"
-                  className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-zinc-700 transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
+                  className="rounded-md border border-zinc-200/80 bg-white/60 px-3 py-1.5 text-zinc-600 transition duration-300 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white focus:outline-none focus:ring-4 focus:ring-zinc-950/10"
                 >
                   Support
                 </a>
                 <a
                   href="#"
-                  className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-zinc-700 transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
+                  className="rounded-md border border-zinc-200/80 bg-white/60 px-3 py-1.5 text-zinc-600 transition duration-300 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white focus:outline-none focus:ring-4 focus:ring-zinc-950/10"
                 >
                   Delivery
                 </a>
@@ -73,10 +72,10 @@ export default function Footer({
                   target="_blank"
                   rel="noreferrer"
                   aria-label={`${businessProfile.businessName} Facebook`}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-700 transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200/80 bg-white/60 text-zinc-500 transition duration-300 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white focus:outline-none focus:ring-4 focus:ring-zinc-950/10"
                 >
                   <svg
-                    className="h-4 w-4"
+                    className="h-3.5 w-3.5"
                     fill="currentColor"
                     viewBox="0 0 24 24"
                   >
@@ -88,10 +87,10 @@ export default function Footer({
                   aria-label="Instagram"
                   target={businessProfile.instagramUrl ? '_blank' : undefined}
                   rel={businessProfile.instagramUrl ? 'noreferrer' : undefined}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-700 transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200/80 bg-white/60 text-zinc-500 transition duration-300 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white focus:outline-none focus:ring-4 focus:ring-zinc-950/10"
                 >
                   <svg
-                    className="h-4 w-4"
+                    className="h-3.5 w-3.5"
                     fill="currentColor"
                     viewBox="0 0 24 24"
                   >
@@ -101,21 +100,21 @@ export default function Footer({
               </div>
             </div>
 
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-zinc-200 to-transparent" />
+            <div className="h-px w-full bg-zinc-200/70" />
 
             <div className="flex flex-wrap items-center justify-between gap-3 text-center">
-              <span className="text-sm font-medium text-zinc-500">
+              <span className="text-xs font-normal text-zinc-500 sm:text-sm">
                 (c) {currentYear} {businessProfile.businessName}. All rights reserved.
               </span>
-              <div className="flex flex-wrap items-center justify-center gap-3">
+              <div className="flex flex-wrap items-center justify-center gap-2.5">
               <a
                 href="https://zafron.me"
                 target="_blank"
                 rel="noreferrer"
                 aria-label="Zafron"
-                className="inline-flex transition duration-300 hover:-translate-y-0.5"
+                className="inline-flex transition duration-300 hover:opacity-80 focus:outline-none focus:ring-4 focus:ring-zinc-950/10"
               >
-                <div className="relative h-9 w-9 overflow-hidden rounded-full ring-1 ring-zinc-200 shadow-[0_10px_24px_rgba(24,24,27,0.10)]">
+                <div className="relative h-8 w-8 overflow-hidden rounded-full ring-1 ring-zinc-200">
                   <Image
                     src="/zafron.webp"
                     alt="Zafron"
@@ -125,14 +124,14 @@ export default function Footer({
                   />
                 </div>
               </a>
-              <span className="text-sm font-medium text-zinc-500">
+              <span className="text-xs font-normal text-zinc-500 sm:text-sm">
                 Designed and developed by
               </span>
               <a
                 href="https://zafron.me"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-sm font-semibold text-zinc-700 transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
+                className="inline-flex items-center border-b border-zinc-300 px-0.5 py-0.5 text-xs font-medium text-zinc-600 transition duration-300 hover:border-zinc-950 hover:text-zinc-950 focus:outline-none focus:ring-4 focus:ring-zinc-950/10 sm:text-sm"
               >
                 Zafron
               </a>

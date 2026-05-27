@@ -69,7 +69,7 @@ describe('customer password reset', () => {
     mocks.sendCustomerPasswordResetEmail.mockReset();
     mocks.transaction.mockReset();
 
-    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://bdbuyeasy.com');
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://wowmall.xyz');
     mocks.createExpiry.mockReturnValue(new Date('2999-05-18T13:00:00.000Z'));
     mocks.createToken.mockReturnValue('reset-token');
     mocks.customerFindFirst.mockResolvedValue({
@@ -124,7 +124,7 @@ describe('customer password reset', () => {
     );
     expect(mocks.sendCustomerPasswordResetEmail).toHaveBeenCalledWith({
       expiresAt: new Date('2999-05-18T13:00:00.000Z'),
-      resetLink: 'https://bdbuyeasy.com/reset-password/reset-token',
+      resetLink: 'https://wowmall.xyz/reset-password/reset-token',
       to: 'customer@example.test',
     });
   });

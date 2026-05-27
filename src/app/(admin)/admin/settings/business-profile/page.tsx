@@ -219,11 +219,11 @@ export default async function BusinessProfileSettingsPage() {
               Tagline
               <input
                 name="tagline"
-                placeholder="EASY DEALS, EVERYDAY"
-                defaultValue={profile?.tagline ?? 'EASY DEALS, EVERYDAY'}
+                placeholder="Global Finds - Deshi Price"
+                defaultValue={profile?.tagline ?? 'Global Finds - Deshi Price'}
                 className={inputClass}
               />
-              <OptionalText>Used as the homepage header search placeholder.</OptionalText>
+              <OptionalText>Used in header brand messaging.</OptionalText>
             </label>
             <label className="text-sm font-medium text-slate-700">
               Phone

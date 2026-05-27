@@ -1,4 +1,4 @@
-# BDBuyEasy E-Commerce App - Quick Start Guide
+# WoWMall E-Commerce App - Quick Start Guide
 
 ## 🎉 Your App is Ready!
 
@@ -168,7 +168,7 @@ Edit `src/app/globals.css` CSS variables:
 ### Branding
 
 - Update logo in [Header.tsx](src/components/Header.tsx)
-- Change "BDBuyEasy" to your brand name
+- Change "WoWMall" to your brand name
 - Replace product images with your own
 
 ### Products

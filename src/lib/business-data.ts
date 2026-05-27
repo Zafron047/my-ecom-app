@@ -1,11 +1,11 @@
 export const businessData = {
-  name: 'BDBuyEasy',
-  tagLine: 'EASY DEALS, EVERYDAY',
-  logo: '/business-logo.png',
-  logoAlt: 'BDBuyEasy logo',
-  siteTitle: 'BDBuyEasy - Practical Home & Kitchen Finds',
+  name: 'WoWMall',
+  tagLine: 'Global Finds - Deshi Price',
+  logo: '/Wow-Logo-Final.jpg',
+  logoAlt: 'WoWMall logo',
+  siteTitle: 'WoWMall - Practical Lifestyle Problem Solvers',
   description:
-    'Shop home tools, kitchen finds, decor, and useful gadgets for easier everyday living.',
-  websiteUrl: 'https://bdbuyeasy.com.bd',
-  ogImage: '/og-image.png',
+    'Shop curated practical products that solve real everyday friction points.',
+  websiteUrl: 'https://wowmall.xyz',
+  ogImage: '/Wow-bag-Logo.jpg',
 };

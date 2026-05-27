@@ -1,6 +1,6 @@
 CREATE TABLE "BusinessProfile" (
     "id" TEXT NOT NULL,
-    "businessName" TEXT NOT NULL DEFAULT 'BDBuyEasy',
+    "businessName" TEXT NOT NULL DEFAULT 'WoWMall',
     "logoUrl" TEXT,
     "logoAlt" TEXT,
     "phone" TEXT,

@@ -156,8 +156,8 @@ export default function ProductCard({
     <div
       className={`group flex h-full flex-col border border-zinc-200/80 bg-white ring-1 ring-transparent transition duration-300 hover:border-zinc-300 ${
         isCatalog
-          ? 'rounded-2xl shadow-[0_10px_30px_rgba(24,24,27,0.045)] hover:-translate-y-0.5 hover:shadow-[0_16px_40px_rgba(24,24,27,0.08)]'
-          : 'rounded-2xl shadow-[0_16px_48px_rgba(24,24,27,0.065)] hover:-translate-y-1.5 hover:shadow-[0_24px_64px_rgba(24,24,27,0.11)] sm:rounded-3xl'
+          ? 'rounded-xl shadow-[0_8px_24px_rgba(24,24,27,0.04)] hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(24,24,27,0.07)]'
+          : 'rounded-xl shadow-[0_12px_34px_rgba(24,24,27,0.055)] hover:-translate-y-1 hover:shadow-[0_18px_46px_rgba(24,24,27,0.09)]'
       }`}
     >
       <Link
@@ -249,10 +249,10 @@ export default function ProductCard({
         </div>
 
         <p
-          className={`line-clamp-2 px-1.5 text-center font-semibold text-zinc-900 ${
+          className={`line-clamp-2 px-1.5 text-center font-medium text-zinc-900 ${
             isCatalog
               ? 'mb-1 min-h-[2.35rem] text-[0.78rem] leading-[1.15rem] sm:text-[0.86rem] sm:leading-5'
-              : 'mb-2 min-h-[2.75rem] text-[0.84rem] leading-5 sm:text-[0.9rem]'
+              : 'mb-2 min-h-[2.6rem] text-[0.82rem] leading-5 sm:text-[0.88rem]'
           }`}
         >
           {product.name}
@@ -269,7 +269,7 @@ export default function ProductCard({
         ) : null}
         {activeBundleLabel ? (
           <div
-            className={`bundle-title-shine bg-gradient-to-r from-purple-800 via-fuchsia-700 to-pink-700 bg-clip-text px-2 text-center font-semibold text-transparent ${
+              className={`bundle-title-shine bg-gradient-to-r from-zinc-950 via-zinc-700 to-zinc-950 bg-clip-text px-2 text-center font-semibold text-transparent ${
               isCatalog ? 'mb-1 text-[0.66rem] leading-4' : 'mb-2 text-[0.72rem] leading-5'
             }`}
           >
@@ -327,30 +327,30 @@ export default function ProductCard({
         {hasVariantChoice ? (
           <Link
             href={`/products/${product.detailId ?? product.id}`}
-            className={`flex w-full items-center justify-center rounded-full border border-zinc-300 bg-white font-semibold uppercase tracking-[0.12em] text-zinc-900 transition visited:text-zinc-900 hover:border-zinc-950 hover:bg-zinc-950 hover:!text-white ${
+            className={`flex w-full items-center justify-center rounded-lg border border-zinc-300 bg-white font-medium uppercase tracking-[0.08em] text-zinc-900 transition visited:text-zinc-900 hover:border-zinc-950 hover:bg-zinc-950 hover:!text-white ${
               isCatalog
                 ? 'min-h-10 px-3 py-2 text-[0.6rem]'
-                : 'px-4 py-[0.58rem] text-[0.7rem]'
+                : 'px-4 py-[0.58rem] text-[0.68rem]'
             }`}
           >
             See details
           </Link>
         ) : isActiveVariantSoldOut ? (
           <div
-            className={`flex w-full items-center justify-center rounded-full border border-slate-300 bg-slate-100 font-semibold uppercase tracking-[0.12em] text-slate-500 ${
+            className={`flex w-full items-center justify-center rounded-lg border border-slate-300 bg-slate-100 font-medium uppercase tracking-[0.08em] text-slate-500 ${
               isCatalog
                 ? 'min-h-10 px-3 py-2 text-[0.62rem]'
-                : 'px-4 py-[0.58rem] text-[0.74rem]'
+                : 'px-4 py-[0.58rem] text-[0.7rem]'
             }`}
           >
             Sold Out
           </div>
         ) : (
         <div
-          className={`flex w-full items-center justify-between rounded-full border border-zinc-900 bg-zinc-900 font-semibold text-white shadow-[0_8px_22px_rgba(24,24,27,0.14)] transition group-hover:bg-zinc-950 ${
+          className={`flex w-full items-center justify-between rounded-lg border border-zinc-900 bg-zinc-900 font-medium text-white shadow-[0_7px_18px_rgba(24,24,27,0.12)] transition group-hover:bg-zinc-950 ${
             isCatalog
               ? 'min-h-10 px-3 py-2 text-[0.76rem]'
-              : 'px-4 py-[0.58rem] text-[0.86rem]'
+              : 'px-4 py-[0.58rem] text-[0.82rem]'
           }`}
           style={{ display: 'flex' }}
         >

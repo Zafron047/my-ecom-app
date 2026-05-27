@@ -164,37 +164,37 @@ export default function HomeProductListSection({
       >
         <div className={headerClassName ?? (isCarousel ? 'mx-auto max-w-7xl' : '')}>
           {isSaleVariant ? (
-            <div className="mb-8 flex items-end justify-between gap-4 md:mb-10">
+            <div className="mb-7 flex items-end justify-between gap-4 md:mb-8">
               <div>
                 {eyebrow ? (
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-rose-500">
+                  <p className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-rose-500">
                     {eyebrow}
                   </p>
                 ) : null}
-                <h2 className="mt-3 max-w-3xl text-3xl font-semibold leading-[1.02] tracking-tight text-zinc-950 md:text-5xl">
+                <h2 className="mt-2.5 max-w-3xl text-[1.78rem] font-medium leading-[1.13] tracking-normal text-zinc-950 md:text-[2.48rem]">
                   {title}
                 </h2>
               </div>
               {cta ? (
                 <Link
                   href={cta.href}
-                  className="inline-flex w-fit items-center rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 shadow-sm transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:!text-white"
+                  className="inline-flex h-9 w-fit items-center rounded-md border border-zinc-200 bg-white px-3.5 text-[0.78rem] font-medium text-zinc-800 shadow-sm transition duration-300 hover:border-zinc-300 hover:bg-zinc-950 hover:!text-white"
                 >
                   {cta.label}
                 </Link>
               ) : null}
             </div>
           ) : (
-            <div className="mb-8 md:mb-10">
+            <div className="mb-7 md:mb-8">
               {eyebrow ? (
-                <div className="mb-3 flex items-center gap-3">
-                  <span className="h-px w-9 bg-zinc-300" />
-                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                <div className="mb-2.5 flex items-center gap-3">
+                  <span className="h-px w-7 bg-zinc-300" />
+                  <span className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-zinc-500">
                     {eyebrow}
                   </span>
                 </div>
               ) : null}
-              <h2 className="mb-4 max-w-3xl text-3xl font-semibold leading-[1.02] tracking-tight text-zinc-950 md:text-5xl">
+              <h2 className="mb-3 max-w-3xl text-[1.78rem] font-medium leading-[1.13] tracking-normal text-zinc-950 md:text-[2.48rem]">
                 {title}
               </h2>
             </div>
@@ -226,7 +226,7 @@ export default function HomeProductListSection({
                   hidden: {},
                   show: { transition: { staggerChildren: 0.045 } },
                 }}
-                className="mx-auto flex w-max gap-4 md:gap-5"
+                className="mx-auto flex w-max gap-3.5 md:gap-5"
               >
                 {products.map((product) => (
                   <motion.div
@@ -273,7 +273,7 @@ export default function HomeProductListSection({
                   }}
             className={
               gridClassName ??
-              'grid grid-cols-2 gap-x-3.5 gap-y-8 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-5 lg:gap-x-6 lg:gap-y-10'
+              'grid grid-cols-2 gap-x-3.5 gap-y-7 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-5 lg:gap-x-6 lg:gap-y-8'
             }
           >
             {products.map((product) =>
@@ -318,7 +318,7 @@ function CarouselArrowButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className={`absolute top-1/2 z-10 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/80 bg-white/95 text-slate-800 shadow-[0_14px_34px_rgba(15,23,42,0.20)] ring-1 ring-slate-900/5 transition hover:-translate-y-1/2 hover:scale-105 hover:bg-slate-900 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 sm:inline-flex ${
+      className={`absolute top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg border border-white/80 bg-white/95 text-slate-800 shadow-[0_12px_28px_rgba(15,23,42,0.16)] ring-1 ring-slate-900/5 transition hover:-translate-y-1/2 hover:bg-slate-900 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 sm:inline-flex ${
         isPrevious ? 'left-1 sm:left-3' : 'right-1 sm:right-3'
       }`}
     >

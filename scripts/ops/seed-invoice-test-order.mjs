@@ -13,7 +13,7 @@ const DELETE_MODE = process.argv.includes('--delete');
 const ORDER_NUMBER = 'ORD-INVOICE-UI-20260526';
 const TEST_MARKER = 'TEST_INVOICE_UI_ORDER_DELETE_ME';
 const CUSTOMER_PHONE = '01999052626';
-const CUSTOMER_EMAIL = 'invoice-ui-test@bdbuyeasy.test';
+const CUSTOMER_EMAIL = 'invoice-ui-test@wowmall.test';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({

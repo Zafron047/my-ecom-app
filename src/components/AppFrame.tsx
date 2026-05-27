@@ -38,7 +38,7 @@ export default function AppFrame({
         businessProfile={businessProfile}
         catalogCategories={catalogCategories}
       />
-      <main className="flex-1 pt-[5.75rem] sm:pt-[6.25rem] lg:pt-[6.75rem]">
+      <main className="flex-1 pt-[7.1rem] md:pt-[5.75rem] lg:pt-[6rem]">
         {children}
       </main>
       <Footer businessProfile={businessProfile} />

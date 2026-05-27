@@ -22,42 +22,42 @@ import type { StorefrontBusinessProfile } from '@/lib/storefront-types';
 
 const MOBILE_PATTERN = /^01[3-9]\d{8}$/;
 const curatedCategoryFallbacks = [
-  'Kitchen & Cooking',
-  'Home Organization',
-  'Decor & Accessories',
-  'Smart Gadgets',
+  'Daily Problem Solvers',
+  'Organization Tools',
+  'Smart Utility Finds',
   'Bathroom Essentials',
-  'Daily Essentials',
+  'Routine Essentials',
   'Cleaning Tools',
   'Storage Solutions',
+  'Kitchen Helpers',
 ];
 const categoryDisplayLabels: Record<string, string> = {
-  kitchen: 'Kitchen & Cooking',
-  'kitchen & dining': 'Kitchen & Cooking',
-  cooking: 'Kitchen & Cooking',
-  organization: 'Home Organization',
-  organiser: 'Home Organization',
-  organizer: 'Home Organization',
-  storage: 'Home Organization',
-  decor: 'Decor & Accessories',
-  decoration: 'Decor & Accessories',
-  accessories: 'Decor & Accessories',
-  gadget: 'Smart Gadgets',
-  gadgets: 'Smart Gadgets',
-  smart: 'Smart Gadgets',
+  kitchen: 'Kitchen Helpers',
+  'kitchen & dining': 'Kitchen Helpers',
+  cooking: 'Kitchen Helpers',
+  organization: 'Organization Tools',
+  organiser: 'Organization Tools',
+  organizer: 'Organization Tools',
+  storage: 'Storage Solutions',
+  decor: 'Lifestyle Accessories',
+  decoration: 'Lifestyle Accessories',
+  accessories: 'Lifestyle Accessories',
+  gadget: 'Smart Utility Finds',
+  gadgets: 'Smart Utility Finds',
+  smart: 'Smart Utility Finds',
   bathroom: 'Bathroom Essentials',
   bath: 'Bathroom Essentials',
   cleaning: 'Cleaning Tools',
 };
 const categoryPriority = [
-  'Kitchen & Cooking',
-  'Home Organization',
-  'Decor & Accessories',
-  'Smart Gadgets',
+  'Daily Problem Solvers',
+  'Organization Tools',
+  'Smart Utility Finds',
   'Bathroom Essentials',
-  'Daily Essentials',
+  'Routine Essentials',
   'Cleaning Tools',
   'Storage Solutions',
+  'Kitchen Helpers',
 ];
 
 function isPlaceholderCategory(value: string) {
@@ -291,8 +291,15 @@ export default function Header({
     });
   const featuredMenuCategories = menuCategories.slice(0, 4);
   const hiddenMenuCategories = menuCategories.slice(4);
-  const searchPlaceholder =
-    businessProfile.tagline || 'Search kitchen, decor and daily essentials';
+  const rawTagline = businessProfile.tagline?.trim();
+  const hasGenericSearchTagline =
+    rawTagline && /wow\s*finds|global\s*solves|easy\s*deals|everyday/i.test(rawTagline);
+  const brandTagline =
+    rawTagline && !hasGenericSearchTagline
+      ? rawTagline
+      : 'Global Finds - Deshi Price';
+  const searchPlaceholder = 'Find smarter everyday solutions';
+  const announcementTagline = brandTagline;
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const searchSuggestions = normalizedQuery
@@ -754,30 +761,29 @@ export default function Header({
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-zinc-200/65 bg-white/88 shadow-[0_10px_34px_rgba(24,24,27,0.055)] backdrop-blur-xl">
-        <div className="border-b border-white/10 bg-zinc-950">
-          <div className="mx-auto flex h-7 max-w-7xl items-center justify-center px-4 sm:h-8 sm:px-6 lg:px-8">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-zinc-950/96 shadow-[0_8px_28px_rgba(0,0,0,0.22)] backdrop-blur-2xl">
+        <div className="border-b border-zinc-800 bg-zinc-950">
+          <div className="mx-auto flex h-5 max-w-7xl items-center justify-center px-5 sm:h-6 sm:px-6 lg:px-8">
             <span
-              className="truncate text-center text-[7.5px] font-semibold uppercase leading-none tracking-[0.08rem] sm:text-[9px] sm:tracking-[0.14rem]"
-              style={{ color: '#ffffff' }}
+              className="truncate text-center text-[0.55rem] font-medium uppercase leading-none tracking-[0.19em] text-white/82 sm:text-[0.6rem] sm:tracking-[0.25em]"
             >
-              COD Available • Fast Delivery • Useful Home & Kitchen Finds
+              {announcementTagline}
             </span>
           </div>
         </div>
 
-        <nav className="mx-auto max-w-7xl px-3 py-3 sm:px-6 lg:px-8 lg:py-4">
-          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-4">
-            <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-3 lg:min-w-[11.75rem]">
+        <nav className="mx-auto max-w-7xl px-4 pb-1.5 pt-0 sm:px-6 md:pb-2.5 md:pt-0 lg:px-8">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 md:grid-cols-[12rem_minmax(18rem,1fr)_12rem] md:gap-y-2 lg:grid-cols-[13.5rem_minmax(20rem,1fr)_13.5rem]">
+            <div className="flex min-w-0 shrink-0 items-center gap-3">
               <button
                 type="button"
                 aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
                 aria-expanded={isMenuOpen}
                 onClick={handleMenuToggle}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-200/90 bg-white/95 text-zinc-700 shadow-[0_8px_22px_rgba(24,24,27,0.045)] ring-1 ring-zinc-950/[0.025] transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-transparent bg-transparent text-white/70 transition duration-300 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-4 focus:ring-white/12 md:h-10 md:w-10"
               >
                 <svg
-                  className="h-5 w-5"
+                  className="h-4 w-4 md:h-5 md:w-5"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -796,13 +802,17 @@ export default function Header({
               </button>
 
               {/* Logo */}
-              <Link href="/" className="flex shrink-0 items-center gap-2">
-                <div className="relative h-9 shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-zinc-900/10 shadow-[0_8px_24px_rgba(24,24,27,0.06)] sm:h-10">
+              <Link
+                href="/"
+                aria-label={`${businessProfile.businessName} home`}
+                className="group flex min-w-0 shrink-0 items-center transition duration-300 focus:outline-none focus-visible:ring-4 focus-visible:ring-zinc-950/10"
+              >
+                <div className="relative shrink-0">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={businessProfile.logoUrl}
+                    src="/wowmall-logo-header-transparent.png"
                     alt={businessProfile.logoAlt}
-                    className="h-full w-auto object-contain"
+                    className="block h-auto w-[4.35rem] object-contain transition duration-300 group-hover:opacity-85 md:w-[5.55rem] lg:w-[6rem]"
                     loading="eager"
                     fetchPriority="high"
                   />
@@ -810,15 +820,15 @@ export default function Header({
               </Link>
             </div>
 
-            <div className="min-w-0">
-              <div ref={desktopSearchRef} className="relative mx-auto w-full max-w-2xl">
+            <div className="order-last col-span-3 min-w-0 md:order-none md:col-span-1">
+              <div ref={desktopSearchRef} className="relative mx-auto w-full max-w-[calc(100vw-2rem)] md:max-w-lg lg:max-w-[32rem]">
                 <form
                   role="search"
                   onSubmit={handleSearchSubmit}
-                  className="flex h-10 w-full items-center gap-1.5 rounded-full border border-zinc-200/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(250,250,250,0.88))] px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-1px_0_rgba(24,24,27,0.025),0_8px_22px_rgba(24,24,27,0.035)] transition duration-300 focus-within:border-zinc-300 focus-within:bg-white focus-within:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_0_0_4px_rgba(24,24,27,0.055)] sm:h-11 sm:gap-2.5 sm:px-4"
+                  className="flex h-8 w-full items-center gap-1.5 rounded-full border border-white/45 bg-[#f6f3ed]/92 pl-3 pr-3.5 shadow-[0_8px_22px_rgba(0,0,0,0.14)] transition duration-300 focus-within:border-white/70 focus-within:bg-[#fbfaf7] focus-within:shadow-[0_0_0_3px_rgba(255,255,255,0.10)] md:h-9 md:pl-3.5 md:pr-4"
                 >
                   <svg
-                    className="h-3.5 w-3.5 shrink-0 text-zinc-400 sm:h-4 sm:w-4"
+                    className="h-3.5 w-3.5 shrink-0 translate-y-px text-zinc-500/70"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -847,7 +857,7 @@ export default function Header({
                     placeholder={searchPlaceholder}
                     aria-label="Search products"
                     autoComplete="off"
-                    className="w-full appearance-none !rounded-none !border-0 !bg-transparent !p-0 !text-[0.68rem] !font-medium !leading-none !text-zinc-800 !shadow-none outline-none placeholder:!font-medium placeholder:!tracking-[0.01em] placeholder:!text-zinc-400 focus:!border-0 focus:!shadow-none sm:!text-sm"
+                    className="w-full appearance-none !rounded-none !border-0 !bg-transparent !p-0 !text-[0.72rem] !font-medium !leading-[1.2] !text-zinc-800 !shadow-none outline-none placeholder:!font-normal placeholder:!tracking-[0.015em] placeholder:!text-zinc-500/60 focus:!border-0 focus:!shadow-none md:!text-[0.8rem]"
                   />
                 </form>
 
@@ -895,7 +905,7 @@ export default function Header({
             </div>
 
             {/* Right Actions */}
-            <div className="flex shrink-0 items-center justify-end lg:min-w-[11.75rem]">
+            <div className="flex shrink-0 items-center justify-end">
               <div className="relative">
                 {cartNotices.length > 0 ? (
                   <div className="pointer-events-none absolute right-0 top-[calc(100%+0.6rem)] z-20 flex w-56 flex-col gap-2">
@@ -961,10 +971,10 @@ export default function Header({
                   onClick={handleCartToggle}
                   aria-label={isCartOpen ? 'Close cart' : 'Open cart'}
                   aria-expanded={isCartOpen}
-                  className="group relative flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200/90 bg-white/95 text-zinc-700 shadow-[0_8px_22px_rgba(24,24,27,0.045)] ring-1 ring-zinc-950/[0.025] transition duration-300 hover:-translate-y-0.5 hover:border-zinc-300 hover:bg-zinc-950 hover:text-white sm:w-auto sm:gap-2 sm:px-3 sm:py-2"
+                  className="group relative flex h-8 w-8 items-center justify-center rounded-full border border-transparent bg-transparent text-white/70 transition duration-300 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-4 focus:ring-white/12 sm:w-auto sm:gap-2 sm:px-2.5 sm:py-2 md:h-10 md:min-w-10"
               >
                   <svg
-                    className="h-5 w-5"
+                    className="h-4 w-4 md:h-5 md:w-5"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -976,7 +986,7 @@ export default function Header({
                       d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
                     />
                   </svg>
-                  <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-zinc-950 px-1.5 py-0.5 text-center text-[0.65rem] font-semibold leading-none text-white ring-2 ring-white transition group-hover:bg-white group-hover:text-zinc-950 group-hover:ring-zinc-950 sm:static sm:min-w-6 sm:px-2 sm:py-1 sm:text-xs sm:ring-0">
+                  <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-white px-1.5 py-0.5 text-center text-[0.65rem] font-semibold leading-none text-zinc-950 ring-2 ring-zinc-950 transition group-hover:bg-zinc-200 sm:static sm:min-w-6 sm:px-2 sm:py-1 sm:text-xs sm:ring-0">
                     {itemCount}
                   </span>
                 </button>
@@ -1016,11 +1026,11 @@ export default function Header({
               <p className="text-[0.68rem] font-bold uppercase tracking-[0.24em] text-zinc-400">
                 {businessProfile.businessName}
               </p>
-              <h2 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.01em] text-zinc-950">
+              <h2 className="mt-2 text-2xl font-medium leading-tight tracking-normal text-zinc-950">
                 {businessProfile.businessName}
               </h2>
               <p className="mt-1 text-sm font-medium leading-6 text-zinc-500">
-                {businessProfile.tagline || 'Easy deals everyday'}
+                {brandTagline}
               </p>
             </div>
             <button

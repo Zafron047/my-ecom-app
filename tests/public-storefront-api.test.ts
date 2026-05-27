@@ -103,7 +103,7 @@ describe('public storefront API', () => {
 
   it('validates product list query params and returns the stable error shape', async () => {
     const response = await listProducts(
-      new NextRequest('https://bdbuyeasy.test/api/wowmall/products?limit=500&page=nope', {
+      new NextRequest('https://wowmall.test/api/wowmall/products?limit=500&page=nope', {
         headers: { 'X-WoWMall-Api-Key': 'wowmall-secret' },
       }),
     );
@@ -121,7 +121,7 @@ describe('public storefront API', () => {
 
   it('caps pagination limits and only fetches active products', async () => {
     const response = await listProducts(
-      new NextRequest('https://bdbuyeasy.test/api/wowmall/products?limit=500', {
+      new NextRequest('https://wowmall.test/api/wowmall/products?limit=500', {
         headers: { 'X-WoWMall-Api-Key': 'wowmall-secret' },
       }),
     );
@@ -141,7 +141,7 @@ describe('public storefront API', () => {
 
   it('returns WoWMall product DTOs with exact variant quantity and batch cost but no unrelated admin fields', async () => {
     const response = await productDetail(
-      new NextRequest('https://bdbuyeasy.test/api/wowmall/products/kitchen-tool', {
+      new NextRequest('https://wowmall.test/api/wowmall/products/kitchen-tool', {
         headers: { 'X-WoWMall-Api-Key': 'wowmall-secret' },
       }),
       { params: Promise.resolve({ slug: 'kitchen-tool' }) },
@@ -211,12 +211,12 @@ describe('public storefront API', () => {
 
   it('requires X-WoWMall-Api-Key', async () => {
     const unauthorized = await listProducts(
-      new NextRequest('https://bdbuyeasy.test/api/wowmall/products'),
+      new NextRequest('https://wowmall.test/api/wowmall/products'),
     );
     expect(unauthorized.status).toBe(401);
 
     const authorized = await listProducts(
-      new NextRequest('https://bdbuyeasy.test/api/wowmall/products', {
+      new NextRequest('https://wowmall.test/api/wowmall/products', {
         headers: { 'X-WoWMall-Api-Key': 'wowmall-secret' },
       }),
     );
@@ -225,7 +225,7 @@ describe('public storefront API', () => {
 
   it('keeps product list payload light and omits batch costs', async () => {
     const response = await listProducts(
-      new NextRequest('https://bdbuyeasy.test/api/wowmall/products', {
+      new NextRequest('https://wowmall.test/api/wowmall/products', {
         headers: { 'X-WoWMall-Api-Key': 'wowmall-secret' },
       }),
     );
@@ -280,7 +280,7 @@ describe('public storefront API', () => {
     delete process.env.WOWMALL_STOREFRONT_API_KEY;
 
     const response = await listProducts(
-      new NextRequest('https://bdbuyeasy.test/api/wowmall/products', {
+      new NextRequest('https://wowmall.test/api/wowmall/products', {
         headers: { 'X-WoWMall-Api-Key': 'wowmall-secret' },
       }),
     );
@@ -294,7 +294,7 @@ describe('public storefront API', () => {
     vi.stubEnv('WOWMALL_ALLOWED_ORIGINS', 'https://wowmall.xyz');
 
     const allowed = await listProducts(
-      new NextRequest('https://bdbuyeasy.test/api/wowmall/products', {
+      new NextRequest('https://wowmall.test/api/wowmall/products', {
         headers: {
           origin: 'https://wowmall.xyz',
           'X-WoWMall-Api-Key': 'wowmall-secret',
@@ -302,7 +302,7 @@ describe('public storefront API', () => {
       }),
     );
     const denied = await listProducts(
-      new NextRequest('https://bdbuyeasy.test/api/wowmall/products', {
+      new NextRequest('https://wowmall.test/api/wowmall/products', {
         headers: {
           origin: 'https://unknown-store.test',
           'X-WoWMall-Api-Key': 'wowmall-secret',

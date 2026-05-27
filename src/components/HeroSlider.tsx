@@ -9,36 +9,32 @@ export default function HeroSlider({ slides }: { slides: StorefrontHeroSlide[] }
   const [currentSlide, setCurrentSlide] = useState(0);
   const activeSlides = slides.length > 0 ? slides : [];
 
-  // Auto-play functionality
   useEffect(() => {
     if (activeSlides.length <= 1) return;
 
     const interval = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % activeSlides.length);
-    }, 3000); // Change slide every 3 seconds
+    }, 5200);
 
     return () => clearInterval(interval);
   }, [activeSlides.length]);
 
   const goToSlide = (index: number) => {
     setCurrentSlide(index);
-    // Keep auto-play running even after user interaction
   };
 
   const nextSlide = () => {
     setCurrentSlide((prev) => (prev + 1) % activeSlides.length);
-    // Keep auto-play running even after user interaction
   };
 
   const prevSlide = () => {
     setCurrentSlide((prev) => (prev - 1 + activeSlides.length) % activeSlides.length);
-    // Keep auto-play running even after user interaction
   };
 
   if (activeSlides.length === 0) return null;
 
   return (
-    <section className="relative h-[56vh] min-h-[430px] overflow-hidden bg-zinc-950 md:h-[72vh] md:min-h-[620px]">
+    <section className="relative h-[58svh] min-h-[420px] overflow-hidden bg-zinc-950 md:h-[66vh] md:min-h-[540px]">
       {/* Slides */}
       <div className="relative h-full">
         {activeSlides.map((slide, index) => (
@@ -62,50 +58,77 @@ export default function HeroSlider({ slides }: { slides: StorefrontHeroSlide[] }
                 className={`h-full w-full object-cover transition-transform duration-[6000ms] ease-out ${
                   index === currentSlide ? 'scale-105' : 'scale-100'
                 }`}
+                style={{ objectPosition: 'center 44%' }}
               />
-              {/* Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-b from-black/38 via-black/34 to-black/72" />
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.14),transparent_34%),linear-gradient(90deg,rgba(0,0,0,0.58),transparent_46%,rgba(0,0,0,0.44))]" />
+              <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,8,8,0.66)_0%,rgba(8,8,8,0.48)_34%,rgba(8,8,8,0.12)_64%,rgba(8,8,8,0.30)_100%)]" />
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,8,8,0.12)_0%,rgba(8,8,8,0.00)_34%,rgba(8,8,8,0.48)_88%,#09090b_100%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_28%,rgba(255,255,255,0.13),transparent_30%)] opacity-70" />
             </div>
 
             {/* Content */}
-            <div className="pointer-events-none relative z-20 flex h-full items-center justify-center">
+            <div className="pointer-events-none relative z-20 flex h-full items-end md:items-center">
               <div
                 key={`${slide.id}-content`}
-                className={`pointer-events-auto mx-auto max-w-7xl px-5 text-center text-white transition duration-700 ease-out sm:px-6 lg:px-8 ${
+                className={`pointer-events-auto mx-auto grid w-full max-w-7xl px-5 pb-16 text-left text-white transition duration-700 ease-out sm:px-6 md:grid-cols-[minmax(0,0.88fr)_minmax(16rem,0.62fr)] md:items-end md:pb-0 lg:px-8 ${
                   index === currentSlide
                     ? 'translate-y-0 opacity-100'
                     : 'translate-y-4 opacity-0'
                 }`}
               >
-                <div className="mx-auto mb-5 inline-flex items-center rounded-full border border-white/18 bg-white/10 px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.22em] text-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] backdrop-blur-md">
-                  Useful home upgrades
-                </div>
-                <h1 className="mx-auto mb-4 max-w-[22rem] text-balance text-3xl font-semibold leading-[1.02] tracking-tight text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.35)] sm:max-w-4xl sm:text-5xl md:text-6xl lg:text-7xl">
-                  {slide.title}
-                </h1>
-                {slide.subtitle ? (
-                  <div className="mx-auto mb-7 max-w-[20rem] text-sm font-medium leading-6 text-white/84 sm:max-w-2xl sm:text-base md:text-lg md:leading-7">
-                    {slide.subtitle}
+                <div className="max-w-[28rem] sm:max-w-[32rem] lg:max-w-[36rem]">
+                  <div className="mb-3 inline-flex items-center text-[0.66rem] font-medium uppercase leading-none tracking-[0.14em] text-white/64 md:mb-4">
+                    Practical lifestyle finds
                   </div>
-                ) : null}
-                <div className="flex flex-col justify-center gap-3 sm:flex-row">
-                  {slide.ctaLabel && slide.ctaHref ? (
-                    <Link
-                      href={slide.ctaHref}
-                      className="inline-flex min-h-12 min-w-[164px] items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold !text-zinc-950 shadow-[0_18px_45px_rgba(0,0,0,0.28)] transition duration-300 hover:-translate-y-0.5 hover:bg-zinc-950 hover:!text-white hover:ring-1 hover:ring-white/30"
-                    >
-                      {slide.ctaLabel}
-                    </Link>
+                  <h1 className="text-balance text-[2rem] font-medium leading-[1.04] tracking-normal text-white sm:text-[2.58rem] md:text-[3.16rem] lg:text-[3.65rem]">
+                    <HeroTitle title={slide.title} />
+                  </h1>
+                  {slide.subtitle ? (
+                    <p className="mt-4 max-w-[20.5rem] text-sm font-normal leading-6 !text-white/72 sm:max-w-[25rem] sm:text-[0.98rem] md:mt-5 md:leading-7">
+                      {slide.subtitle}
+                    </p>
                   ) : null}
-                  {slide.secondaryLabel && slide.secondaryHref ? (
-                    <Link
-                      href={slide.secondaryHref}
-                      className="inline-flex min-h-12 min-w-[164px] items-center justify-center rounded-full border border-white/35 bg-white/10 px-6 py-3 text-sm font-semibold !text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-md transition duration-300 hover:-translate-y-0.5 hover:border-white/55 hover:bg-white/20 hover:!text-white"
-                    >
-                      {slide.secondaryLabel}
-                    </Link>
-                  ) : null}
+                  <div className="mt-6 flex flex-wrap items-center gap-3.5 md:mt-7">
+                    {slide.ctaLabel && slide.ctaHref ? (
+                      <Link
+                        href={slide.ctaHref}
+                        className="inline-flex h-8 min-w-[7.65rem] items-center justify-center rounded-md bg-white px-3.5 text-[0.72rem] font-medium !text-zinc-950 shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition duration-300 hover:bg-white/90 hover:shadow-[0_12px_28px_rgba(0,0,0,0.16)] focus:outline-none focus:ring-4 focus:ring-white/18 md:h-9 md:min-w-[8.25rem] md:px-4"
+                      >
+                        {slide.ctaLabel}
+                      </Link>
+                    ) : null}
+                    {slide.secondaryLabel && slide.secondaryHref ? (
+                      <Link
+                        href={slide.secondaryHref}
+                        className="group inline-flex h-8 items-center gap-2 border-b border-white/26 px-0 text-[0.72rem] font-medium !text-white/78 transition duration-300 hover:border-white/72 hover:!text-white focus:outline-none focus:ring-4 focus:ring-white/12 md:h-9"
+                      >
+                        {slide.secondaryLabel}
+                        <span className="transition duration-300 group-hover:translate-x-0.5" aria-hidden="true">
+                          <svg
+                            className="h-3.5 w-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={1.8}
+                              d="M5 12h14m-6-6 6 6-6 6"
+                            />
+                          </svg>
+                        </span>
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="hidden justify-self-end text-right md:block">
+                  <p className="text-[0.68rem] font-medium uppercase tracking-[0.14em] text-white/44">
+                    {String(index + 1).padStart(2, '0')} / {String(activeSlides.length).padStart(2, '0')}
+                  </p>
+                  <p className="mt-3 max-w-[15rem] text-sm leading-6 !text-white/52">
+                    Selected for everyday friction points, not trend noise.
+                  </p>
                 </div>
               </div>
             </div>
@@ -117,11 +140,11 @@ export default function HeroSlider({ slides }: { slides: StorefrontHeroSlide[] }
       <button
         suppressHydrationWarning
         onClick={prevSlide}
-        className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur-md transition duration-300 hover:border-white/35 hover:bg-white/20 sm:left-6 sm:h-12 sm:w-12"
+        className="absolute bottom-7 right-[4.75rem] z-10 hidden h-9 w-9 items-center justify-center rounded-full border border-white/18 bg-black/10 text-white/68 backdrop-blur-md transition duration-300 hover:border-white/38 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-4 focus:ring-white/12 md:flex"
         aria-label="Previous slide"
       >
         <svg
-          className="w-6 h-6"
+          className="h-4 w-4"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -138,11 +161,11 @@ export default function HeroSlider({ slides }: { slides: StorefrontHeroSlide[] }
       <button
         suppressHydrationWarning
         onClick={nextSlide}
-        className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur-md transition duration-300 hover:border-white/35 hover:bg-white/20 sm:right-6 sm:h-12 sm:w-12"
+        className="absolute bottom-7 right-8 z-10 hidden h-9 w-9 items-center justify-center rounded-full border border-white/18 bg-black/10 text-white/68 backdrop-blur-md transition duration-300 hover:border-white/38 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-4 focus:ring-white/12 md:flex"
         aria-label="Next slide"
       >
         <svg
-          className="w-6 h-6"
+          className="h-4 w-4"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -157,16 +180,16 @@ export default function HeroSlider({ slides }: { slides: StorefrontHeroSlide[] }
       </button>
 
       {/* Dot Indicators */}
-      <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 gap-2.5 sm:bottom-8">
+      <div className="absolute bottom-7 left-5 z-10 flex gap-2 sm:left-6 md:left-8">
         {activeSlides.map((_, index) => (
           <button
             suppressHydrationWarning
             key={index}
             onClick={() => goToSlide(index)}
-            className={`h-1.5 rounded-full transition-all duration-300 ${
+            className={`h-px transition-all duration-300 ${
               index === currentSlide
-                ? 'w-8 bg-white'
-                : 'w-1.5 bg-white/45 hover:bg-white/75'
+                ? 'w-9 bg-white'
+                : 'w-5 bg-white/32 hover:bg-white/68'
             }`}
             aria-label={`Go to slide ${index + 1}`}
           />
@@ -174,5 +197,28 @@ export default function HeroSlider({ slides }: { slides: StorefrontHeroSlide[] }
       </div>
 
     </section>
+  );
+}
+
+function HeroTitle({ title }: { title: string }) {
+  const intentionalBreaks: Record<string, string[]> = {
+    'Finds That Make Life Easier': ['Finds That', 'Make Life Easier'],
+    'Smarter Daily Routines': ['Smarter Daily', 'Routines'],
+    'Small Fixes, Better Flow': ['Small Fixes,', 'Better Flow'],
+    'Curated For Real Needs': ['Curated For', 'Real Needs'],
+  };
+  const lines = intentionalBreaks[title];
+
+  if (!lines) return title;
+
+  return (
+    <>
+      {lines.map((line, index) => (
+        <span key={line} className="block">
+          {line}
+          {index < lines.length - 1 ? ' ' : ''}
+        </span>
+      ))}
+    </>
   );
 }

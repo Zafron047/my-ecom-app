@@ -1,23 +1,13 @@
-<svg width="145" height="100" viewBox="0 0 145 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
   <defs>
-    <linearGradient id="bg" x1="12" y1="10" x2="133" y2="90" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#1D4ED8"/>
-      <stop offset="1" stop-color="#2563EB"/>
-    </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#F97316"/>
-      <stop offset="1" stop-color="#F59E0B"/>
+    <linearGradient id="wm-bg" x1="10" y1="12" x2="110" y2="108" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0f172a"/>
+      <stop offset="0.55" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#f59e0b"/>
     </linearGradient>
   </defs>
-
-  <rect x="4" y="4" width="137" height="92" rx="18" fill="url(#bg)"/>
-  <rect x="4" y="4" width="137" height="92" rx="18" stroke="#93C5FD" stroke-width="2"/>
-
-  <circle cx="35" cy="50" r="20" fill="url(#accent)"/>
-  <path d="M25 44h3l2.2 9.2a2 2 0 0 0 1.9 1.5h9.8a2 2 0 0 0 1.9-1.4L46 47H30.5" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="33.5" cy="60.5" r="1.8" fill="white"/>
-  <circle cx="42" cy="60.5" r="1.8" fill="white"/>
-
-  <text x="57" y="46" fill="white" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="800" letter-spacing="0.04em">BDBUY</text>
-  <text x="61" y="68" fill="#FFEDD5" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="800" letter-spacing="0.08em">EASY</text>
+  <rect width="120" height="120" rx="26" fill="url(#wm-bg)"/>
+  <path d="M35 45h50l-5.8 35.5a8 8 0 0 1-7.9 6.7H48.7a8 8 0 0 1-7.9-6.7L35 45Z" fill="#fff"/>
+  <path d="M47 45c0-9.4 5.7-16 13-16s13 6.6 13 16" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
+  <text x="60" y="72" text-anchor="middle" fill="#0f172a" font-family="Segoe UI, Arial, sans-serif" font-size="25" font-weight="900">W</text>
 </svg>

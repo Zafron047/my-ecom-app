@@ -102,7 +102,7 @@ export async function getAdminSession(): Promise<AdminSession | null> {
   return {
     id: 'dev-admin',
     name: 'Development Admin',
-    email: 'dev-admin@bdbuyeasy.com.bd',
+    email: 'dev-admin@wowmall.xyz',
     mustResetPassword: false,
     role,
   };

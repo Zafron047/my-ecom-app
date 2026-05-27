@@ -1,4 +1,4 @@
-// Prisma schema for BDBuyEasy admin authentication domain
+// Prisma schema for WoWMall admin authentication domain
 
 generator client {
   provider = "prisma-client-js"
@@ -98,7 +98,7 @@ enum HomepageSectionSourceType {
 
 model BusinessProfile {
   id                 String   @id @default(cuid())
-  businessName       String   @default("BDBuyEasy")
+  businessName       String   @default("WoWMall")
   tagline            String?
   logoUrl            String?
   logoAlt            String?

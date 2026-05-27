@@ -11,14 +11,14 @@ vi.mock('@/lib/mail', () => ({
 
 vi.mock('@/lib/storefront-data', () => ({
   getBusinessProfile: vi.fn(async () => ({
-    businessName: 'BDBuyEasy',
+    businessName: 'WoWMall',
     tagline: 'Easy deals everyday',
-    logoUrl: '/business-logo.png',
-    logoAlt: 'BDBuyEasy logo',
+    logoUrl: '/Wow-Logo-Final.jpg',
+    logoAlt: 'WoWMall logo',
     phone: '01712345678',
-    email: 'support@bdbuyeasy.com',
+    email: 'support@wowmall.xyz',
     address: 'Oli Miar Tek, Shewrapara, Mirpur, Dhaka',
-    websiteUrl: 'https://bdbuyeasy.com',
+    websiteUrl: 'https://wowmall.xyz',
     returnRefundPolicy: 'Check items during delivery.',
   })),
 }));
@@ -59,7 +59,7 @@ describe('order invoice email', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.sendMail.mockResolvedValue({ sent: true });
-    process.env.NEXT_PUBLIC_APP_URL = 'https://bdbuyeasy.com';
+    process.env.NEXT_PUBLIC_APP_URL = 'https://wowmall.xyz';
   });
 
   it('sends an invoice to the customer email', async () => {
@@ -73,12 +73,12 @@ describe('order invoice email', () => {
       }),
     );
     const message = mocks.sendMail.mock.calls[0][0];
-    expect(message.text).toContain('BDBuyEasy invoice');
+    expect(message.text).toContain('WoWMall invoice');
     expect(message.text).toContain('Invoice for ORD-1001');
     expect(message.text).toContain('Shoe - Black / 42 x 2: BDT 1,000');
     expect(message.text).toContain('Business phone: 01712345678');
-    expect(message.html).toContain('https://bdbuyeasy.com/order-confirmation?orderId=ORD-1001');
-    expect(message.html).toContain('https://bdbuyeasy.com/business-logo.png');
+    expect(message.html).toContain('https://wowmall.xyz/order-confirmation?orderId=ORD-1001');
+    expect(message.html).toContain('https://wowmall.xyz/Wow-Logo-Final.jpg');
     expect(message.html).toContain('Check items during delivery.');
   });
 

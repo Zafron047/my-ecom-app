@@ -56,7 +56,7 @@ Support:
 - [x] Expose API for wowmall to fetch Products
 
 ### Invoice Template
-- BDBuyEasy
+- WoWMall
 - [x] Must fit in A5 size paper
 
 - [ ] WoWMall
@@ -66,8 +66,8 @@ Support:
 - [ ] Create WoWMall App Repo and domain deploy
 - [ ] Fetch Products from Buy Easy
 - [ ] Ensure no latenency
-- [ ] Ensure Products display as like bdbuyeasy
-- [ ] Sales orders go to bdbuyeasy to fullfill
+- [ ] Ensure products display from the supplier catalog
+- [ ] Sales orders go to BDBuy supplier to fulfill
 - [ ] Implement RedX API
 - [ ] Integrate Pixel and Convesion API with Meta
 
@@ -80,8 +80,8 @@ Support:
 
 ### Resell Orders
 - [ ] Ensure Resell orders has clear headers WoWMall Order
-- [ ] Ensure forwarded orders to supplier has clear Header FulFiller: BDBuyEasy
+- [ ] Ensure forwarded orders to supplier has clear Header FulFiller: BDBuy supplier
 
 ## Launch AD
-- [ ] BDBuyEasy
+- [ ] WoWMall
 - [ ] WoWMall
