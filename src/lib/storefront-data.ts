@@ -2,6 +2,12 @@ import { prisma } from '@/lib/prisma';
 import { toVariantImageUrl, type ImageVariantSize } from '@/lib/image-variants';
 import { unstable_cache } from 'next/cache';
 import { businessData } from '@/lib/business-data';
+import {
+  BDBUY_SUPPLIER_PRODUCT_ID_PREFIX,
+  getBDBuyCatalogCards,
+  getBDBuyProductDetail,
+  isBDBuyPartnerModeEnabled,
+} from '@/lib/bdbuy-partner-api';
 import type {
   StorefrontBusinessProfile,
   StorefrontCatalogProduct,
@@ -13,6 +19,24 @@ import type {
 export const STOREFRONT_REVALIDATE_SECONDS = 300;
 const shouldBypassStorefrontCache =
   process.env.NEXT_DISABLE_STOREFRONT_CACHE === 'true';
+
+function hasLocalDatabase() {
+  return Boolean(process.env.DATABASE_URL);
+}
+
+function isProductionBuild() {
+  return process.env.NEXT_PHASE === 'phase-production-build';
+}
+
+function shouldIgnoreMissingBuildTables(error: unknown) {
+  return (
+    isProductionBuild() &&
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === 'P2021'
+  );
+}
 
 type CatalogCardProduct = Awaited<ReturnType<typeof loadCatalogCardProducts>>[number];
 type ProductDetailProduct = NonNullable<Awaited<ReturnType<typeof loadProductDetail>>>;
@@ -50,9 +74,10 @@ export const defaultHeroSlides: StorefrontHeroSlide[] = [
   {
     id: 'default-trending-gadgets',
     imageUrl:
-      'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=1920&h=1080&fit=crop',
-    title: 'Trending Gadgets & Daily Finds',
-    subtitle: 'Useful home tools, kitchen finds, decor, and practical gadgets',
+      'https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?w=1920&h=1080&fit=crop&crop=entropy&auto=format&q=82',
+    title: 'Finds That Make Life Easier',
+    subtitle:
+      'Useful products selected to solve everyday friction points with less effort',
     ctaLabel: 'Shop Now',
     ctaHref: '/products',
     secondaryLabel: 'Explore More',
@@ -61,10 +86,11 @@ export const defaultHeroSlides: StorefrontHeroSlide[] = [
   {
     id: 'default-home-upgrades',
     imageUrl:
-      'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=1920&h=1080&fit=crop',
-    title: 'Smart Home Upgrades',
-    subtitle: 'Smart little upgrades that make your space more useful and fun',
-    ctaLabel: 'Explore Home',
+      'https://images.unsplash.com/photo-1556911220-bff31c812dba?w=1920&h=1080&fit=crop&crop=entropy&auto=format&q=82',
+    title: 'Smarter Daily Routines',
+    subtitle:
+      'Practical helpers for cooking, cleaning, organizing, and getting more done',
+    ctaLabel: 'Explore Finds',
     ctaHref: '/products',
     secondaryLabel: 'Explore More',
     secondaryHref: '#featured',
@@ -72,10 +98,10 @@ export const defaultHeroSlides: StorefrontHeroSlide[] = [
   {
     id: 'default-accessories',
     imageUrl:
-      'https://images.unsplash.com/photo-1511556820780-d912e42b4980?w=1920&h=1080&fit=crop',
-    title: 'Useful Finds For Every Room',
+      'https://images.unsplash.com/photo-1484154218962-a197022b5858?w=1920&h=1080&fit=crop&crop=entropy&auto=format&q=82',
+    title: 'Small Fixes, Better Flow',
     subtitle:
-      'Home tools, kitchen helpers, decor, and everyday gadgets worth keeping close',
+      'Compact solutions for the little problems that slow down modern living',
     ctaLabel: 'Browse Bestsellers',
     ctaHref: '/products',
     secondaryLabel: 'Explore More',
@@ -84,10 +110,10 @@ export const defaultHeroSlides: StorefrontHeroSlide[] = [
   {
     id: 'default-category-picks',
     imageUrl:
-      'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=1920&h=1080&fit=crop',
-    title: 'Organized Picks For Daily Needs',
+      'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1920&h=1080&fit=crop&crop=entropy&auto=format&q=82',
+    title: 'Curated For Real Needs',
     subtitle:
-      'Browse practical household finds across kitchen, cleaning, decor, and gadgets',
+      'Lifestyle products chosen for usefulness, comfort, and everyday problem solving',
     ctaLabel: 'View Collection',
     ctaHref: '/products',
     secondaryLabel: 'Explore More',
@@ -393,10 +419,15 @@ function toCatalogProduct(product: StorefrontProductRow): StorefrontCatalogProdu
   };
 }
 
-export const getCatalogCards = cacheStorefrontLoader(
+const getLocalCatalogCards = cacheStorefrontLoader(
   async () => {
-    const products = await loadCatalogCardProducts();
-    return products.map(toCatalogProduct);
+    try {
+      const products = await loadCatalogCardProducts();
+      return products.map(toCatalogProduct);
+    } catch (error) {
+      if (shouldIgnoreMissingBuildTables(error)) return [];
+      throw error;
+    }
   },
   ['storefront-catalog-cards'],
   {
@@ -407,6 +438,8 @@ export const getCatalogCards = cacheStorefrontLoader(
 
 export const getHeaderSearchProducts = cacheStorefrontLoader(
   async () => {
+    if (!hasLocalDatabase()) return [];
+
     const products = await prisma.product.findMany({
       where: {
         status: 'active',
@@ -460,69 +493,76 @@ export const getHeaderSearchProducts = cacheStorefrontLoader(
 
 export const getHomepageSections = cacheStorefrontLoader(
   async () => {
-  const homepageSectionDelegate = (prisma as { homepageSection?: unknown })
-    .homepageSection as
-    | {
-        findMany: (args: unknown) => Promise<
-          {
-            id: string;
-            title: string;
-            eyebrow: string | null;
-            variant: 'default' | 'sale';
-            layout: 'grid' | 'carousel';
-            sourceType: 'latest' | 'super_sale' | 'category' | 'tag';
-            sourceValue: string | null;
-            products: { productId: string }[];
-            productLimit: number;
-            displayOrder: number;
-            ctaLabel: string | null;
-            ctaHref: string | null;
-          }[]
-        >;
-      }
-    | undefined;
-  const homepageSections = homepageSectionDelegate
-    ? await homepageSectionDelegate.findMany({
-        orderBy: [
-          {
-            displayOrder: 'asc',
-          },
-          {
-            createdAt: 'asc',
-          },
-        ],
-        where: {
-          isActive: true,
-        },
-        include: {
-          products: {
-            orderBy: {
-              assignedAt: 'asc',
-            },
-            select: {
-              productId: true,
-            },
-          },
-        },
-      })
-    : [];
+    try {
+      if (!hasLocalDatabase()) return [];
 
-    return homepageSections.map(
-          (section): StorefrontHomepageSection => ({
-            id: section.id,
-            title: section.title,
-            ...(section.eyebrow ? { eyebrow: section.eyebrow } : {}),
-            variant: section.variant,
-            layout: section.layout,
-            sourceType: section.sourceType,
-            ...(section.sourceValue ? { sourceValue: section.sourceValue } : {}),
-            productIds: section.products.map((row) => row.productId),
-            productLimit: section.productLimit,
-            displayOrder: section.displayOrder,
-            ...(section.ctaLabel ? { ctaLabel: section.ctaLabel } : {}),
-            ...(section.ctaHref ? { ctaHref: section.ctaHref } : {}),
-          }),
-        );
+      const homepageSectionDelegate = (prisma as { homepageSection?: unknown })
+        .homepageSection as
+        | {
+            findMany: (args: unknown) => Promise<
+              {
+                id: string;
+                title: string;
+                eyebrow: string | null;
+                variant: 'default' | 'sale';
+                layout: 'grid' | 'carousel';
+                sourceType: 'latest' | 'super_sale' | 'category' | 'tag';
+                sourceValue: string | null;
+                products: { productId: string }[];
+                productLimit: number;
+                displayOrder: number;
+                ctaLabel: string | null;
+                ctaHref: string | null;
+              }[]
+            >;
+          }
+        | undefined;
+      const homepageSections = homepageSectionDelegate
+        ? await homepageSectionDelegate.findMany({
+            orderBy: [
+              {
+                displayOrder: 'asc',
+              },
+              {
+                createdAt: 'asc',
+              },
+            ],
+            where: {
+              isActive: true,
+            },
+            include: {
+              products: {
+                orderBy: {
+                  assignedAt: 'asc',
+                },
+                select: {
+                  productId: true,
+                },
+              },
+            },
+          })
+        : [];
+
+      return homepageSections.map(
+        (section): StorefrontHomepageSection => ({
+          id: section.id,
+          title: section.title,
+          ...(section.eyebrow ? { eyebrow: section.eyebrow } : {}),
+          variant: section.variant,
+          layout: section.layout,
+          sourceType: section.sourceType,
+          ...(section.sourceValue ? { sourceValue: section.sourceValue } : {}),
+          productIds: section.products.map((row) => row.productId),
+          productLimit: section.productLimit,
+          displayOrder: section.displayOrder,
+          ...(section.ctaLabel ? { ctaLabel: section.ctaLabel } : {}),
+          ...(section.ctaHref ? { ctaHref: section.ctaHref } : {}),
+        }),
+      );
+    } catch (error) {
+      if (shouldIgnoreMissingBuildTables(error)) return [];
+      throw error;
+    }
   },
   ['storefront-homepage-sections'],
   {
@@ -533,44 +573,51 @@ export const getHomepageSections = cacheStorefrontLoader(
 
 export const getHeroSlides = cacheStorefrontLoader(
   async () => {
-    const heroSlideDelegate = (prisma as { heroSlide?: unknown }).heroSlide as
-      | {
-          findMany: (args: unknown) => Promise<
-            {
-              id: string;
-              title: string;
-              subtitle: string | null;
-              imageUrl: string;
-              ctaLabel: string | null;
-              ctaHref: string | null;
-              secondaryLabel: string | null;
-              secondaryHref: string | null;
-            }[]
-          >;
-        }
-      | undefined;
+    try {
+      if (!hasLocalDatabase()) return defaultHeroSlides;
 
-    if (!heroSlideDelegate) return defaultHeroSlides;
+      const heroSlideDelegate = (prisma as { heroSlide?: unknown }).heroSlide as
+        | {
+            findMany: (args: unknown) => Promise<
+              {
+                id: string;
+                title: string;
+                subtitle: string | null;
+                imageUrl: string;
+                ctaLabel: string | null;
+                ctaHref: string | null;
+                secondaryLabel: string | null;
+                secondaryHref: string | null;
+              }[]
+            >;
+          }
+        | undefined;
 
-    const slides = await heroSlideDelegate.findMany({
-      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
-      where: { isActive: true },
-    });
+      if (!heroSlideDelegate) return defaultHeroSlides;
 
-    return slides.length > 0
-      ? slides.map(
-          (slide): StorefrontHeroSlide => ({
-            id: slide.id,
-            title: slide.title,
-            ...(slide.subtitle ? { subtitle: slide.subtitle } : {}),
-            imageUrl: slide.imageUrl,
-            ...(slide.ctaLabel ? { ctaLabel: slide.ctaLabel } : {}),
-            ...(slide.ctaHref ? { ctaHref: slide.ctaHref } : {}),
-            ...(slide.secondaryLabel ? { secondaryLabel: slide.secondaryLabel } : {}),
-            ...(slide.secondaryHref ? { secondaryHref: slide.secondaryHref } : {}),
-          }),
-        )
-      : defaultHeroSlides;
+      const slides = await heroSlideDelegate.findMany({
+        orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+        where: { isActive: true },
+      });
+
+      return slides.length > 0
+        ? slides.map(
+            (slide): StorefrontHeroSlide => ({
+              id: slide.id,
+              title: slide.title,
+              ...(slide.subtitle ? { subtitle: slide.subtitle } : {}),
+              imageUrl: slide.imageUrl,
+              ...(slide.ctaLabel ? { ctaLabel: slide.ctaLabel } : {}),
+              ...(slide.ctaHref ? { ctaHref: slide.ctaHref } : {}),
+              ...(slide.secondaryLabel ? { secondaryLabel: slide.secondaryLabel } : {}),
+              ...(slide.secondaryHref ? { secondaryHref: slide.secondaryHref } : {}),
+            }),
+          )
+        : defaultHeroSlides;
+    } catch (error) {
+      if (shouldIgnoreMissingBuildTables(error)) return defaultHeroSlides;
+      throw error;
+    }
   },
   ['storefront-hero-slides'],
   {
@@ -581,6 +628,8 @@ export const getHeroSlides = cacheStorefrontLoader(
 
 export const getBusinessProfile = cacheStorefrontLoader(
   async () => {
+    if (!hasLocalDatabase()) return defaultBusinessProfile;
+
     const rows = await prisma.$queryRaw<
       {
         businessName: string;
@@ -661,35 +710,52 @@ export const getBusinessProfile = cacheStorefrontLoader(
 
 export const getStorefrontCategories = cacheStorefrontLoader(
   async () => {
-    const activeCategories = await prisma.category.findMany({
-    where: {
-      isActive: true,
-      products: {
-        some: {
-          product: {
-            status: 'active',
+    try {
+      if (!hasLocalDatabase()) {
+        return {
+          categories: ['All'],
+          categoryThumbnails: {},
+        };
+      }
+
+      const activeCategories = await prisma.category.findMany({
+        where: {
+          isActive: true,
+          products: {
+            some: {
+              product: {
+                status: 'active',
+              },
+            },
           },
         },
-      },
-    },
-    orderBy: {
-      name: 'asc',
-    },
-    select: {
-      name: true,
-      imagePath: true,
-    },
-  });
+        orderBy: {
+          name: 'asc',
+        },
+        select: {
+          name: true,
+          imagePath: true,
+        },
+      });
 
-    return {
-      categories: ['All', ...activeCategories.map((category) => category.name)],
-      categoryThumbnails: Object.fromEntries(
-        activeCategories.map((category) => [
-          category.name,
-          toSizedImage(category.imagePath || '', 'thumb'),
-        ]),
-      ),
-    };
+      return {
+        categories: ['All', ...activeCategories.map((category) => category.name)],
+        categoryThumbnails: Object.fromEntries(
+          activeCategories.map((category) => [
+            category.name,
+            toSizedImage(category.imagePath || '', 'thumb'),
+          ]),
+        ),
+      };
+    } catch (error) {
+      if (shouldIgnoreMissingBuildTables(error)) {
+        return {
+          categories: ['All'],
+          categoryThumbnails: {},
+        };
+      }
+      throw error;
+    }
   },
   ['storefront-categories'],
   {
@@ -825,7 +891,7 @@ async function loadProductDetail(productId: string) {
   });
 }
 
-export const getProductDetail = cacheStorefrontLoader(
+const getLocalProductDetail = cacheStorefrontLoader(
   async (productId: string) => {
     const product = await loadProductDetail(productId);
   if (!product) return null;
@@ -895,6 +961,41 @@ export const getProductDetail = cacheStorefrontLoader(
 
 export async function getStorefrontProductDetailById(productId: string) {
   return getProductDetail(productId);
+}
+
+export async function getCatalogCards() {
+  const localProducts = hasLocalDatabase() ? await getLocalCatalogCards() : [];
+
+  if (isBDBuyPartnerModeEnabled()) {
+    if (isProductionBuild()) return localProducts;
+    try {
+      const supplierProducts = await getBDBuyCatalogCards();
+      return [...supplierProducts, ...localProducts];
+    } catch (error) {
+      console.error('Failed to load BDBuy supplier catalog.', error);
+      return localProducts;
+    }
+  }
+
+  return localProducts;
+}
+
+export async function getProductDetail(productId: string) {
+  if (
+    isBDBuyPartnerModeEnabled() &&
+    productId.startsWith(BDBUY_SUPPLIER_PRODUCT_ID_PREFIX)
+  ) {
+    if (isProductionBuild()) return null;
+    try {
+      return await getBDBuyProductDetail(productId);
+    } catch (error) {
+      console.error('Failed to load BDBuy supplier product detail.', error);
+      return null;
+    }
+  }
+  if (!hasLocalDatabase()) return null;
+
+  return getLocalProductDetail(productId);
 }
 
 export async function getCartPricingLookup(

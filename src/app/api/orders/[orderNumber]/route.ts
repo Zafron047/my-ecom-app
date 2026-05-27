@@ -5,6 +5,10 @@ import {
   verifyRecentOrderAccessToken,
 } from '@/lib/customer-auth';
 import { getCustomerSession } from '@/lib/customer-session';
+import {
+  getBDBuyPartnerOrder,
+  isBDBuyPartnerModeEnabled,
+} from '@/lib/bdbuy-partner-api';
 import { withPrivateNoStoreHeaders } from '@/lib/http-cache';
 import { prisma } from '@/lib/prisma';
 import {
@@ -17,6 +21,10 @@ const ORDER_LOOKUP_RATE_LIMIT = {
   limit: 30,
   windowMs: 60_000,
 };
+
+function isPartnerOrderNumber(orderNumber: string) {
+  return orderNumber.startsWith('WM-');
+}
 
 export async function GET(
   request: Request,
@@ -65,6 +73,60 @@ export async function GET(
     }
 
     orderWhere = { orderNumber, customerId: customerSession.customerId };
+  }
+
+  if (isBDBuyPartnerModeEnabled() && isPartnerOrderNumber(orderNumber)) {
+    if (!adminSession && !hasRecentOrderAccess) {
+      return Response.json(
+        { error: 'Unauthorized.' },
+        withPrivateNoStoreHeaders({ status: 401 }),
+      );
+    }
+
+    const partnerOrder = await getBDBuyPartnerOrder(orderNumber);
+    if (!partnerOrder) {
+      return Response.json(
+        { error: 'Order not found.' },
+        withPrivateNoStoreHeaders({ status: 404 }),
+      );
+    }
+
+    return Response.json(
+      {
+        id: partnerOrder.orderNumber,
+        customer: {
+          firstName: partnerOrder.customer.firstName,
+          lastName: partnerOrder.customer.lastName ?? '',
+          email: partnerOrder.customer.email ?? '',
+          customerMobile: partnerOrder.customer.phone,
+          receiverMobile: partnerOrder.customer.receiverPhone ?? partnerOrder.customer.phone,
+        },
+        shipping: partnerOrder.shipping,
+        payment: {
+          method: partnerOrder.paymentMethod === 'BKASH' ? 'bkash' : 'cod',
+        },
+        items: partnerOrder.items.map((item) => ({
+          id: item.productId,
+          detailId: item.productId,
+          variantId: item.variantId,
+          name: item.productName,
+          price: item.unitPrice,
+          salePrice: undefined,
+          quantity: item.quantity,
+          variantLabel: item.variantLabel ?? 'Standard',
+          image: '',
+          bundleTitle: null,
+          bundleRule: null,
+        })),
+        totals: {
+          subtotal: partnerOrder.totals.subtotal,
+          shipping: partnerOrder.totals.shipping,
+          total: partnerOrder.totals.total,
+        },
+        orderDate: partnerOrder.createdAt,
+      },
+      withPrivateNoStoreHeaders(),
+    );
   }
 
   const order = await prisma.order.findFirst({

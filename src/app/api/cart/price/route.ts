@@ -1,4 +1,9 @@
 import { computeCartPricing } from '@/lib/cart-bundle-pricing';
+import {
+  BDBUY_SUPPLIER_PRODUCT_ID_PREFIX,
+  getBDBuyProductDetails,
+  isBDBuyPartnerModeEnabled,
+} from '@/lib/bdbuy-partner-api';
 import { PRIVATE_NO_STORE_HEADERS } from '@/lib/http-cache';
 import {
   checkDistributedRateLimit,
@@ -135,6 +140,65 @@ function responseFromCacheEntry(
   };
 }
 
+async function getRemoteCartPriceResponse(items: CartPricePayload['items']) {
+  const productIds = [
+    ...new Set(
+      items
+        .map((item) => item.detailId ?? item.id)
+        .filter((id): id is string => Boolean(id?.startsWith(BDBUY_SUPPLIER_PRODUCT_ID_PREFIX))),
+    ),
+  ];
+  const products = await getBDBuyProductDetails(productIds);
+  const productById = new Map(products.map((product) => [product.id, product]));
+
+  const pricingLines = items.map((item) => {
+    const productId = item.detailId ?? item.id;
+    if (!productId.startsWith(BDBUY_SUPPLIER_PRODUCT_ID_PREFIX)) return null;
+    const product = productById.get(productId);
+    const variant =
+      product?.variants.find((candidate) => candidate.id === item.variantId) ??
+      (product?.variants.length === 1 ? product.variants[0] : undefined);
+
+    if (!product || !variant || variant.stockQuantity < 1) return null;
+
+    return {
+      id: item.id,
+      productId,
+      variantId: variant.id,
+      quantity: Math.max(1, Math.floor(item.quantity || 1)),
+      unitPrice: toMoney(variant.salePrice ?? variant.price),
+    };
+  });
+
+  if (pricingLines.some((line) => !line)) {
+    return null;
+  }
+
+  const pricing = computeCartPricing(
+    pricingLines.filter((line): line is NonNullable<typeof line> => Boolean(line)),
+    () => [],
+    [],
+  );
+
+  const linePricingById = Object.fromEntries(
+    Object.entries(pricing.linePricingById).map(([lineId, line]) => [
+      lineId,
+      {
+        lineSubtotal: toMoney(line.lineSubtotal),
+        lineDiscount: toMoney(line.lineDiscount),
+        lineTotal: toMoney(line.lineTotal),
+      },
+    ]),
+  );
+
+  return {
+    linePricingById,
+    subtotalBeforeDiscount: toMoney(pricing.subtotalBeforeDiscount),
+    discountTotal: toMoney(pricing.discountTotal),
+    subtotal: toMoney(pricing.subtotal),
+  } satisfies CartPriceResponse;
+}
+
 export async function POST(request: Request) {
   try {
     const rateLimit = await checkDistributedRateLimit({
@@ -181,6 +245,32 @@ export async function POST(request: Request) {
         );
       }
       seenLineIds.add(lineId);
+    }
+
+    if (
+      isBDBuyPartnerModeEnabled() &&
+      payload.items.every((item) =>
+        (item.detailId ?? item.id).startsWith(BDBUY_SUPPLIER_PRODUCT_ID_PREFIX),
+      )
+    ) {
+      const remotePricing = await getRemoteCartPriceResponse(payload.items);
+      if (!remotePricing) {
+        return Response.json(
+          {
+            error:
+              'One or more cart items are no longer active or in stock. Please remove unavailable items and add them again.',
+          },
+          {
+            status: 409,
+            headers: getCartPriceCacheHeaders('BYPASS'),
+          },
+        );
+      }
+
+      return Response.json(remotePricing, {
+        status: 200,
+        headers: getCartPriceCacheHeaders('BYPASS'),
+      });
     }
 
     const cacheKey = getCartPriceCacheKey(payload.items);

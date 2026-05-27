@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { ADMIN_ROLE_COOKIE, ADMIN_SESSION_COOKIE } from '@/lib/admin-auth';
 import { canAccessAdminPath, parseAdminRole } from '@/lib/admin-rbac';
+import { updateSession } from '@/utils/supabase/middleware';
 
 function getEffectiveRole(request: NextRequest) {
   const cookieRole = parseAdminRole(request.cookies.get(ADMIN_ROLE_COOKIE)?.value);
@@ -14,8 +15,14 @@ function getEffectiveRole(request: NextRequest) {
   return null;
 }
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const supabaseResponse = await updateSession(request);
+
+  if (!pathname.startsWith('/admin')) {
+    return supabaseResponse;
+  }
+
   const hasSessionCookie = Boolean(
     request.cookies.get(ADMIN_SESSION_COOKIE)?.value,
   );
@@ -31,9 +38,12 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/admin', request.url));
   }
 
-  return NextResponse.next();
+  return supabaseResponse;
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: [
+    '/admin/:path*',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 };

@@ -56,6 +56,10 @@ export async function checkDistributedRateLimit(
   { key, limit, windowMs }: RateLimitOptions,
   nowMs = Date.now(),
 ): Promise<RateLimitResult> {
+  if (!process.env.DATABASE_URL) {
+    return checkRateLimit({ key, limit, windowMs }, nowMs);
+  }
+
   const { prisma } = await import('@/lib/prisma');
   if (typeof prisma.$queryRaw !== 'function') {
     return checkRateLimit({ key, limit, windowMs }, nowMs);

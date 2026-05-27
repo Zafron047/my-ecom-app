@@ -1,6 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
+import {
+  BDBUY_SUPPLIER_PRODUCT_ID_PREFIX,
+  createBDBuyPartnerOrder,
+  getBDBuyProductDetails,
+  isBDBuyPartnerModeEnabled,
+} from '@/lib/bdbuy-partner-api';
 import { buildCheckoutPricing, type CheckoutItemInput } from '@/lib/checkout-pricing';
 import { getDeliveryDivisionForDistrict } from '@/lib/delivery-locations';
 import {
@@ -58,6 +64,12 @@ function createOrderNumber() {
   return `ORD-${time}-${nonce}`;
 }
 
+function createWowMallOrderNumber() {
+  const time = Date.now().toString().slice(-10);
+  const nonce = Math.floor(Math.random() * 9000 + 1000);
+  return `WM-${time}-${nonce}`;
+}
+
 function normalizePhone(phone: string) {
   const trimmed = phone.trim();
   if (trimmed.startsWith('+880')) {
@@ -109,6 +121,105 @@ function blockedCustomerResponse() {
       redirectTo: '/unauthorized',
     },
     withPrivateNoStoreHeaders({ status: 403 }),
+  );
+}
+
+async function placePartnerOrder(
+  request: Request,
+  payload: PlaceOrderPayload,
+  resolvedDivision: string,
+) {
+  const productIds = [
+    ...new Set(payload.items.map((item) => item.detailId ?? item.id).filter(Boolean)),
+  ];
+  const products = await getBDBuyProductDetails(productIds);
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const orderNumber = createWowMallOrderNumber();
+  const lines = payload.items.map((item, index) => {
+    const productId = item.detailId ?? item.id;
+    const product = productById.get(productId);
+    const variant =
+      product?.variants.find((candidate) => candidate.id === item.variantId) ??
+      (product?.variants.length === 1 ? product.variants[0] : undefined);
+
+    if (!product || !variant) {
+      throw new Error(`Product variant not found for item ${item.name || index + 1}.`);
+    }
+
+    const quantity = Math.max(1, Math.floor(item.quantity || 1));
+    if (variant.stockQuantity < quantity) {
+      throw new Error(`Only ${variant.stockQuantity} piece${variant.stockQuantity === 1 ? '' : 's'} of ${product.name} are available.`);
+    }
+
+    const unitPrice = Number((variant.salePrice ?? variant.price).toFixed(2));
+
+    return {
+      variantId: variant.id,
+      name: product.name,
+      variantLabel: [variant.color, variant.size].filter(Boolean).join(' / ') || 'Standard',
+      quantity,
+      unitPrice,
+      lineTotal: Number((unitPrice * quantity).toFixed(2)),
+      discountAmount: 0,
+    };
+  });
+  const subtotal = Number(lines.reduce((sum, line) => sum + line.lineTotal, 0).toFixed(2));
+  const shipping = Number(payload.totals.shipping.toFixed(2));
+  const total = Number((subtotal + shipping).toFixed(2));
+  const partnerResult = await createBDBuyPartnerOrder({
+    orderNumber,
+    placedAt: new Date().toISOString(),
+    customer: payload.customer,
+    shipping: {
+      ...payload.shipping,
+      division: resolvedDivision,
+    },
+    payment: {
+      method: payload.payment.method,
+      paidAmount: 0,
+    },
+    items: lines,
+    totals: {
+      subtotal,
+      shipping,
+      total,
+      discount: 0,
+    },
+    notes: `WoWMall order ${orderNumber}`,
+  });
+  const partnerOrderNumber = partnerResult.order.orderNumber;
+  const metaEventId = createMetaCapiEventId('purchase', partnerOrderNumber);
+  const response = NextResponse.json(
+    {
+      success: true,
+      orderId: partnerOrderNumber,
+      metaEventId,
+    },
+    withPrivateNoStoreHeaders(),
+  );
+  const recentOrderToken = createRecentOrderAccessToken(partnerOrderNumber);
+  if (recentOrderToken) {
+    response.cookies.set(CUSTOMER_RECENT_ORDER_COOKIE, recentOrderToken, {
+      httpOnly: true,
+      path: '/',
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 60 * 24,
+    });
+  }
+
+  return response;
+}
+
+function isSupplierOrder(payload: PlaceOrderPayload) {
+  return payload.items.every((item) =>
+    (item.detailId ?? item.id).startsWith(BDBUY_SUPPLIER_PRODUCT_ID_PREFIX),
+  );
+}
+
+function hasSupplierItems(payload: PlaceOrderPayload) {
+  return payload.items.some((item) =>
+    (item.detailId ?? item.id).startsWith(BDBUY_SUPPLIER_PRODUCT_ID_PREFIX),
   );
 }
 
@@ -173,6 +284,20 @@ export async function POST(request: Request) {
     if (!resolvedDivision) {
       return Response.json(
         { error: 'Could not match the selected district to a delivery division.' },
+        withPrivateNoStoreHeaders({ status: 400 }),
+      );
+    }
+
+    if (isBDBuyPartnerModeEnabled() && isSupplierOrder(payload)) {
+      return await placePartnerOrder(request, payload, resolvedDivision);
+    }
+
+    if (isBDBuyPartnerModeEnabled() && hasSupplierItems(payload)) {
+      return Response.json(
+        {
+          error:
+            'Please place BDBuy supplier items and WoWMall items as separate orders.',
+        },
         withPrivateNoStoreHeaders({ status: 400 }),
       );
     }
@@ -535,7 +660,9 @@ export async function POST(request: Request) {
     if (
       error instanceof Error &&
       (error.message.startsWith('Insufficient stock') ||
-        error.message.includes('Stock changed while saving order'))
+        error.message.includes('Stock changed while saving order') ||
+        error.message.startsWith('Only ') ||
+        error.message.startsWith('Product variant not found'))
     ) {
       return Response.json(
         { error: error.message },

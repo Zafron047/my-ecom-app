@@ -4,6 +4,7 @@ import { GET } from '../src/app/api/orders/[orderNumber]/route';
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
   getAdminSession: vi.fn(),
+  getBDBuyPartnerOrder: vi.fn(),
   getCustomerSession: vi.fn(),
   getCookie: vi.fn(),
   verifyRecentOrderAccessToken: vi.fn(),
@@ -28,6 +29,12 @@ vi.mock('@/lib/customer-auth', () => ({
   verifyRecentOrderAccessToken: mocks.verifyRecentOrderAccessToken,
 }));
 
+vi.mock('@/lib/bdbuy-partner-api', () => ({
+  getBDBuyPartnerOrder: mocks.getBDBuyPartnerOrder,
+  isBDBuyPartnerModeEnabled: () =>
+    Boolean(process.env.BDBUY_PARTNER_API_URL && process.env.BDBUY_PARTNER_API_KEY),
+}));
+
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     order: {
@@ -46,9 +53,12 @@ describe('order details route authorization', () => {
   beforeEach(() => {
     mocks.findFirst.mockReset();
     mocks.getAdminSession.mockReset();
+    mocks.getBDBuyPartnerOrder.mockReset();
     mocks.getCustomerSession.mockReset();
     mocks.getCookie.mockReset();
     mocks.verifyRecentOrderAccessToken.mockReset();
+    delete process.env.BDBUY_PARTNER_API_URL;
+    delete process.env.BDBUY_PARTNER_API_KEY;
 
     mocks.getAdminSession.mockResolvedValue(null);
     mocks.getCustomerSession.mockResolvedValue(null);
@@ -108,5 +118,27 @@ describe('order details route authorization', () => {
 
     expect(response.status).toBe(401);
     expect(mocks.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('keeps local ORD lookups on the local database when partner mode is enabled', async () => {
+    process.env.BDBUY_PARTNER_API_URL = 'https://supplier.test';
+    process.env.BDBUY_PARTNER_API_KEY = 'supplier-secret';
+    mocks.getAdminSession.mockResolvedValue({
+      id: 'admin-1',
+      name: 'Admin',
+      email: 'admin@example.test',
+      role: 'admin',
+    });
+    mocks.findFirst.mockResolvedValue(null);
+
+    const response = await getOrder('ORD-1001');
+
+    expect(response.status).toBe(404);
+    expect(mocks.getBDBuyPartnerOrder).not.toHaveBeenCalled();
+    expect(mocks.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { orderNumber: 'ORD-1001' },
+      }),
+    );
   });
 });
